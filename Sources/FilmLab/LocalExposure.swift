@@ -3,13 +3,11 @@ import CoreImage.CIFilterBuiltins
 
 /// A soft, elliptical light adjustment in normalized source coordinates.
 enum LocalExposure {
-  static func apply(
-    to image: CIImage, ev: Double, centerX: Double, centerY: Double,
+  static func mask(
+    for image: CIImage, centerX: Double, centerY: Double,
     radius: Double, feather: Double
-  ) -> CIImage {
-    guard abs(ev) > 0.001, image.extent.width > 0, image.extent.height > 0 else {
-      return image
-    }
+  ) -> CIImage? {
+    guard image.extent.width > 0, image.extent.height > 0 else { return nil }
     let extent = image.extent
     let x = min(max(centerX, 0), 1)
     let y = min(max(centerY, 0), 1)
@@ -21,16 +19,29 @@ enum LocalExposure {
     gradient.radius1 = Float(outer)
     gradient.color0 = CIColor(red: 1, green: 1, blue: 1)
     gradient.color1 = CIColor(red: 0, green: 0, blue: 0)
-    guard let unitMask = gradient.outputImage else { return image }
-    let mask = unitMask.transformed(
+    guard let unitMask = gradient.outputImage else { return nil }
+    return unitMask.transformed(
       by: CGAffineTransform(
         a: extent.width, b: 0, c: 0, d: extent.height,
         tx: extent.minX + extent.width * x, ty: extent.minY + extent.height * y)
     ).cropped(to: extent)
+  }
+
+  static func apply(
+    to image: CIImage, ev: Double, centerX: Double, centerY: Double,
+    radius: Double, feather: Double
+  ) -> CIImage {
+    guard abs(ev) > 0.001, image.extent.width > 0, image.extent.height > 0 else {
+      return image
+    }
+    guard
+      let mask = mask(
+        for: image, centerX: centerX, centerY: centerY, radius: radius, feather: feather)
+    else { return image }
     let lit = image.applyingFilter("CIExposureAdjust", parameters: [kCIInputEVKey: ev])
     return lit.applyingFilter(
       "CIBlendWithMask",
       parameters: [kCIInputBackgroundImageKey: image, kCIInputMaskImageKey: mask]
-    ).cropped(to: extent)
+    ).cropped(to: image.extent)
   }
 }

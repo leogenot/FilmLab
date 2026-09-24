@@ -171,6 +171,7 @@ final class PhotoEditor {
   var rawTint = 0.0
   var error: String?
   var showOriginal = false
+  var showLocalMask = false
   var zoom100 = false
   var isRendering = false
   var isExporting = false
@@ -245,6 +246,7 @@ final class PhotoEditor {
       decodedRawTemperature = saved.rawTemperature ?? cameraRawTemperature
       decodedRawTint = saved.rawTint ?? cameraRawTint
       showOriginal = false
+      showLocalMask = false
       zoom100 = false
       compareEnabled = false
       comparisonPreview = nil
@@ -591,12 +593,14 @@ final class PhotoEditor {
     rawTemperature = cameraRawTemperature
     rawTint = cameraRawTint
     showOriginal = false
+    showLocalMask = false
     compareEnabled = false
     editsChanged()
   }
 
   func toggleBeforeAfter() {
     compareEnabled = false
+    showLocalMask = false
     showOriginal.toggle()
     renderPreview()
   }
@@ -609,9 +613,28 @@ final class PhotoEditor {
 
   func toggleCompare() {
     compareEnabled.toggle()
+    showLocalMask = false
     showOriginal = false
     zoom100 = false
     renderPreview()
+  }
+
+  func setMaskPreview(_ visible: Bool) {
+    showLocalMask = visible
+    if visible {
+      showOriginal = false
+      compareEnabled = false
+    }
+    renderPreview()
+  }
+
+  private func localMaskImage() -> CIImage? {
+    guard let source,
+      let mask = LocalExposure.mask(
+        for: source, centerX: localCenterX, centerY: localCenterY,
+        radius: localRadius, feather: localFeather)
+    else { return nil }
+    return framedImage(mask)
   }
 
   private func developedImage() -> CIImage? {
@@ -701,7 +724,10 @@ final class PhotoEditor {
     renderVersion += 1
     let version = renderVersion
     previewTask?.cancel()
-    guard let image = showOriginal ? source.map(framedImage) : developedImage() else {
+    let image =
+      showLocalMask
+      ? localMaskImage() : (showOriginal ? source.map(framedImage) : developedImage())
+    guard let image else {
       isRendering = false
       return
     }
@@ -721,7 +747,7 @@ final class PhotoEditor {
         comparisonPreview = result.original.map {
           NSImage(cgImage: $0, size: NSSize(width: $0.width, height: $0.height))
         }
-        histogram = result.histogram
+        histogram = showLocalMask ? nil : result.histogram
         error = nil
       } else {
         error = "Could not render this photo."
@@ -846,6 +872,9 @@ struct ContentView: View {
     }
     .onAppear { editor.resumeLastPhoto() }
     .onDisappear { editor.flushEdits() }
+    .onChange(of: panel) {
+      if panel != .local && editor.showLocalMask { editor.setMaskPreview(false) }
+    }
     .onChange(of: scenePhase) {
       if scenePhase != .active { editor.flushEdits() }
     }
@@ -1104,13 +1133,18 @@ struct ContentView: View {
           control("Saturation", value: $editor.selectiveSaturation, range: -1...1)
         case .local:
           Text("Radial light").font(.headline)
+          Toggle(
+            "Show mask",
+            isOn: Binding(
+              get: { editor.showLocalMask },
+              set: { editor.setMaskPreview($0) }))
           control("Exposure (EV)", value: $editor.localExposure, range: -2...2)
           control("Horizontal center", value: $editor.localCenterX, range: 0...1)
           control("Vertical center", value: $editor.localCenterY, range: 0...1)
           control("Size", value: $editor.localRadius, range: 0.05...0.8)
           control("Feather", value: $editor.localFeather, range: 0.05...1)
           Text(
-            "Adjusts scene light in an elliptical area before film processing. The center is relative to the unrotated photo; 0 EV disables it."
+            "Adjusts scene light in an elliptical area before film processing. The mask view is temporary and never exported; 0 EV disables the adjustment."
           )
           .font(.caption).foregroundStyle(.secondary)
         case .framing:

@@ -20,6 +20,10 @@ struct LocalExposureProbe {
       }
       return pixel[0]
     }
+    let mask = LocalExposure.mask(
+      for: source, centerX: 0.8, centerY: 0.2, radius: 0.2, feather: 0.5)!
+    precondition(red(mask, 80, 20) > 0.99, "Mask center is not white")
+    precondition(red(mask, 20, 80) < 0.01, "Mask corner is not black")
     let unchanged = LocalExposure.apply(
       to: source, ev: 0, centerX: 0.5, centerY: 0.5, radius: 0.35, feather: 0.5)
     precondition(unchanged === source, "Zero EV should skip the local graph")
