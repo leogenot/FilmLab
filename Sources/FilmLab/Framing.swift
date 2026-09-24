@@ -5,7 +5,7 @@ enum Framing {
   static func sourceLocation(
     displayX: Double, displayY: Double, sourceExtent: CGRect,
     quarterTurns: Int, straightenDegrees: Double,
-    aspect: Int, offsetX: Double, offsetY: Double
+    aspect: Int, offsetX: Double, offsetY: Double, freeCrop: FreeCrop = FreeCrop()
   ) -> CGPoint? {
     guard (0...1).contains(displayX), (0...1).contains(displayY),
       sourceExtent.width > 0, sourceExtent.height > 0
@@ -51,7 +51,9 @@ enum Framing {
       case 4: 16.0 / 9.0
       default: nil
       }
-    if let ratio {
+    if aspect == 5 {
+      extent = freeCrop.imageRect(in: extent)
+    } else if let ratio {
       let width = min(extent.width, floor(extent.height * ratio))
       let height = min(extent.height, floor(extent.width / ratio))
       let x = extent.minX + (extent.width - width) * CGFloat(min(max(offsetX, -1), 1) + 1) / 2
@@ -73,7 +75,7 @@ enum Framing {
 
   static func apply(
     to image: CIImage, quarterTurns: Int, straightenDegrees: Double,
-    aspect: Int, offsetX: Double, offsetY: Double
+    aspect: Int, offsetX: Double, offsetY: Double, freeCrop: FreeCrop = FreeCrop()
   ) -> CIImage {
     let turns = ((quarterTurns % 4) + 4) % 4
     var result = image
@@ -119,7 +121,9 @@ enum Framing {
       case 4: 16.0 / 9.0
       default: nil
       }
-    guard let ratio, extent.width > 0, extent.height > 0 else { return result }
+    guard extent.width > 0, extent.height > 0 else { return result }
+    if aspect == 5 { return result.cropped(to: freeCrop.imageRect(in: extent)) }
+    guard let ratio else { return result }
     let width = min(extent.width, floor(extent.height * ratio))
     let height = min(extent.height, floor(extent.width / ratio))
     let x = extent.minX + (extent.width - width) * CGFloat(min(max(offsetX, -1), 1) + 1) / 2

@@ -58,6 +58,7 @@ private struct PhotoEdits: Codable, Equatable {
   var frameAspect = 0
   var frameOffsetX = 0.0
   var frameOffsetY = 0.0
+  var frameFreeCrop = FreeCrop()
   var flatRAW = false
   var rawHighlightRecovery = true
   var rawTemperature: Double?
@@ -123,6 +124,7 @@ private struct PhotoEdits: Codable, Equatable {
     frameAspect = try values.decodeIfPresent(Int.self, forKey: .frameAspect) ?? 0
     frameOffsetX = try values.decodeIfPresent(Double.self, forKey: .frameOffsetX) ?? 0
     frameOffsetY = try values.decodeIfPresent(Double.self, forKey: .frameOffsetY) ?? 0
+    frameFreeCrop = try values.decodeIfPresent(FreeCrop.self, forKey: .frameFreeCrop) ?? FreeCrop()
     flatRAW = try values.decodeIfPresent(Bool.self, forKey: .flatRAW) ?? false
     rawHighlightRecovery =
       try values.decodeIfPresent(Bool.self, forKey: .rawHighlightRecovery) ?? true
@@ -174,6 +176,8 @@ final class PhotoEditor {
   var frameAspect = 0
   var frameOffsetX = 0.0
   var frameOffsetY = 0.0
+  var frameFreeCrop = FreeCrop()
+  var showCropBounds = false
   var flatRAW = false
   var rawHighlightRecovery = true
   var rawHighlightRecoverySupported = false
@@ -258,6 +262,7 @@ final class PhotoEditor {
       showOriginal = false
       showLocalMask = false
       placingLocalArea = false
+      showCropBounds = false
       zoom100 = false
       compareEnabled = false
       comparisonPreview = nil
@@ -384,6 +389,7 @@ final class PhotoEditor {
     frameAspect = saved.frameAspect
     frameOffsetX = saved.frameOffsetX
     frameOffsetY = saved.frameOffsetY
+    frameFreeCrop = saved.frameFreeCrop
     flatRAW = saved.flatRAW
     rawHighlightRecovery = saved.rawHighlightRecovery
     rawTemperature = saved.rawTemperature ?? cameraRawTemperature
@@ -508,6 +514,7 @@ final class PhotoEditor {
     edits.frameAspect = frameAspect
     edits.frameOffsetX = frameOffsetX
     edits.frameOffsetY = frameOffsetY
+    edits.frameFreeCrop = frameFreeCrop
     edits.flatRAW = flatRAW
     edits.rawHighlightRecovery = rawHighlightRecovery
     if isRAWSource {
@@ -589,6 +596,8 @@ final class PhotoEditor {
     frameAspect = defaults.frameAspect
     frameOffsetX = defaults.frameOffsetX
     frameOffsetY = defaults.frameOffsetY
+    frameFreeCrop = defaults.frameFreeCrop
+    showCropBounds = false
     flatRAW = defaults.flatRAW
     rawHighlightRecovery = defaults.rawHighlightRecovery
     rawTemperature = cameraRawTemperature
@@ -602,6 +611,7 @@ final class PhotoEditor {
   func toggleBeforeAfter() {
     compareEnabled = false
     showLocalMask = false
+    showCropBounds = false
     placingLocalArea = false
     showOriginal.toggle()
     renderPreview()
@@ -609,6 +619,7 @@ final class PhotoEditor {
 
   func toggleZoom() {
     placingLocalArea = false
+    showCropBounds = false
     compareEnabled = false
     zoom100.toggle()
     renderPreview()
@@ -617,6 +628,7 @@ final class PhotoEditor {
   func toggleCompare() {
     compareEnabled.toggle()
     showLocalMask = false
+    showCropBounds = false
     placingLocalArea = false
     showOriginal = false
     zoom100 = false
@@ -645,6 +657,7 @@ final class PhotoEditor {
 
   func setMaskPreview(_ visible: Bool) {
     placingLocalArea = false
+    showCropBounds = false
     showLocalMask = visible
     if visible {
       showOriginal = false
@@ -653,9 +666,31 @@ final class PhotoEditor {
     renderPreview()
   }
 
+  func setCropBoundsPreview(_ visible: Bool) {
+    showCropBounds = visible && frameAspect == 5 && source != nil
+    if showCropBounds {
+      showOriginal = false
+      showLocalMask = false
+      placingLocalArea = false
+      compareEnabled = false
+      zoom100 = false
+    }
+    renderPreview()
+  }
+
+  func moveFreeCrop(dx: Double, dy: Double, from original: FreeCrop) {
+    guard showCropBounds else { return }
+    frameFreeCrop.centerX = min(
+      max(original.centerX + dx, frameFreeCrop.width / 2), 1 - frameFreeCrop.width / 2)
+    frameFreeCrop.centerY = min(
+      max(original.centerY + dy, frameFreeCrop.height / 2), 1 - frameFreeCrop.height / 2)
+    editsChanged()
+  }
+
   func setPlacingLocalArea(_ placing: Bool) {
     placingLocalArea = placing && source != nil
     if placingLocalArea {
+      showCropBounds = false
       showLocalMask = false
       showOriginal = false
       compareEnabled = false
@@ -669,7 +704,8 @@ final class PhotoEditor {
       let location = Framing.sourceLocation(
         displayX: displayX, displayY: displayY, sourceExtent: source.extent,
         quarterTurns: frameRotation, straightenDegrees: frameStraighten,
-        aspect: frameAspect, offsetX: frameOffsetX, offsetY: frameOffsetY)
+        aspect: frameAspect, offsetX: frameOffsetX, offsetY: frameOffsetY,
+        freeCrop: frameFreeCrop)
     else { return }
     radialLights[selectedLocalIndex].centerX = Double(location.x)
     radialLights[selectedLocalIndex].centerY = Double(location.y)
@@ -688,7 +724,7 @@ final class PhotoEditor {
     return framedImage(mask)
   }
 
-  private func developedImage() -> CIImage? {
+  private func developedImage(previewUncropped: Bool = false) -> CIImage? {
     guard var image = source else { return nil }
     if abs(shadowLight) > 0.001 || abs(highlightLight) > 0.001 {
       guard let sceneLightKernel,
@@ -760,13 +796,16 @@ final class PhotoEditor {
       hueShift: selectiveShift, saturation: selectiveSaturation
     )
     let mixed = ColorMixer.apply(to: selected, adjustments: mixer)
-    return framedImage(FilmEffects.apply(to: mixed, grain: grain, halation: halation))
+    return framedImage(
+      FilmEffects.apply(to: mixed, grain: grain, halation: halation),
+      aspectOverride: previewUncropped ? 0 : nil)
   }
 
-  private func framedImage(_ image: CIImage) -> CIImage {
+  private func framedImage(_ image: CIImage, aspectOverride: Int? = nil) -> CIImage {
     Framing.apply(
       to: image, quarterTurns: frameRotation, straightenDegrees: frameStraighten,
-      aspect: frameAspect, offsetX: frameOffsetX, offsetY: frameOffsetY)
+      aspect: aspectOverride ?? frameAspect, offsetX: frameOffsetX, offsetY: frameOffsetY,
+      freeCrop: frameFreeCrop)
   }
 
   func rotateFrame(_ steps: Int) {
@@ -780,7 +819,9 @@ final class PhotoEditor {
     previewTask?.cancel()
     let image =
       showLocalMask
-      ? localMaskImage() : (showOriginal ? source.map(framedImage) : developedImage())
+      ? localMaskImage()
+      : (showOriginal
+        ? source.map { framedImage($0) } : developedImage(previewUncropped: showCropBounds))
     guard let image else {
       isRendering = false
       return
@@ -789,7 +830,7 @@ final class PhotoEditor {
     let scale = zoom100 ? 1 : min(1, 1800 / max(image.extent.width, image.extent.height))
     let request = PreviewRequest(
       image: image, scale: scale, sourceURL: scopedURL,
-      originalImage: compareEnabled ? source.map(framedImage) : nil
+      originalImage: compareEnabled ? source.map { framedImage($0) } : nil
     )
     previewTask = Task {
       do { try await Task.sleep(for: .milliseconds(60)) } catch { return }
@@ -801,7 +842,7 @@ final class PhotoEditor {
         comparisonPreview = result.original.map {
           NSImage(cgImage: $0, size: NSSize(width: $0.width, height: $0.height))
         }
-        histogram = showLocalMask ? nil : result.histogram
+        histogram = showLocalMask || showCropBounds ? nil : result.histogram
         error = nil
       } else {
         error = "Could not render this photo."
@@ -876,6 +917,7 @@ struct ContentView: View {
   @State private var showingImporter = false
   @State private var panel: EditorPanel = .film
   @State private var selectedColorBand = 0
+  @State private var cropDragOrigin: FreeCrop?
   @Environment(\.displayScale) private var displayScale
   @Environment(\.scenePhase) private var scenePhase
 
@@ -931,6 +973,7 @@ struct ContentView: View {
         if editor.showLocalMask { editor.setMaskPreview(false) }
         editor.setPlacingLocalArea(false)
       }
+      if panel != .framing && editor.showCropBounds { editor.setCropBoundsPreview(false) }
     }
     .onChange(of: scenePhase) {
       if scenePhase != .active { editor.flushEdits() }
@@ -961,7 +1004,10 @@ struct ContentView: View {
     .onChange(of: editor.selectiveRange) { editor.editsChanged() }
     .onChange(of: editor.selectiveShift) { editor.editsChanged() }
     .onChange(of: editor.selectiveSaturation) { editor.editsChanged() }
-    .onChange(of: editor.frameAspect) { editor.editsChanged() }
+    .onChange(of: editor.frameAspect) {
+      if editor.frameAspect != 5 && editor.showCropBounds { editor.setCropBoundsPreview(false) }
+      editor.editsChanged()
+    }
     .onChange(of: editor.frameOffsetX) { editor.editsChanged() }
     .onChange(of: editor.frameOffsetY) { editor.editsChanged() }
     .onChange(of: editor.flatRAW) { editor.rawModeChanged() }
@@ -1081,6 +1127,37 @@ struct ContentView: View {
               .scaledToFit()
               .frame(width: geometry.size.width, height: geometry.size.height)
               .contentShape(Rectangle())
+              .overlay {
+                if editor.showCropBounds {
+                  let scale = min(
+                    geometry.size.width / preview.size.width,
+                    geometry.size.height / preview.size.height)
+                  let imageWidth = preview.size.width * scale
+                  let imageHeight = preview.size.height * scale
+                  let left = (geometry.size.width - imageWidth) / 2
+                  let top = (geometry.size.height - imageHeight) / 2
+                  let bounds = editor.frameFreeCrop.normalizedBounds
+                  Rectangle()
+                    .fill(.clear)
+                    .strokeBorder(.white, lineWidth: 2)
+                    .background(Color.white.opacity(0.02))
+                    .frame(width: imageWidth * bounds.width, height: imageHeight * bounds.height)
+                    .position(
+                      x: left + imageWidth * bounds.midX,
+                      y: top + imageHeight * bounds.midY
+                    )
+                    .contentShape(Rectangle())
+                    .gesture(
+                      DragGesture().onChanged { value in
+                        if cropDragOrigin == nil { cropDragOrigin = editor.frameFreeCrop }
+                        guard let cropDragOrigin else { return }
+                        editor.moveFreeCrop(
+                          dx: value.translation.width / imageWidth,
+                          dy: value.translation.height / imageHeight,
+                          from: cropDragOrigin)
+                      }.onEnded { _ in cropDragOrigin = nil })
+                }
+              }
               .gesture(
                 SpatialTapGesture().onEnded { tap in
                   guard editor.placingLocalArea else { return }
@@ -1264,9 +1341,22 @@ struct ContentView: View {
             Text("Portrait 4:5").tag(2)
             Text("Landscape 3:2").tag(3)
             Text("Wide 16:9").tag(4)
+            Text("Freeform").tag(5)
           }
           .pickerStyle(.menu)
-          if editor.frameAspect != 0 {
+          if editor.frameAspect == 5 {
+            Toggle(
+              "Show crop bounds",
+              isOn: Binding(
+                get: { editor.showCropBounds },
+                set: { editor.setCropBoundsPreview($0) }))
+            control("Width", value: freeCropBinding(\.width), range: 0.1...1)
+            control("Height", value: freeCropBinding(\.height), range: 0.1...1)
+            control("Horizontal center", value: freeCropBinding(\.centerX), range: 0...1)
+            control("Vertical center", value: freeCropBinding(\.centerY), range: 0...1)
+            Text("Show bounds to move the rectangle on the photo. Export uses the selected crop.")
+              .font(.caption).foregroundStyle(.secondary)
+          } else if editor.frameAspect != 0 {
             control("Horizontal position", value: $editor.frameOffsetX, range: -1...1)
             control("Vertical position", value: $editor.frameOffsetY, range: -1...1)
           }
@@ -1287,6 +1377,16 @@ struct ContentView: View {
     }
     .frame(width: 310)
     .background(Color(white: 0.11))
+  }
+
+  private func freeCropBinding(_ keyPath: WritableKeyPath<FreeCrop, Double>) -> Binding<Double> {
+    Binding(
+      get: { editor.frameFreeCrop[keyPath: keyPath] },
+      set: { value in
+        editor.frameFreeCrop[keyPath: keyPath] = value
+        editor.editsChanged()
+      }
+    )
   }
 
   private func localBinding(_ keyPath: WritableKeyPath<RadialAdjustment, Double>) -> Binding<Double>

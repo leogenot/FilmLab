@@ -37,6 +37,20 @@ struct FramingProbe {
         }
       }
     }
+    let freeCrop = FreeCrop(centerX: 0.5, centerY: 0.5, width: 0.5, height: 0.4)
+    let freeform = Framing.apply(
+      to: source, quarterTurns: 0, straightenDegrees: 0,
+      aspect: 5, offsetX: 0, offsetY: 0, freeCrop: freeCrop)
+    precondition(freeform.extent.width == 150 && freeform.extent.height == 180)
+    let freePoint = Framing.sourceLocation(
+      displayX: 0, displayY: 0, sourceExtent: source.extent,
+      quarterTurns: 0, straightenDegrees: 0,
+      aspect: 5, offsetX: 0, offsetY: 0, freeCrop: freeCrop)!
+    precondition(abs(freePoint.x - 0.25) < 0.001)
+    precondition(abs(freePoint.y - 0.7) < 0.001)
+    let clamped = FreeCrop(centerX: 0.05, centerY: 0.95, width: 0.5, height: 0.4)
+    precondition(clamped.normalizedBounds.minX == 0)
+    precondition(abs(clamped.normalizedBounds.maxY - 1) < 0.001)
     let square = framed(0, 10, 1)
     precondition(square.extent.width == square.extent.height)
     func sourceLocation(
