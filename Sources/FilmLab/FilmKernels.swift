@@ -90,7 +90,41 @@ enum FilmKernels {
         // The measured chart ends at +0.5; continue its last slope without inventing a shoulder.
         return portraD[8] + (portraD[8] - portraD[7]) * ((logH - 0.5) / 0.5);
     }
-    [[stitchable]] float4 portraNegative(coreimage::sample_t pixel, float ev, float dev) {
+
+    // Kodak E-4046 chart samples: Status M Ektar 100 negative density, R/G/B order.
+    constant float ektarH[9] = {-2.8, -2.5, -2.0, -1.5, -1.0, -0.5, 0.0, 0.5, 1.0};
+    constant float3 ektarD[9] = {
+        float3(0.212, 0.636, 0.853), float3(0.221, 0.645, 0.870),
+        float3(0.299, 0.723, 1.022), float3(0.537, 0.991, 1.342),
+        float3(0.831, 1.281, 1.671), float3(1.121, 1.576, 2.004),
+        float3(1.398, 1.848, 2.338), float3(1.654, 2.100, 2.632),
+        float3(1.866, 2.338, 2.944)
+    };
+    constant float3 ektarTangent[9] = {
+        float3(0.000000, 0.000000, 0.000000),
+        float3(0.047634, 0.047634, 0.090363),
+        float3(0.234987, 0.241665, 0.412203),
+        float3(0.526105, 0.557133, 0.648875),
+        float3(0.583973, 0.584957, 0.661976),
+        float3(0.566702, 0.566067, 0.666999),
+        float3(0.532173, 0.523237, 0.625452),
+        float3(0.463863, 0.489600, 0.605465),
+        float3(0.380000, 0.462000, 0.642000)
+    };
+    inline float3 ektarDensityAt(float logH) {
+        if (logH <= ektarH[0]) return ektarD[0];
+        for (int i = 0; i < 8; i++) {
+            if (logH <= ektarH[i + 1]) {
+                return smoothDensity(logH, ektarH[i], ektarH[i + 1],
+                                     ektarD[i], ektarD[i + 1],
+                                     ektarTangent[i], ektarTangent[i + 1]);
+            }
+        }
+        // Beyond Kodak's plot, continue its final slope without inventing a shoulder.
+        return ektarD[8] + (ektarD[8] - ektarD[7]) * ((logH - 1.0) / 0.5);
+    }
+    [[stitchable]] float4 measuredNegative(coreimage::sample_t pixel, float ev,
+                                            float dev, float stock) {
         float3 light = max(pixel.rgb, float3(0.0));
         // Approximate spectral-layer overlap from E-4050's broad sensitivity bands.
         // These RGB weights are a modeling assumption, not digitized Kodak measurements.
@@ -99,14 +133,18 @@ enum FilmKernels {
             dot(light, float3(0.10, 0.82, 0.08)),
             dot(light, float3(0.00, 0.12, 0.88))
         );
+        bool ektar = stock > 1.5;
+        float anchor = ektar ? -0.84 : -1.44;
         float3 logH = log10(max(layerLight, float3(0.000001)) / 0.18)
-                    + float3(-1.44 + ev * 0.30103);
-        float3 density = float3(
-            portraDensityAt(logH.r).r,
-            portraDensityAt(logH.g).g,
-            portraDensityAt(logH.b).b
-        );
-        float3 reference = portraDensityAt(-1.44);
+                    + float3(anchor + ev * 0.30103);
+        float3 density = ektar
+            ? float3(ektarDensityAt(logH.r).r,
+                     ektarDensityAt(logH.g).g,
+                     ektarDensityAt(logH.b).b)
+            : float3(portraDensityAt(logH.r).r,
+                     portraDensityAt(logH.g).g,
+                     portraDensityAt(logH.b).b);
+        float3 reference = ektar ? ektarDensityAt(-0.84) : portraDensityAt(-1.44);
         // Development behavior is provisional; the published chart gives one process condition.
         density = reference + (density - reference) * (1.0 + dev * 0.10);
         return float4(density, pixel.a);
@@ -116,8 +154,8 @@ enum FilmKernels {
     [[stitchable]] float4 portraPositive(coreimage::sample_t negative,
                                           coreimage::sample_t original,
                                           float ev, float amount, float paperMix,
-                                          float paperExposure) {
-        float3 reference = portraDensityAt(-1.44);
+                                          float paperExposure, float stock) {
+        float3 reference = stock > 1.5 ? ektarDensityAt(-0.84) : portraDensityAt(-1.44);
         // Provisional balanced print/scan transform; 0.18 remains 0.18 at the reference.
         float3 linear = 0.18 * exp2(clamp((negative.rgb - reference) * (0.8 / 0.17),
                                           float3(-20.0), float3(20.0)));

@@ -45,6 +45,14 @@ Kodak's spectral-sensitivity plot shows broad blue-, green-, and red-sensitive b
 
 Each row sums to one, so a neutral scene patch stays neutral before the different density curves act. The coefficients are conservative modeling assumptions suggested by the plotted overlap, **not** values published or measured by Kodak. A future spectral reconstruction and film-layer integration should replace them. The print/scan stage is still provisional.
 
+## Second reference: Kodak Professional Ektar 100
+
+Primary source: Kodak, *KODAK PROFESSIONAL EKTAR 100 Film*, publication E-4046, January 2025, https://www.kodakprofessional.com/sites/default/files/2025-07/e4046.pdf. Page 4 plots daylight-exposed, Status M red, green and blue processed-negative density against log exposure. Its marked reference exposure is log H **-0.84**. Kodak calls the curves representative rather than specifications for a particular production batch.
+
+`Research/ektar100-density.csv` records nine approximate readings from that chart. Page 4 was rendered at 180 dpi (1530 × 1980 pixels). The graph axes were read at x = 203 for log H -3, x = 571 for log H +1, y = 731 for density 0, and y = 269 for density 4. The centers of the colored curve strokes were sampled at log H -2.8, -2.5, -2, -1.5, -1, -0.5, 0, 0.5 and 1. Treat values as graph readings with roughly ±0.03 density and ±0.03 log-H uncertainty, not laboratory measurements. Shape-preserving cubic Hermite interpolation joins the samples; the response outside the plotted range holds the low-density end or extends the high-density slope as a modeling assumption.
+
+FilmLab anchors scene-linear 0.18 gray to Kodak's marked -0.84 log H reference. This is a calibration choice, not an absolute lux-second measurement of the digital file. The RGB-to-layer overlap matrix and balanced positive print/scan transform used by the Portra study are reused for Ektar; **neither is a measured Ektar color transform**. Development adjustment is provisional. The Ektar source recommends Endura Premier paper; FilmLab does not apply the older Portra Endura study to this stock. Matched exposure-series scans and print or scanner characterization are still needed to claim a close color match.
+
 ## Optional paper tone reference: Kodak Professional Portra Endura
 
 Kodak, *KODAK PROFESSIONAL PORTRA ENDURA Paper and KODAK PROFESSIONAL SUPRA ENDURA Paper*, publication E-4021, revised September 2009, https://125px.com/docs/paper/kodak/e4021-200909.pdf (Kodak-authored document hosted by a third-party archive). Page 7 plots paper density against log paper exposure after RA-4 processing, with separate Status A red, green and blue curves. The paper predates the 2010 Portra 400 emulsion; this is an illustrative print-paper pairing, not a documented calibrated film-paper combination.

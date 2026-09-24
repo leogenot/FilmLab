@@ -153,7 +153,7 @@ final class PhotoEditor {
   // Scene-linear RGB enters this kernel in the context's extended linear working space.
   // This is a provisional response model, not a measured emulsion profile.
   private let filmKernel = FilmKernels.kernel("filmResponse")
-  private let portraNegativeKernel = FilmKernels.kernel("portraNegative")
+  private let measuredNegativeKernel = FilmKernels.kernel("measuredNegative")
   private let portraPositiveKernel = FilmKernels.kernel("portraPositive")
 
   func open(_ url: URL) {
@@ -458,21 +458,22 @@ final class PhotoEditor {
 
   private func developedImage() -> CIImage? {
     guard var image = source else { return nil }
-    if stockIndex == 1 {
-      guard let portraNegativeKernel,
+    if stockIndex == 1 || stockIndex == 2 {
+      guard let measuredNegativeKernel,
         let portraPositiveKernel,
-        let negative = portraNegativeKernel.apply(
-          extent: image.extent, arguments: [image, shotExposure, development]
+        let negative = measuredNegativeKernel.apply(
+          extent: image.extent, arguments: [image, shotExposure, development, Double(stockIndex)]
         ),
         let positive = portraPositiveKernel.apply(
           extent: image.extent,
           arguments: [
             negative, image, shotExposure, filmAmount,
-            enduraPaperTone ? paperStrength : 0.0, paperExposure,
+            stockIndex == 1 && enduraPaperTone ? paperStrength : 0.0, paperExposure,
+            Double(stockIndex),
           ]
         )
       else {
-        error = "The Portra density study could not be loaded."
+        error = "The measured film density study could not be loaded."
         return nil
       }
       image = positive
@@ -800,6 +801,7 @@ struct ContentView: View {
           Picker("Stock", selection: $editor.stockIndex) {
             Text("Study stock").tag(0)
             Text("Portra 400 density study").tag(1)
+            Text("Ektar 100 density study").tag(2)
           }
           .pickerStyle(.menu)
           if editor.stockIndex == 1 {
@@ -819,7 +821,9 @@ struct ContentView: View {
               ? (editor.enduraPaperTone
                 ? "Kodak negative and paper curves; color response is still approximate."
                 : "Kodak negative-density curves with provisional positive rendering.")
-              : "Exposure-dependent study stock. Film measurements will replace this model."
+              : (editor.stockIndex == 2
+                ? "Kodak Ektar negative-density curves with provisional positive rendering."
+                : "Exposure-dependent study stock. Film measurements will replace this model.")
           )
           .font(.caption).foregroundStyle(.secondary)
         case .develop:
