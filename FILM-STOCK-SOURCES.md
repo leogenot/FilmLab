@@ -31,6 +31,8 @@ The manufacturer document is a reference for measurements and descriptive facts.
 
 `Research/portra400-density.csv` contains nine approximate points sampled from the three plotted curves. The PDF's page 4 was rendered at 160 dpi (1360 × 1760 pixels); the plotted axes were read at x = 180 for log H -4, x = 590 for log H +1, y = 638 for density 0, and y = 228 for density 4. At each sampled x, the center of each dark curve stroke was converted with `density = (638 - pixel_y) / 102.5`. The points are graph readings, not laboratory measurements; treat their absolute values as approximate within roughly 0.03 density and 0.03 log-H units. They do not encode the dye spectra, print stage or a camera-to-film spectral transform.
 
+FilmLab now joins adjacent graph readings with shape-preserving cubic Hermite interpolation (PCHIP). Its tangents are calculated from the neighboring sampled slopes and stored in the Metal kernel. This is a numerical smoothing choice: it preserves the sampled values and monotonic density response, but does not add measurements between samples. The response outside each plotted range remains a separate model assumption.
+
 ### RGB-to-layer approximation, 24 September 2026
 
 Kodak's spectral-sensitivity plot shows broad blue-, green-, and red-sensitive bands with overlap. A three-channel camera file cannot uniquely determine the original scene spectrum, so FilmLab currently approximates layer exposure with a neutral-preserving RGB matrix before looking up negative density:

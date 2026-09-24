@@ -55,12 +55,36 @@ enum FilmKernels {
         float3(1.405, 1.883, 2.361), float3(1.688, 2.156, 2.683),
         float3(1.980, 2.429, 3.015)
     };
+    // PCHIP tangents from Research/portra400-density.csv, in density per log H.
+    constant float3 portraTangent[9] = {
+        float3(0.000000, 0.000000, 0.000000),
+        float3(0.062200, 0.047974, 0.123641),
+        float3(0.301141, 0.335737, 0.494855),
+        float3(0.517807, 0.551971, 0.628960),
+        float3(0.531970, 0.556000, 0.634000),
+        float3(0.545817, 0.550955, 0.634000),
+        float3(0.560955, 0.546000, 0.638961),
+        float3(0.574859, 0.546000, 0.653847),
+        float3(0.593000, 0.546000, 0.674000)
+    };
+    inline float3 smoothDensity(float x, float x0, float x1,
+                                float3 y0, float3 y1, float3 m0, float3 m1) {
+        float width = x1 - x0;
+        float t = (x - x0) / width;
+        float t2 = t * t;
+        float t3 = t2 * t;
+        return (2.0 * t3 - 3.0 * t2 + 1.0) * y0
+             + (t3 - 2.0 * t2 + t) * width * m0
+             + (-2.0 * t3 + 3.0 * t2) * y1
+             + (t3 - t2) * width * m1;
+    }
     inline float3 portraDensityAt(float logH) {
         if (logH <= portraH[0]) return portraD[0];
         for (int i = 0; i < 8; i++) {
             if (logH <= portraH[i + 1]) {
-                float t = (logH - portraH[i]) / (portraH[i + 1] - portraH[i]);
-                return mix(portraD[i], portraD[i + 1], t);
+                return smoothDensity(logH, portraH[i], portraH[i + 1],
+                                     portraD[i], portraD[i + 1],
+                                     portraTangent[i], portraTangent[i + 1]);
             }
         }
         // The measured chart ends at +0.5; continue its last slope without inventing a shoulder.
@@ -115,12 +139,26 @@ enum FilmKernels {
         float3(2.44, 2.37, 2.34), float3(2.57, 2.51, 2.41),
         float3(2.62, 2.61, 2.43), float3(2.66, 2.63, 2.44)
     };
+    // PCHIP tangents from Research/endura-paper-tone.csv.
+    constant float3 enduraTangent[10] = {
+        float3(0.000000, 0.000000, 0.000000),
+        float3(0.035556, 0.035556, 0.035556),
+        float3(0.301935, 0.301935, 0.301935),
+        float3(1.451163, 1.451163, 1.451163),
+        float3(2.742857, 2.697810, 2.666667),
+        float3(2.716547, 2.566667, 2.511628),
+        float3(0.852222, 0.892754, 0.495738),
+        float3(0.288889, 0.466667, 0.124444),
+        float3(0.177778, 0.133333, 0.053333),
+        float3(0.140000, 0.000000, 0.020000)
+    };
     inline float3 enduraDensityAt(float logH) {
         if (logH <= enduraH[0]) return enduraD[0];
         for (int i = 0; i < 9; i++) {
             if (logH <= enduraH[i + 1]) {
-                float t = (logH - enduraH[i]) / (enduraH[i + 1] - enduraH[i]);
-                return mix(enduraD[i], enduraD[i + 1], t);
+                return smoothDensity(logH, enduraH[i], enduraH[i + 1],
+                                     enduraD[i], enduraD[i + 1],
+                                     enduraTangent[i], enduraTangent[i + 1]);
             }
         }
         return enduraD[9];
