@@ -1,6 +1,76 @@
 import CoreImage
 
 enum Framing {
+  /// Maps a point in the fitted, framed canvas (top-left origin) back to the source.
+  static func sourceLocation(
+    displayX: Double, displayY: Double, sourceExtent: CGRect,
+    quarterTurns: Int, straightenDegrees: Double,
+    aspect: Int, offsetX: Double, offsetY: Double
+  ) -> CGPoint? {
+    guard (0...1).contains(displayX), (0...1).contains(displayY),
+      sourceExtent.width > 0, sourceExtent.height > 0
+    else { return nil }
+    let turns = ((quarterTurns % 4) + 4) % 4
+    var extent = sourceExtent
+    var quarter = CGAffineTransform.identity
+    if turns != 0 {
+      let rotation = CGAffineTransform(rotationAngle: CGFloat(turns) * .pi / 2)
+      let rotated = extent.applying(rotation)
+      quarter = rotation.concatenating(
+        CGAffineTransform(translationX: -rotated.minX, y: -rotated.minY))
+      extent = extent.applying(quarter)
+    }
+
+    let degrees = min(max(straightenDegrees, -15), 15)
+    var straight = CGAffineTransform.identity
+    if abs(degrees) > 0.001 {
+      let original = extent
+      let angle = CGFloat(degrees) * .pi / 180
+      let center = CGPoint(x: original.midX, y: original.midY)
+      straight = CGAffineTransform(translationX: center.x, y: center.y)
+        .rotated(by: angle)
+        .translatedBy(x: -center.x, y: -center.y)
+      let rotated = extent.applying(straight)
+      let cosine = abs(cos(angle))
+      let sine = abs(sin(angle))
+      let ratio = original.width / original.height
+      let safeHeight = min(
+        original.width / (ratio * cosine + sine),
+        original.height / (ratio * sine + cosine))
+      let safeWidth = safeHeight * ratio
+      extent = CGRect(
+        x: rotated.midX - safeWidth / 2, y: rotated.midY - safeHeight / 2,
+        width: safeWidth, height: safeHeight)
+    }
+
+    let ratio: CGFloat? =
+      switch aspect {
+      case 1: 1
+      case 2: 4.0 / 5.0
+      case 3: 3.0 / 2.0
+      case 4: 16.0 / 9.0
+      default: nil
+      }
+    if let ratio {
+      let width = min(extent.width, floor(extent.height * ratio))
+      let height = min(extent.height, floor(extent.width / ratio))
+      let x = extent.minX + (extent.width - width) * CGFloat(min(max(offsetX, -1), 1) + 1) / 2
+      let y = extent.minY + (extent.height - height) * CGFloat(min(max(offsetY, -1), 1) + 1) / 2
+      extent = CGRect(x: floor(x), y: floor(y), width: width, height: height)
+    }
+    guard extent.width > 0, extent.height > 0 else { return nil }
+    let displayed = CGPoint(
+      x: extent.minX + extent.width * displayX,
+      y: extent.maxY - extent.height * displayY)
+    let sourcePoint = displayed.applying(straight.inverted()).applying(quarter.inverted())
+    let x = (sourcePoint.x - sourceExtent.minX) / sourceExtent.width
+    let y = (sourcePoint.y - sourceExtent.minY) / sourceExtent.height
+    guard x.isFinite, y.isFinite, x >= -0.001, x <= 1.001, y >= -0.001, y <= 1.001 else {
+      return nil
+    }
+    return CGPoint(x: min(max(x, 0), 1), y: min(max(y, 0), 1))
+  }
+
   static func apply(
     to image: CIImage, quarterTurns: Int, straightenDegrees: Double,
     aspect: Int, offsetX: Double, offsetY: Double

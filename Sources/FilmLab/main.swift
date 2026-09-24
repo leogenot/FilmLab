@@ -154,6 +154,7 @@ final class PhotoEditor {
   var highlightLight = 0.0
   var radialLights = [RadialAdjustment()]
   var selectedLocalIndex = 0
+  var placingLocalArea = false
   var development = 0.0
   var grain = 0.0
   var halation = 0.0
@@ -256,6 +257,7 @@ final class PhotoEditor {
       decodedRawTint = saved.rawTint ?? cameraRawTint
       showOriginal = false
       showLocalMask = false
+      placingLocalArea = false
       zoom100 = false
       compareEnabled = false
       comparisonPreview = nil
@@ -600,11 +602,13 @@ final class PhotoEditor {
   func toggleBeforeAfter() {
     compareEnabled = false
     showLocalMask = false
+    placingLocalArea = false
     showOriginal.toggle()
     renderPreview()
   }
 
   func toggleZoom() {
+    placingLocalArea = false
     compareEnabled = false
     zoom100.toggle()
     renderPreview()
@@ -613,6 +617,7 @@ final class PhotoEditor {
   func toggleCompare() {
     compareEnabled.toggle()
     showLocalMask = false
+    placingLocalArea = false
     showOriginal = false
     zoom100 = false
     renderPreview()
@@ -639,12 +644,37 @@ final class PhotoEditor {
   }
 
   func setMaskPreview(_ visible: Bool) {
+    placingLocalArea = false
     showLocalMask = visible
     if visible {
       showOriginal = false
       compareEnabled = false
     }
     renderPreview()
+  }
+
+  func setPlacingLocalArea(_ placing: Bool) {
+    placingLocalArea = placing && source != nil
+    if placingLocalArea {
+      showLocalMask = false
+      showOriginal = false
+      compareEnabled = false
+      zoom100 = false
+      renderPreview()
+    }
+  }
+
+  func placeSelectedLocalArea(displayX: Double, displayY: Double) {
+    guard placingLocalArea, let source,
+      let location = Framing.sourceLocation(
+        displayX: displayX, displayY: displayY, sourceExtent: source.extent,
+        quarterTurns: frameRotation, straightenDegrees: frameStraighten,
+        aspect: frameAspect, offsetX: frameOffsetX, offsetY: frameOffsetY)
+    else { return }
+    radialLights[selectedLocalIndex].centerX = Double(location.x)
+    radialLights[selectedLocalIndex].centerY = Double(location.y)
+    placingLocalArea = false
+    editsChanged()
   }
 
   private func localMaskImage() -> CIImage? {
@@ -897,7 +927,10 @@ struct ContentView: View {
     .onAppear { editor.resumeLastPhoto() }
     .onDisappear { editor.flushEdits() }
     .onChange(of: panel) {
-      if panel != .local && editor.showLocalMask { editor.setMaskPreview(false) }
+      if panel != .local {
+        if editor.showLocalMask { editor.setMaskPreview(false) }
+        editor.setPlacingLocalArea(false)
+      }
     }
     .onChange(of: scenePhase) {
       if scenePhase != .active { editor.flushEdits() }
@@ -986,6 +1019,17 @@ struct ContentView: View {
           .padding(16)
           .zIndex(1)
       }
+      if editor.placingLocalArea {
+        Text("Click the photo to place Area \(editor.selectedLocalIndex + 1)")
+          .font(.caption.weight(.semibold))
+          .padding(9)
+          .background(.ultraThinMaterial)
+          .clipShape(RoundedRectangle(cornerRadius: 7))
+          .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+          .padding(16)
+          .allowsHitTesting(false)
+          .zIndex(1)
+      }
       if let preview = editor.preview {
         if editor.compareEnabled, let original = editor.comparisonPreview {
           GeometryReader { geometry in
@@ -1031,10 +1075,28 @@ struct ContentView: View {
               )
           }
         } else {
-          Image(nsImage: preview)
-            .resizable()
-            .scaledToFit()
-            .padding(24)
+          GeometryReader { geometry in
+            Image(nsImage: preview)
+              .resizable()
+              .scaledToFit()
+              .frame(width: geometry.size.width, height: geometry.size.height)
+              .contentShape(Rectangle())
+              .gesture(
+                SpatialTapGesture().onEnded { tap in
+                  guard editor.placingLocalArea else { return }
+                  let scale = min(
+                    geometry.size.width / preview.size.width,
+                    geometry.size.height / preview.size.height)
+                  let imageWidth = preview.size.width * scale
+                  let imageHeight = preview.size.height * scale
+                  let left = (geometry.size.width - imageWidth) / 2
+                  let top = (geometry.size.height - imageHeight) / 2
+                  editor.placeSelectedLocalArea(
+                    displayX: (tap.location.x - left) / imageWidth,
+                    displayY: (tap.location.y - top) / imageHeight)
+                })
+          }
+          .padding(24)
         }
       } else {
         ContentUnavailableView(
@@ -1170,6 +1232,11 @@ struct ContentView: View {
             Button("Remove area", systemImage: "minus") { editor.removeLocalArea() }
               .disabled(editor.radialLights.count <= 1)
           }
+          Button(
+            editor.placingLocalArea ? "Cancel placement" : "Place on photo",
+            systemImage: "scope"
+          ) { editor.setPlacingLocalArea(!editor.placingLocalArea) }
+          .disabled(editor.preview == nil)
           Toggle(
             "Show mask",
             isOn: Binding(
@@ -1182,7 +1249,7 @@ struct ContentView: View {
           control("Size", value: localBinding(\.radius), range: 0.05...0.8)
           control("Feather", value: localBinding(\.feather), range: 0.05...1)
           Text(
-            "Each area changes scene light before film processing. Show mask is temporary; 0 EV disables the selected area."
+            "Each area changes scene light before film processing. Place it on the photo or use the sliders. Show mask is temporary; 0 EV disables the selected area."
           )
           .font(.caption).foregroundStyle(.secondary)
         case .framing:
