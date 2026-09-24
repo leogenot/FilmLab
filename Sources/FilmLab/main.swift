@@ -79,14 +79,16 @@ final class PhotoEditor {
   var error: String?
   var showOriginal = false
   var zoom100 = false
+  var isRendering = false
+  var isExporting = false
 
   private var source: CIImage?
   private var scopedURL: URL?
   private var saveTask: Task<Void, Never>?
-  private let context = CIContext(options: [
-    .useSoftwareRenderer: false,
-    .workingColorSpace: CGColorSpace(name: CGColorSpace.extendedLinearSRGB)!,
-  ])
+  private var previewTask: Task<Void, Never>?
+  private var renderVersion = 0
+  private let previewRenderer = PreviewRenderer()
+  private let exporter = ImageExporter()
 
   // Scene-linear RGB enters this kernel in the context's extended linear working space.
   // This is a provisional response model, not a measured emulsion profile.
@@ -136,6 +138,8 @@ final class PhotoEditor {
       else {
         throw EditorError.unsupported
       }
+      previewTask?.cancel()
+      renderVersion += 1
       if let scopedURL { scopedURL.stopAccessingSecurityScopedResource() }
       scopedURL = access ? url : nil
       source = image
@@ -286,19 +290,29 @@ final class PhotoEditor {
   }
 
   func renderPreview() {
-    guard let image = showOriginal ? source : developedImage() else { return }
-    let scale = zoom100 ? 1 : min(1, 1800 / max(image.extent.width, image.extent.height))
-    let reduced = image.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
-    guard
-      let cgImage = context.createCGImage(
-        reduced, from: reduced.extent, format: .RGBA8,
-        colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!
-      )
-    else {
-      error = "Could not render this photo."
+    renderVersion += 1
+    let version = renderVersion
+    previewTask?.cancel()
+    guard let image = showOriginal ? source : developedImage() else {
+      isRendering = false
       return
     }
-    preview = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+    isRendering = true
+    let scale = zoom100 ? 1 : min(1, 1800 / max(image.extent.width, image.extent.height))
+    let request = PreviewRequest(image: image, scale: scale, sourceURL: scopedURL)
+    previewTask = Task {
+      do { try await Task.sleep(for: .milliseconds(60)) } catch { return }
+      let result = await previewRenderer.render(request)
+      guard !Task.isCancelled, version == renderVersion else { return }
+      if let result {
+        let image = result.image
+        preview = NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
+        error = nil
+      } else {
+        error = "Could not render this photo."
+      }
+      isRendering = false
+    }
   }
 
   func exportJPEG() {
@@ -308,15 +322,7 @@ final class PhotoEditor {
     panel.nameFieldStringValue =
       (sourceURL?.deletingPathExtension().lastPathComponent ?? "Photo") + "-FilmLab.jpg"
     guard panel.runModal() == .OK, let url = panel.url else { return }
-    let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
-    guard let data = context.jpegRepresentation(of: image, colorSpace: colorSpace, options: [:])
-    else {
-      error = "Could not export this photo."
-      return
-    }
-    do { try data.write(to: url, options: .atomic) } catch {
-      self.error = error.localizedDescription
-    }
+    beginExport(ExportRequest(image: image, url: url, format: .jpeg, sourceURL: scopedURL))
   }
 
   func exportTIFF() {
@@ -326,13 +332,19 @@ final class PhotoEditor {
     panel.nameFieldStringValue =
       (sourceURL?.deletingPathExtension().lastPathComponent ?? "Photo") + "-FilmLab.tiff"
     guard panel.runModal() == .OK, let url = panel.url else { return }
-    do {
-      try context.writeTIFFRepresentation(
-        of: image, to: url, format: .RGBA16,
-        colorSpace: CGColorSpace(name: CGColorSpace.displayP3)!, options: [:]
-      )
-    } catch {
-      self.error = "Could not export TIFF: \(error.localizedDescription)"
+    beginExport(ExportRequest(image: image, url: url, format: .tiff16, sourceURL: scopedURL))
+  }
+
+  private func beginExport(_ request: ExportRequest) {
+    isExporting = true
+    error = nil
+    Task {
+      do {
+        try await exporter.export(request)
+      } catch {
+        self.error = "Could not export photo: \(error.localizedDescription)"
+      }
+      isExporting = false
     }
   }
 
@@ -388,7 +400,7 @@ struct ContentView: View {
         Button("JPEG (sRGB)…") { editor.exportJPEG() }
         Button("16-bit TIFF (Display P3)…") { editor.exportTIFF() }
       }
-      .disabled(editor.preview == nil)
+      .disabled(editor.preview == nil || editor.isExporting)
     }
     .fileImporter(
       isPresented: $showingImporter, allowedContentTypes: [.image, .rawImage],
@@ -456,6 +468,15 @@ struct ContentView: View {
   private var photoCanvas: some View {
     ZStack {
       Color(white: 0.065)
+      if editor.isRendering || editor.isExporting {
+        ProgressView(editor.isExporting ? "Exporting photo…" : "Rendering preview…")
+          .padding(10)
+          .background(.ultraThinMaterial)
+          .clipShape(RoundedRectangle(cornerRadius: 7))
+          .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+          .padding(16)
+          .zIndex(1)
+      }
       if let preview = editor.preview {
         if editor.zoom100 {
           ScrollView([.horizontal, .vertical]) {

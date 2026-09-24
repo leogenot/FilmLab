@@ -38,3 +38,7 @@ Shadow, midtone and highlight hue/strength controls now apply after the film res
 ## Full-resolution inspection and focused editor, 24 September 2026
 
 The app now has a Fit/100% switch. At 100%, it renders the full-resolution image and presents a scrollable pixel-level view for checking grain, edges and halation. The editing UI now uses a restrained dark three-column layout with Film, Develop, Color and Texture workspaces; only the active workspace's controls occupy the inspector. The RAW sample opened and rendered correctly in this layout.
+
+## Responsive rendering and export, 24 September 2026
+
+Preview rendering now runs in a separate actor with a 16-bit half-float extended linear sRGB working buffer. Rapid control changes are debounced and older results are discarded. Full-resolution JPEG and 16-bit Display P3 TIFF exports run in a separate actor with a 32-bit float working buffer, so export does not freeze the editor. Each background job retains access to its source file until it completes. A Sony ARW export was verified at 4672 × 7008 pixels and 16 bits per sample. This verifies the output container and working format, not a measured film response or guaranteed recovery of source detail.

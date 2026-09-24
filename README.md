@@ -9,7 +9,7 @@ A small native macOS photo editor focused on film rendering and color grading.
 - Adds shadow, midtone, and highlight color timing, plus content-dependent grain and highlight-edge halation. These controls default to off.
 - Saves non-destructive edits per source file in `~/Library/Application Support/FilmLab/Edits/` and restores them on reopening.
 - Includes Before/After, Reset Edits, and a scrollable 100% source-pixel inspection mode.
-- Previews edits in sRGB and exports a full-resolution sRGB JPEG or 16-bit Display P3 TIFF.
+- Renders previews asynchronously in sRGB, coalescing rapid control changes so the canvas stays responsive. Exports full-resolution sRGB JPEG or 16-bit Display P3 TIFF in a separate background renderer.
 - Leaves the source photo unchanged.
 
 The current film response is a provisional model in an extended linear sRGB working space. It has toe and shoulder behavior that changes with exposure and development, but it is not a measured film stock or a claim of faithful emulation.
@@ -28,6 +28,6 @@ Open `Package.swift` in Xcode and run the `FilmLab` executable target, or open `
 
 ## Current limits
 
-The film response and texture kernels are provisional and use Core Image’s deprecated text-kernel API. Move them to Metal before a production release. The app currently has one study stock and tonal grading, but no masks, pixel-specific color mixer, or calibrated emulsion data. The 100% view renders the full source and allows scrolling, but very large images increase memory use while inspecting. A tiled preview renderer is a future performance improvement. The TIFF exporter was verified on `LEO00403.ARW` at 4672 × 7008 and 16 bits per sample.
+The film response and texture kernels are provisional and use Core Image’s deprecated text-kernel API. Move them to Metal before a production release. The app currently has one study stock and tonal grading, but no masks, pixel-specific color mixer, or calibrated emulsion data. The 100% view renders the full source and allows scrolling, but very large images increase memory use while inspecting. Preview rendering uses a half-float working buffer; export uses a 32-bit float working buffer before final output conversion. A tiled preview renderer is a future performance improvement. The TIFF exporter was verified on `LEO00403.ARW` at 4672 × 7008 and 16 bits per sample.
 
 The editor uses a three-column dark layout: file and workspace navigation on the left, photo canvas in the center, and one focused control group on the right.
