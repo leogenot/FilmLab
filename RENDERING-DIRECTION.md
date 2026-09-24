@@ -225,3 +225,9 @@ Painted areas now offer Paint and Erase modes. Erase strokes remove selected mas
 ## Export source protection (2026-09-24)
 
 The exporter now rejects an output path that resolves to the open source photo. JPEG already used atomic data writing; TIFF now renders to a sibling temporary file, then moves or replaces it after a successful render. A probe verified that a same-path JPEG request preserves its source bytes, a JPEG output decodes, and a 16-bit TIFF can replace an existing output without leaving a partial destination. In the signed app, the JPEG test photo exported a 5606 × 3737 JPEG and the Sony RAW test photo exported a 3737 × 5606, 16-bit TIFF through the Save panel. These exports check file safety and format, not film-stock accuracy or every filesystem failure mode.
+
+## Negative-density endpoint continuity (2026-09-24)
+
+Beyond the last Portra and Ektar chart sample, the density study now continues the fitted endpoint tangent rather than the final segment's average slope. The neutral-input Metal probe samples intermediate negative density without display color conversion and checks slope continuity on both sides of each upper endpoint. It passes with the new continuation; the prior kernel fails on Ektar's red layer, whose sampled slope jumps from about 0.380 to 0.424 density per log-exposure unit. This removes an artificial highlight transition, while the beyond-chart response remains unmeasured.
+
+The signed app reopened the Sony RAW and JPEG test images and rendered Ektar at roughly +2.12 Shot Exposure. The RAW preview retained visible rock and clothing separation; the JPEG preview reported 44.5% near-white pixels and showed extensive bright-area clipping. Both test edits were restored to zero. This comparison illustrates the existing JPEG highlight limitation; it does not prove stock accuracy or directly quantify the small endpoint change.

@@ -9,6 +9,10 @@ struct RenderingProbe {
       .workingColorSpace: space,
       .workingFormat: CIFormat.RGBAf,
     ])
+    let densityContext = CIContext(options: [
+      .workingColorSpace: NSNull(),
+      .workingFormat: CIFormat.RGBAf,
+    ])
     let negative = FilmKernels.kernel("measuredNegative")!
     let positive = FilmKernels.kernel("portraPositive")!
     let sceneLight = FilmKernels.kernel("shapeSceneLight")!
@@ -132,6 +136,35 @@ struct RenderingProbe {
     precondition(
       abs(shiftedBlue[0] - 0.08) > 0.01 || abs(shiftedBlue[1] - 0.2) > 0.01,
       "Blue mixer hue did not affect blue pixels")
+    func negativeDensity(_ stock: Double, _ logH: Double) -> [Float] {
+      let anchor = stock == 1 ? -1.44 : -0.84
+      let source = patch(0.18)
+      let exposure = (logH - anchor) / log10(2)
+      let density = negative.apply(
+        extent: source.extent, arguments: [source, exposure, 0.0, stock])!
+      var rgba = [Float](repeating: 0, count: 4)
+      rgba.withUnsafeMutableBytes { bytes in
+        densityContext.render(
+          density, toBitmap: bytes.baseAddress!, rowBytes: 16,
+          bounds: CGRect(x: 0, y: 0, width: 1, height: 1), format: .RGBAf,
+          colorSpace: nil)
+      }
+      return Array(rgba.prefix(3))
+    }
+    for (stock, upperEnd) in [(1.0, 0.5), (2.0, 1.0)] {
+      let distance = 0.005
+      let before = negativeDensity(stock, upperEnd - distance)
+      let atEnd = negativeDensity(stock, upperEnd)
+      let after = negativeDensity(stock, upperEnd + distance)
+      for channel in 0..<3 {
+        let slopeBefore = (atEnd[channel] - before[channel]) / Float(distance)
+        let slopeAfter = (after[channel] - atEnd[channel]) / Float(distance)
+        precondition(
+          abs(slopeAfter / slopeBefore - 1) < 0.04,
+          "Stock \(stock) channel \(channel) has a density slope jump: \(before), \(atEnd), \(after); \(slopeBefore), \(slopeAfter)"
+        )
+      }
+    }
     print("Metal film rendering checks passed")
   }
 }

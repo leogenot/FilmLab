@@ -98,8 +98,9 @@ enum FilmKernels {
                                      portraTangent[i], portraTangent[i + 1]);
             }
         }
-        // The measured chart ends at +0.5; continue its last slope without inventing a shoulder.
-        return portraD[8] + (portraD[8] - portraD[7]) * ((logH - 0.5) / 0.5);
+        // Continue the fitted endpoint tangent beyond the published chart.
+        // The extension is provisional, but avoids a slope jump at +0.5.
+        return portraD[8] + portraTangent[8] * (logH - 0.5);
     }
 
     // Kodak E-4046 chart samples: Status M Ektar 100 negative density, R/G/B order.
@@ -131,8 +132,9 @@ enum FilmKernels {
                                      ektarTangent[i], ektarTangent[i + 1]);
             }
         }
-        // Beyond Kodak's plot, continue its final slope without inventing a shoulder.
-        return ektarD[8] + (ektarD[8] - ektarD[7]) * ((logH - 1.0) / 0.5);
+        // Continue the fitted endpoint tangent beyond the published chart.
+        // The extension is provisional, but avoids a slope jump at +1.0.
+        return ektarD[8] + ektarTangent[8] * (logH - 1.0);
     }
     [[stitchable]] float4 measuredNegative(coreimage::sample_t pixel, float ev,
                                             float dev, float stock) {
