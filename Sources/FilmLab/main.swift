@@ -33,6 +33,11 @@ private struct PhotoEdits: Codable, Equatable {
   var shotExposure = 0.0
   var shadowLight = 0.0
   var highlightLight = 0.0
+  var localExposure = 0.0
+  var localCenterX = 0.5
+  var localCenterY = 0.5
+  var localRadius = 0.35
+  var localFeather = 0.5
   var development = 0.0
   var grain = 0.0
   var halation = 0.0
@@ -81,6 +86,11 @@ private struct PhotoEdits: Codable, Equatable {
     shotExposure = try values.decodeIfPresent(Double.self, forKey: .shotExposure) ?? 0
     shadowLight = try values.decodeIfPresent(Double.self, forKey: .shadowLight) ?? 0
     highlightLight = try values.decodeIfPresent(Double.self, forKey: .highlightLight) ?? 0
+    localExposure = try values.decodeIfPresent(Double.self, forKey: .localExposure) ?? 0
+    localCenterX = try values.decodeIfPresent(Double.self, forKey: .localCenterX) ?? 0.5
+    localCenterY = try values.decodeIfPresent(Double.self, forKey: .localCenterY) ?? 0.5
+    localRadius = try values.decodeIfPresent(Double.self, forKey: .localRadius) ?? 0.35
+    localFeather = try values.decodeIfPresent(Double.self, forKey: .localFeather) ?? 0.5
     development = try values.decodeIfPresent(Double.self, forKey: .development) ?? 0
     grain = try values.decodeIfPresent(Double.self, forKey: .grain) ?? 0
     halation = try values.decodeIfPresent(Double.self, forKey: .halation) ?? 0
@@ -130,6 +140,11 @@ final class PhotoEditor {
   var shotExposure = 0.0
   var shadowLight = 0.0
   var highlightLight = 0.0
+  var localExposure = 0.0
+  var localCenterX = 0.5
+  var localCenterY = 0.5
+  var localRadius = 0.35
+  var localFeather = 0.5
   var development = 0.0
   var grain = 0.0
   var halation = 0.0
@@ -335,6 +350,11 @@ final class PhotoEditor {
     shotExposure = saved.shotExposure
     shadowLight = saved.shadowLight
     highlightLight = saved.highlightLight
+    localExposure = saved.localExposure
+    localCenterX = saved.localCenterX
+    localCenterY = saved.localCenterY
+    localRadius = saved.localRadius
+    localFeather = saved.localFeather
     development = saved.development
     grain = saved.grain
     halation = saved.halation
@@ -458,6 +478,11 @@ final class PhotoEditor {
     edits.shotExposure = shotExposure
     edits.shadowLight = shadowLight
     edits.highlightLight = highlightLight
+    edits.localExposure = localExposure
+    edits.localCenterX = localCenterX
+    edits.localCenterY = localCenterY
+    edits.localRadius = localRadius
+    edits.localFeather = localFeather
     edits.development = development
     edits.grain = grain
     edits.halation = halation
@@ -537,6 +562,11 @@ final class PhotoEditor {
     shotExposure = defaults.shotExposure
     shadowLight = defaults.shadowLight
     highlightLight = defaults.highlightLight
+    localExposure = defaults.localExposure
+    localCenterX = defaults.localCenterX
+    localCenterY = defaults.localCenterY
+    localRadius = defaults.localRadius
+    localFeather = defaults.localFeather
     development = defaults.development
     grain = defaults.grain
     halation = defaults.halation
@@ -597,6 +627,9 @@ final class PhotoEditor {
       }
       image = shaped
     }
+    image = LocalExposure.apply(
+      to: image, ev: localExposure, centerX: localCenterX, centerY: localCenterY,
+      radius: localRadius, feather: localFeather)
     if stockIndex == 1 || stockIndex == 2 {
       guard let measuredNegativeKernel,
         let portraPositiveKernel,
@@ -741,6 +774,7 @@ private enum EditorPanel: String, CaseIterable, Identifiable {
   case film = "Film"
   case develop = "Develop"
   case color = "Color"
+  case local = "Local"
   case texture = "Texture"
   case framing = "Framing"
 
@@ -750,6 +784,7 @@ private enum EditorPanel: String, CaseIterable, Identifiable {
     case .film: "camera.filters"
     case .develop: "slider.horizontal.3"
     case .color: "circle.lefthalf.filled"
+    case .local: "circle.dotted.circle"
     case .texture: "circle.hexagongrid"
     case .framing: "crop.rotate"
     }
@@ -821,11 +856,17 @@ struct ContentView: View {
     .onChange(of: editor.filmAmount) { editor.editsChanged() }
     .onChange(of: editor.stockIndex) { editor.editsChanged() }
     .onChange(of: editor.enduraPaperTone) { editor.editsChanged() }
+    .onChange(of: editor.premierPaperTone) { editor.editsChanged() }
     .onChange(of: editor.paperStrength) { editor.editsChanged() }
     .onChange(of: editor.paperExposure) { editor.editsChanged() }
     .onChange(of: editor.shotExposure) { editor.editsChanged() }
     .onChange(of: editor.shadowLight) { editor.editsChanged() }
     .onChange(of: editor.highlightLight) { editor.editsChanged() }
+    .onChange(of: editor.localExposure) { editor.editsChanged() }
+    .onChange(of: editor.localCenterX) { editor.editsChanged() }
+    .onChange(of: editor.localCenterY) { editor.editsChanged() }
+    .onChange(of: editor.localRadius) { editor.editsChanged() }
+    .onChange(of: editor.localFeather) { editor.editsChanged() }
     .onChange(of: editor.development) { editor.editsChanged() }
     .onChange(of: editor.grain) { editor.editsChanged() }
     .onChange(of: editor.halation) { editor.editsChanged() }
@@ -1061,6 +1102,17 @@ struct ContentView: View {
           control("Color range", value: $editor.selectiveRange, range: 10...90)
           control("Hue shift", value: $editor.selectiveShift, range: -45...45)
           control("Saturation", value: $editor.selectiveSaturation, range: -1...1)
+        case .local:
+          Text("Radial light").font(.headline)
+          control("Exposure (EV)", value: $editor.localExposure, range: -2...2)
+          control("Horizontal center", value: $editor.localCenterX, range: 0...1)
+          control("Vertical center", value: $editor.localCenterY, range: 0...1)
+          control("Size", value: $editor.localRadius, range: 0.05...0.8)
+          control("Feather", value: $editor.localFeather, range: 0.05...1)
+          Text(
+            "Adjusts scene light in an elliptical area before film processing. The center is relative to the unrotated photo; 0 EV disables it."
+          )
+          .font(.caption).foregroundStyle(.secondary)
         case .framing:
           HStack {
             Button("Rotate left", systemImage: "rotate.left") { editor.rotateFrame(-1) }
