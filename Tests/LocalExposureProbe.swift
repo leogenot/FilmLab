@@ -43,6 +43,7 @@ struct LocalExposureProbe {
     let legacyStroke = try! JSONDecoder().decode(
       BrushStroke.self, from: Data(#"{"points":[{"x":0.2,"y":0.7}]}"#.utf8))
     precondition(legacyStroke.size == 0.03, "Earlier painted strokes did not decode")
+    precondition(!legacyStroke.erasing, "Earlier painted strokes must remain additive")
     let painted = LocalExposure.mask(
       for: source, centerX: 0.5, centerY: 0.5, radius: 0.35,
       feather: 0.2, shape: 2, strokes: [brush])!
@@ -54,6 +55,15 @@ struct LocalExposureProbe {
       abs(red(resizedTool, 20, 73) - red(painted, 20, 73)) < 0.002,
       "Changing the brush tool resized an existing stroke")
     precondition(red(painted, 80, 20) < 0.01, "Painted mask spills into untouched area")
+    let erased = LocalExposure.mask(
+      for: source, centerX: 0.5, centerY: 0.5, radius: 0.35,
+      feather: 0, shape: 2,
+      strokes: [
+        brush,
+        BrushStroke(points: [BrushPoint(x: 0.2, y: 0.7)], size: 0.03, erasing: true),
+      ])!
+    precondition(red(erased, 20, 70) < 0.01, "Eraser did not clear the painted point")
+    precondition(red(erased, 35, 70) > 0.95, "Eraser cleared the rest of the stroke")
     let brushBright = LocalExposure.apply(
       to: source, ev: 1, centerX: 0.5, centerY: 0.5, radius: 0.35,
       feather: 0.2, shape: 2, strokes: [brush])

@@ -72,6 +72,8 @@ enum LocalExposure {
       context.setLineCap(.round)
       context.setLineJoin(.round)
       for stroke in strokes where !stroke.points.isEmpty {
+        context.setStrokeColor(gray: stroke.erasing ? 0 : 1, alpha: 1)
+        context.setFillColor(gray: stroke.erasing ? 0 : 1, alpha: 1)
         let diameter = min(max(stroke.size, 0.003), 0.15) * Double(min(width, height))
         context.setLineWidth(diameter)
         let points = stroke.points.map {

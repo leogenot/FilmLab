@@ -158,6 +158,7 @@ final class PhotoEditor {
   var selectedLocalIndex = 0
   var placingLocalArea = false
   var paintingLocalArea = false
+  var erasingLocalArea = false
   var development = 0.0
   var grain = 0.0
   var halation = 0.0
@@ -284,6 +285,7 @@ final class PhotoEditor {
         showLocalMask = false
         placingLocalArea = false
         paintingLocalArea = false
+        erasingLocalArea = false
         showCropBounds = false
         zoom100 = false
         compareEnabled = false
@@ -552,6 +554,7 @@ final class PhotoEditor {
     showLocalMask = false
     placingLocalArea = false
     paintingLocalArea = false
+    erasingLocalArea = false
     showOriginal = false
     compareEnabled = false
     editsChanged()
@@ -783,7 +786,9 @@ final class PhotoEditor {
     }
     guard !points.isEmpty else { return }
     radialLights[selectedLocalIndex].strokes.append(
-      BrushStroke(points: points, size: radialLights[selectedLocalIndex].brushSize))
+      BrushStroke(
+        points: points, size: radialLights[selectedLocalIndex].brushSize,
+        erasing: erasingLocalArea))
     editsChanged()
   }
 
@@ -1181,15 +1186,17 @@ struct ContentView: View {
         .zIndex(1)
       }
       if editor.paintingLocalArea {
-        Text("Drag on the photo to paint Area \(editor.selectedLocalIndex + 1)")
-          .font(.caption.weight(.semibold))
-          .padding(9)
-          .background(.ultraThinMaterial)
-          .clipShape(RoundedRectangle(cornerRadius: 7))
-          .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-          .padding(16)
-          .allowsHitTesting(false)
-          .zIndex(1)
+        Text(
+          "Drag on the photo to \(editor.erasingLocalArea ? "erase" : "paint") Area \(editor.selectedLocalIndex + 1)"
+        )
+        .font(.caption.weight(.semibold))
+        .padding(9)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 7))
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .padding(16)
+        .allowsHitTesting(false)
+        .zIndex(1)
       }
       if editor.placingLocalArea {
         Text("Click the photo to place Area \(editor.selectedLocalIndex + 1)")
@@ -1294,7 +1301,7 @@ struct ContentView: View {
                     path.addLines(paintDragPoints)
                   }
                   .stroke(
-                    .white.opacity(0.85),
+                    editor.erasingLocalArea ? .red.opacity(0.85) : .white.opacity(0.85),
                     style: StrokeStyle(
                       lineWidth: max(
                         2,
@@ -1489,13 +1496,18 @@ struct ContentView: View {
           }
           if editor.radialLights[editor.selectedLocalIndex].shape == 2 {
             HStack {
-              Button(editor.paintingLocalArea ? "Stop painting" : "Paint on photo") {
+              Button(editor.paintingLocalArea ? "Stop brushing" : "Brush on photo") {
                 editor.setPaintingLocalArea(!editor.paintingLocalArea)
               }
               .disabled(editor.preview == nil)
               Button("Clear strokes") { editor.clearPaint() }
                 .disabled(editor.radialLights[editor.selectedLocalIndex].strokes.isEmpty)
             }
+            Picker("Brush mode", selection: $editor.erasingLocalArea) {
+              Text("Paint").tag(false)
+              Text("Erase").tag(true)
+            }
+            .pickerStyle(.segmented)
           } else {
             Button(
               editor.placingLocalArea ? "Cancel placement" : "Place on photo",

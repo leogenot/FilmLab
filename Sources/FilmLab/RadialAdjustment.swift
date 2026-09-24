@@ -6,16 +6,19 @@ struct BrushPoint: Codable, Equatable {
 struct BrushStroke: Codable, Equatable {
   var points: [BrushPoint]
   var size: Double
+  var erasing: Bool
 
-  init(points: [BrushPoint], size: Double = 0.03) {
+  init(points: [BrushPoint], size: Double = 0.03, erasing: Bool = false) {
     self.points = points
     self.size = size
+    self.erasing = erasing
   }
 
   init(from decoder: Decoder) throws {
     let values = try decoder.container(keyedBy: CodingKeys.self)
     points = try values.decode([BrushPoint].self, forKey: .points)
     size = try values.decodeIfPresent(Double.self, forKey: .size) ?? 0.03
+    erasing = try values.decodeIfPresent(Bool.self, forKey: .erasing) ?? false
   }
 }
 
