@@ -23,7 +23,7 @@ private struct PhotoEdits: Codable {
   var contrast = 1.0
   var saturation = 1.0
   var warmth = 0.0
-  var filmAmount = 0.7
+  var filmAmount = 1.0
   var shotExposure = 0.0
   var development = 0.0
   var grain = 0.0
@@ -50,7 +50,7 @@ private struct PhotoEdits: Codable {
     contrast = try values.decodeIfPresent(Double.self, forKey: .contrast) ?? 1
     saturation = try values.decodeIfPresent(Double.self, forKey: .saturation) ?? 1
     warmth = try values.decodeIfPresent(Double.self, forKey: .warmth) ?? 0
-    filmAmount = try values.decodeIfPresent(Double.self, forKey: .filmAmount) ?? 0.7
+    filmAmount = try values.decodeIfPresent(Double.self, forKey: .filmAmount) ?? 1.0
     shotExposure = try values.decodeIfPresent(Double.self, forKey: .shotExposure) ?? 0
     development = try values.decodeIfPresent(Double.self, forKey: .development) ?? 0
     grain = try values.decodeIfPresent(Double.self, forKey: .grain) ?? 0
@@ -83,7 +83,7 @@ final class PhotoEditor {
   var contrast = 1.0
   var saturation = 1.0
   var warmth = 0.0
-  var filmAmount = 0.7
+  var filmAmount = 1.0
   var shotExposure = 0.0
   var development = 0.0
   var grain = 0.0

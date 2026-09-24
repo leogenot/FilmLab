@@ -70,3 +70,13 @@ Develop now shows the RAW decoder’s camera temperature and tint as editable, p
 ## RAW control responsiveness, 24 September 2026
 
 RAW decoder changes are coalesced for 90 milliseconds before rebuilding the source image. This prevents each intermediate slider value from triggering its own decode. The first revision cancelled the initial preview while restoring camera defaults; that cancellation ordering was corrected. Reopening the Sony RAW now shows the image and histogram, and three rapid temperature changes resolve to the final 7407 K preview. The test edit was reset.
+
+## Preview/export parity and stock strength, 24 September 2026
+
+A direct RAW render probe compared the current half-float preview context with the float export context at -2, 0 and +2 EV. Every output channel differed by at most one 8-bit level at a 1000-pixel preview size. A separate full-resolution JPEG round-trip differed from a direct preview by a mean of 0.40 levels at 0 EV and 0.54 at +2 EV; the 95th percentile was one and two levels respectively. JPEG compression and resizing account for the remaining difference. These probes cover the stock response, not every optional grading and texture combination.
+
+The prior default Stock amount of 0.7 mixed 30% linear exposure back into the shoulder. At +2 EV, the RAW comparison showed visibly harsher rock highlights and more blown white than full stock strength. New photos and Reset Edits now default to 1.0; stored edits with an explicit amount remain unchanged. This improves the film response’s control of highlights, though the provisional stock still needs measured calibration.
+
+## JPEG export quality, 24 September 2026
+
+JPEG export now explicitly requests 0.95 lossy compression quality. A full-resolution Sony RAW render with visible grain measured 8.3 MB at Core Image’s default quality and 13.2 MB at 0.95. The higher-quality default preserves more fine texture for the editor’s primary delivery format, at the cost of larger files. TIFF remains the lossless high-bit-depth option.

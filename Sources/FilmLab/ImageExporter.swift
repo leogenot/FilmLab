@@ -1,5 +1,6 @@
 import CoreImage
 import Foundation
+import ImageIO
 
 enum ExportFormat: Sendable {
   case jpeg
@@ -25,10 +26,12 @@ actor ImageExporter {
     defer { if accessing { request.sourceURL?.stopAccessingSecurityScopedResource() } }
     switch request.format {
     case .jpeg:
+      let quality = CIImageRepresentationOption(
+        rawValue: kCGImageDestinationLossyCompressionQuality as String)
       guard
         let data = context.jpegRepresentation(
           of: request.image,
-          colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!, options: [:]
+          colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!, options: [quality: 0.95]
         )
       else {
         throw ExportError.renderFailed
