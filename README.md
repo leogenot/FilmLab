@@ -5,7 +5,7 @@ A small native macOS photo editor focused on film rendering and color grading.
 ## Current prototype
 
 - Opens JPEG and RAW formats supported by the Mac's Core Image decoder, identifying RAW through the file's ImageIO type. Verified with a Sony ILCE-7M4 ARW at 4672 × 7008 pixels.
-- Provides RAW white balance, exposure correction, contrast, saturation, creative warmth, an optional flatter RAW decode, plus Shot Exposure, Development and Amount for an exposure-dependent film response. The Film workspace offers the original study stock and an experimental Portra 400 density study based on Kodak’s published negative curves, with an optional Endura paper tone stage.
+- Provides RAW white balance, exposure correction, contrast, saturation, creative warmth, plus Shot Exposure, Development and Amount for an exposure-dependent film response. New RAW imports default to a linear decoder response with its global and shadow tone curves disabled; the decoder-rendered mode remains available. The Film workspace offers the original study stock and an experimental Portra 400 density study based on Kodak’s published negative curves, with an optional Endura paper response stage.
 - Adds shadow, midtone, and highlight color timing, a hue-range selective color adjustment, plus content-dependent grain and highlight-edge halation. These controls default to off.
 - Saves non-destructive edits per source file in `~/Library/Application Support/FilmLab/Edits/` and restores them on reopening.
 - Includes an output luminance histogram, Before/After, a draggable split comparison, Reset Edits, and a scrollable 100% source-pixel inspection mode.
@@ -13,6 +13,8 @@ A small native macOS photo editor focused on film rendering and color grading.
 - Leaves the source photo unchanged.
 
 The original study stock is a provisional response model. The Portra density study uses approximate samples from Kodak’s published negative-density chart, followed by a provisional balanced positive transform. Its optional paper stage blends the provisional positive with negative density mapped through approximate red, green and blue curves from Kodak’s Portra Endura paper sheet. Paper Exposure controls the paper’s light exposure, and Paper Strength controls the blend; existing edits default to 0 EV and 50%. This is an exploratory paper color response rather than calibrated color-paper reproduction. The spectral and print/scan stages remain incomplete.
+
+Existing saved RAW edits keep their chosen decoder mode. Reset Edits returns a RAW to linear input. JPEGs remain tagged-display images converted into the extended-linear working space; lost highlight detail or an unknown camera JPEG tone curve cannot be recovered from them.
 
 ## Run
 

@@ -50,6 +50,13 @@ private struct PhotoEdits: Codable {
 
   init() {}
 
+  static func defaults(forRAW isRAW: Bool) -> PhotoEdits {
+    var edits = PhotoEdits()
+    edits.filmAmount = isRAW ? 1.0 : 0.7
+    edits.flatRAW = isRAW
+    return edits
+  }
+
   init(from decoder: Decoder) throws {
     let values = try decoder.container(keyedBy: CodingKeys.self)
     exposure = try values.decodeIfPresent(Double.self, forKey: .exposure) ?? 0
@@ -212,9 +219,7 @@ final class PhotoEditor {
     {
       return saved
     }
-    var defaults = PhotoEdits()
-    defaults.filmAmount = isRAW ? 1.0 : 0.7
-    return defaults
+    return PhotoEdits.defaults(forRAW: isRAW)
   }
 
   private func isRAWFile(_ url: URL) -> Bool {
@@ -399,8 +404,7 @@ final class PhotoEditor {
   }
 
   func resetEdits() {
-    var defaults = PhotoEdits()
-    defaults.filmAmount = isRAWSource ? 1.0 : 0.7
+    let defaults = PhotoEdits.defaults(forRAW: isRAWSource)
     exposure = defaults.exposure
     contrast = defaults.contrast
     saturation = defaults.saturation
@@ -829,8 +833,8 @@ struct ContentView: View {
             if editor.rawHighlightRecoverySupported {
               Toggle("Highlight recovery", isOn: $editor.rawHighlightRecovery)
             }
-            Toggle("Flat RAW input", isOn: $editor.flatRAW)
-            Text("Removes the decoder's global and shadow tone boosts before film processing.")
+            Toggle("Linear RAW input", isOn: $editor.flatRAW)
+            Text("Removes the decoder's global and shadow tone curves before film processing.")
               .font(.caption).foregroundStyle(.secondary)
             Divider()
           }
