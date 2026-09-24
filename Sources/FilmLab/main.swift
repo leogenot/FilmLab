@@ -45,6 +45,7 @@ private struct PhotoEdits: Codable, Equatable {
   var selectiveRange = 35.0
   var selectiveShift = 0.0
   var selectiveSaturation = 0.0
+  var mixer = Array(repeating: ColorMix(), count: 8)
   var frameRotation = 0
   var frameAspect = 0
   var frameOffsetX = 0.0
@@ -90,6 +91,8 @@ private struct PhotoEdits: Codable, Equatable {
     selectiveRange = try values.decodeIfPresent(Double.self, forKey: .selectiveRange) ?? 35
     selectiveShift = try values.decodeIfPresent(Double.self, forKey: .selectiveShift) ?? 0
     selectiveSaturation = try values.decodeIfPresent(Double.self, forKey: .selectiveSaturation) ?? 0
+    let savedMixer = try values.decodeIfPresent([ColorMix].self, forKey: .mixer) ?? []
+    mixer = Array((savedMixer + Array(repeating: ColorMix(), count: 8)).prefix(8))
     frameRotation = try values.decodeIfPresent(Int.self, forKey: .frameRotation) ?? 0
     frameAspect = try values.decodeIfPresent(Int.self, forKey: .frameAspect) ?? 0
     frameOffsetX = try values.decodeIfPresent(Double.self, forKey: .frameOffsetX) ?? 0
@@ -135,6 +138,7 @@ final class PhotoEditor {
   var selectiveRange = 35.0
   var selectiveShift = 0.0
   var selectiveSaturation = 0.0
+  var mixer = Array(repeating: ColorMix(), count: 8)
   var frameRotation = 0
   var frameAspect = 0
   var frameOffsetX = 0.0
@@ -337,6 +341,7 @@ final class PhotoEditor {
     selectiveRange = saved.selectiveRange
     selectiveShift = saved.selectiveShift
     selectiveSaturation = saved.selectiveSaturation
+    mixer = saved.mixer
     frameRotation = saved.frameRotation
     frameAspect = saved.frameAspect
     frameOffsetX = saved.frameOffsetX
@@ -457,6 +462,7 @@ final class PhotoEditor {
     edits.selectiveRange = selectiveRange
     edits.selectiveShift = selectiveShift
     edits.selectiveSaturation = selectiveSaturation
+    edits.mixer = mixer
     edits.frameRotation = frameRotation
     edits.frameAspect = frameAspect
     edits.frameOffsetX = frameOffsetX
@@ -533,6 +539,7 @@ final class PhotoEditor {
     selectiveRange = defaults.selectiveRange
     selectiveShift = defaults.selectiveShift
     selectiveSaturation = defaults.selectiveSaturation
+    mixer = defaults.mixer
     frameRotation = defaults.frameRotation
     frameAspect = defaults.frameAspect
     frameOffsetX = defaults.frameOffsetX
@@ -629,7 +636,8 @@ final class PhotoEditor {
       to: graded, targetHue: selectiveHue, range: selectiveRange,
       hueShift: selectiveShift, saturation: selectiveSaturation
     )
-    return framedImage(FilmEffects.apply(to: selected, grain: grain, halation: halation))
+    let mixed = ColorMixer.apply(to: selected, adjustments: mixer)
+    return framedImage(FilmEffects.apply(to: mixed, grain: grain, halation: halation))
   }
 
   private func framedImage(_ image: CIImage) -> CIImage {
@@ -758,6 +766,7 @@ struct ContentView: View {
   @Bindable var editor: PhotoEditor
   @State private var showingImporter = false
   @State private var panel: EditorPanel = .film
+  @State private var selectedColorBand = 0
   @Environment(\.displayScale) private var displayScale
   @Environment(\.scenePhase) private var scenePhase
 
@@ -1022,6 +1031,19 @@ struct ContentView: View {
           control("Saturation", value: $editor.saturation, range: 0...1.5)
           control("Warmth", value: $editor.warmth, range: -1...1)
         case .color:
+          Text("Color mixer").font(.headline)
+          Picker("Color family", selection: $selectedColorBand) {
+            ForEach(0..<ColorMixer.names.count, id: \.self) { index in
+              Text(ColorMixer.names[index]).tag(index)
+            }
+          }
+          .pickerStyle(.menu)
+          control("Hue shift", value: mixerBinding(\.hue), range: -30...30)
+          control("Saturation", value: mixerBinding(\.saturation), range: -1...1)
+          control("Luminance (EV)", value: mixerBinding(\.luminance), range: -1...1)
+          Text("The eight soft color ranges use the source pixel's hue.")
+            .font(.caption).foregroundStyle(.secondary)
+          Divider()
           Text("Shadows").font(.headline)
           control("Hue", value: $editor.shadowHue, range: 0...360)
           control("Strength", value: $editor.shadowStrength, range: 0...1)
@@ -1073,6 +1095,16 @@ struct ContentView: View {
     }
     .frame(width: 310)
     .background(Color(white: 0.11))
+  }
+
+  private func mixerBinding(_ keyPath: WritableKeyPath<ColorMix, Double>) -> Binding<Double> {
+    Binding(
+      get: { editor.mixer[selectedColorBand][keyPath: keyPath] },
+      set: { value in
+        editor.mixer[selectedColorBand][keyPath: keyPath] = value
+        editor.editsChanged()
+      }
+    )
   }
 
   private func control(

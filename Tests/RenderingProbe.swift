@@ -74,6 +74,27 @@ struct RenderingProbe {
     precondition(
       abs(shaped(0.18, 0, -1) - 0.18) < 0.001,
       "Highlight light shifted reference gray")
+    var bands = Array(repeating: ColorMix(), count: 8)
+    bands[0].saturation = -0.5
+    func colorPatch(_ red: Double, _ green: Double, _ blue: Double) -> CIImage {
+      CIImage(color: CIColor(red: red, green: green, blue: blue, colorSpace: space)!)
+        .cropped(to: CGRect(x: 0, y: 0, width: 1, height: 1))
+    }
+    let redPatch = colorPatch(0.8, 0.1, 0.08)
+    let bluePatch = colorPatch(0.08, 0.2, 0.8)
+    let grayPatch = patch(0.18)
+    let redMixed = channels(ColorMixer.apply(to: redPatch, adjustments: bands))
+    let blueMixed = channels(ColorMixer.apply(to: bluePatch, adjustments: bands))
+    let grayMixed = channels(ColorMixer.apply(to: grayPatch, adjustments: bands))
+    precondition(
+      redMixed[0] - redMixed[2] < 0.8 - 0.08,
+      "Red mixer saturation did not affect red pixels")
+    precondition(
+      abs(blueMixed[0] - 0.08) < 0.003 && abs(blueMixed[2] - 0.8) < 0.003,
+      "Red mixer spilled into blue pixels")
+    precondition(
+      grayMixed.allSatisfy { abs($0 - 0.18) < 0.001 },
+      "Color mixer shifted neutral pixels")
     print("Metal film rendering checks passed")
   }
 }
