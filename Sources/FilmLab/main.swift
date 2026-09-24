@@ -25,6 +25,7 @@ private struct PhotoEdits: Codable {
   var saturation = 1.0
   var warmth = 0.0
   var filmAmount = 1.0
+  var stockIndex = 0
   var shotExposure = 0.0
   var development = 0.0
   var grain = 0.0
@@ -53,6 +54,7 @@ private struct PhotoEdits: Codable {
     saturation = try values.decodeIfPresent(Double.self, forKey: .saturation) ?? 1
     warmth = try values.decodeIfPresent(Double.self, forKey: .warmth) ?? 0
     filmAmount = try values.decodeIfPresent(Double.self, forKey: .filmAmount) ?? 1.0
+    stockIndex = try values.decodeIfPresent(Int.self, forKey: .stockIndex) ?? 0
     shotExposure = try values.decodeIfPresent(Double.self, forKey: .shotExposure) ?? 0
     development = try values.decodeIfPresent(Double.self, forKey: .development) ?? 0
     grain = try values.decodeIfPresent(Double.self, forKey: .grain) ?? 0
@@ -88,6 +90,7 @@ final class PhotoEditor {
   var saturation = 1.0
   var warmth = 0.0
   var filmAmount = 1.0
+  var stockIndex = 0
   var shotExposure = 0.0
   var development = 0.0
   var grain = 0.0
@@ -134,6 +137,8 @@ final class PhotoEditor {
   // Scene-linear RGB enters this kernel in the context's extended linear working space.
   // This is a provisional response model, not a measured emulsion profile.
   private let filmKernel = FilmKernels.kernel("filmResponse")
+  private let portraNegativeKernel = FilmKernels.kernel("portraNegative")
+  private let portraPositiveKernel = FilmKernels.kernel("portraPositive")
 
   func open(_ url: URL) {
     rawDecodeTask?.cancel()
@@ -250,6 +255,7 @@ final class PhotoEditor {
     saturation = saved.saturation
     warmth = saved.warmth
     filmAmount = saved.filmAmount
+    stockIndex = saved.stockIndex
     shotExposure = saved.shotExposure
     development = saved.development
     grain = saved.grain
@@ -345,6 +351,7 @@ final class PhotoEditor {
     edits.saturation = saturation
     edits.warmth = warmth
     edits.filmAmount = filmAmount
+    edits.stockIndex = stockIndex
     edits.shotExposure = shotExposure
     edits.development = development
     edits.grain = grain
@@ -384,6 +391,7 @@ final class PhotoEditor {
     saturation = defaults.saturation
     warmth = defaults.warmth
     filmAmount = defaults.filmAmount
+    stockIndex = defaults.stockIndex
     shotExposure = defaults.shotExposure
     development = defaults.development
     grain = defaults.grain
@@ -428,16 +436,29 @@ final class PhotoEditor {
 
   private func developedImage() -> CIImage? {
     guard var image = source else { return nil }
-    if let filmKernel,
+    if stockIndex == 1 {
+      guard let portraNegativeKernel, let portraPositiveKernel,
+        let negative = portraNegativeKernel.apply(
+          extent: image.extent, arguments: [image, shotExposure, development]
+        ),
+        let positive = portraPositiveKernel.apply(
+          extent: image.extent, arguments: [negative, image, shotExposure, filmAmount]
+        )
+      else {
+        error = "The Portra density study could not be loaded."
+        return nil
+      }
+      image = positive
+    } else if let filmKernel,
       let film = filmKernel.apply(
         extent: image.extent,
-        arguments: [
-          image, shotExposure, development, filmAmount,
-        ])
+        arguments: [image, shotExposure, development, filmAmount]
+      )
     {
       image = film
     } else {
       error = "The film response could not be loaded."
+      return nil
     }
     image = image.applyingFilter("CIExposureAdjust", parameters: [kCIInputEVKey: exposure])
     image = image.applyingFilter(
@@ -603,6 +624,7 @@ struct ContentView: View {
     .onChange(of: editor.saturation) { editor.editsChanged() }
     .onChange(of: editor.warmth) { editor.editsChanged() }
     .onChange(of: editor.filmAmount) { editor.editsChanged() }
+    .onChange(of: editor.stockIndex) { editor.editsChanged() }
     .onChange(of: editor.shotExposure) { editor.editsChanged() }
     .onChange(of: editor.development) { editor.editsChanged() }
     .onChange(of: editor.grain) { editor.editsChanged() }
@@ -745,11 +767,20 @@ struct ContentView: View {
         }
         switch panel {
         case .film:
+          Picker("Stock", selection: $editor.stockIndex) {
+            Text("Study stock").tag(0)
+            Text("Portra 400 density study").tag(1)
+          }
+          .pickerStyle(.menu)
           control("Shot exposure (EV)", value: $editor.shotExposure, range: -3...3)
           control("Development", value: $editor.development, range: -2...2)
           control("Stock amount", value: $editor.filmAmount, range: 0...1)
-          Text("Exposure-dependent study stock. Film measurements will replace this model.")
-            .font(.caption).foregroundStyle(.secondary)
+          Text(
+            editor.stockIndex == 1
+              ? "Kodak negative-density curves with provisional positive rendering."
+              : "Exposure-dependent study stock. Film measurements will replace this model."
+          )
+          .font(.caption).foregroundStyle(.secondary)
         case .develop:
           if editor.isRAWSource {
             Text("RAW white balance").font(.headline)

@@ -46,6 +46,51 @@ enum FilmKernels {
                   return float4(mix(rgb * exp2(ev), film, amount), pixel.a);
               }
 
+    // Kodak E-4050 chart samples: Status M negative density, stored in R/G/B order.
+    constant float portraH[9] = {-3.4, -3.0, -2.5, -2.0, -1.5, -1.0, -0.5, 0.0, 0.5};
+    constant float3 portraD[9] = {
+        float3(0.219, 0.648, 0.863), float3(0.234, 0.659, 0.893),
+        float3(0.341, 0.780, 1.098), float3(0.595, 1.054, 1.410),
+        float3(0.859, 1.332, 1.727), float3(1.127, 1.610, 2.044),
+        float3(1.405, 1.883, 2.361), float3(1.688, 2.156, 2.683),
+        float3(1.980, 2.429, 3.015)
+    };
+    inline float3 portraDensityAt(float logH) {
+        if (logH <= portraH[0]) return portraD[0];
+        for (int i = 0; i < 8; i++) {
+            if (logH <= portraH[i + 1]) {
+                float t = (logH - portraH[i]) / (portraH[i + 1] - portraH[i]);
+                return mix(portraD[i], portraD[i + 1], t);
+            }
+        }
+        // The measured chart ends at +0.5; continue its last slope without inventing a shoulder.
+        return portraD[8] + (portraD[8] - portraD[7]) * ((logH - 0.5) / 0.5);
+    }
+    [[stitchable]] float4 portraNegative(coreimage::sample_t pixel, float ev, float dev) {
+        float3 light = max(pixel.rgb, float3(0.000001));
+        float3 logH = log10(light / 0.18) + float3(-1.44 + ev * 0.30103);
+        float3 density = float3(
+            portraDensityAt(logH.r).r,
+            portraDensityAt(logH.g).g,
+            portraDensityAt(logH.b).b
+        );
+        float3 reference = portraDensityAt(-1.44);
+        // Development behavior is provisional; the published chart gives one process condition.
+        density = reference + (density - reference) * (1.0 + dev * 0.10);
+        return float4(density, pixel.a);
+    }
+    [[stitchable]] float4 portraPositive(coreimage::sample_t negative,
+                                          coreimage::sample_t original,
+                                          float ev, float amount) {
+        float3 reference = portraDensityAt(-1.44);
+        // Provisional balanced print/scan transform; 0.18 remains 0.18 at the reference.
+        float3 linear = 0.18 * exp2(clamp((negative.rgb - reference) * (0.8 / 0.17),
+                                          float3(-20.0), float3(20.0)));
+        float3 positive = 1.08 * linear / (linear + 0.9);
+        return float4(mix(max(original.rgb, float3(0.0)) * exp2(ev),
+                          positive, amount), original.a);
+    }
+
     [[stitchable]] float4 grade(coreimage::sample_t pixel,
                                 float4 shadowColor, float shadowStrength,
                                 float4 midColor, float midStrength,
