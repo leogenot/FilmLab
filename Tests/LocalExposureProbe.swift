@@ -35,6 +35,16 @@ struct LocalExposureProbe {
       to: source, ev: -1, centerX: 0.8, centerY: 0.2, radius: 0.2, feather: 0.5)
     precondition(red(moved, 80, 20) < 0.1, "Moved center did not darken")
     precondition(abs(red(moved, 20, 80) - 0.18) < 0.002, "Moved mask spilled")
+    let inverted = LocalExposure.apply(
+      to: source, ev: -1, centerX: 0.5, centerY: 0.5,
+      radius: 0.25, feather: 0.5, inverted: true)
+    precondition(abs(red(inverted, 50, 50) - 0.18) < 0.002, "Inversion changed the center")
+    precondition(red(inverted, 0, 0) < 0.1, "Inversion did not darken the edge")
+    let layered = LocalExposure.apply(
+      to: bright, ev: -1, centerX: 0.5, centerY: 0.5,
+      radius: 0.25, feather: 0.5, inverted: true)
+    precondition(red(layered, 50, 50) > 0.35, "Second area erased first center")
+    precondition(red(layered, 0, 0) < 0.1, "Second area did not affect edge")
     print("Local scene-light checks passed")
   }
 }

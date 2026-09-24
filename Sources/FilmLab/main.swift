@@ -38,6 +38,7 @@ private struct PhotoEdits: Codable, Equatable {
   var localCenterY = 0.5
   var localRadius = 0.35
   var localFeather = 0.5
+  var radialLights = [RadialAdjustment()]
   var development = 0.0
   var grain = 0.0
   var halation = 0.0
@@ -91,6 +92,17 @@ private struct PhotoEdits: Codable, Equatable {
     localCenterY = try values.decodeIfPresent(Double.self, forKey: .localCenterY) ?? 0.5
     localRadius = try values.decodeIfPresent(Double.self, forKey: .localRadius) ?? 0.35
     localFeather = try values.decodeIfPresent(Double.self, forKey: .localFeather) ?? 0.5
+    if let saved = try values.decodeIfPresent([RadialAdjustment].self, forKey: .radialLights),
+      !saved.isEmpty
+    {
+      radialLights = Array(saved.prefix(8))
+    } else {
+      radialLights = [
+        RadialAdjustment(
+          exposure: localExposure, centerX: localCenterX, centerY: localCenterY,
+          radius: localRadius, feather: localFeather)
+      ]
+    }
     development = try values.decodeIfPresent(Double.self, forKey: .development) ?? 0
     grain = try values.decodeIfPresent(Double.self, forKey: .grain) ?? 0
     halation = try values.decodeIfPresent(Double.self, forKey: .halation) ?? 0
@@ -140,11 +152,8 @@ final class PhotoEditor {
   var shotExposure = 0.0
   var shadowLight = 0.0
   var highlightLight = 0.0
-  var localExposure = 0.0
-  var localCenterX = 0.5
-  var localCenterY = 0.5
-  var localRadius = 0.35
-  var localFeather = 0.5
+  var radialLights = [RadialAdjustment()]
+  var selectedLocalIndex = 0
   var development = 0.0
   var grain = 0.0
   var halation = 0.0
@@ -352,11 +361,8 @@ final class PhotoEditor {
     shotExposure = saved.shotExposure
     shadowLight = saved.shadowLight
     highlightLight = saved.highlightLight
-    localExposure = saved.localExposure
-    localCenterX = saved.localCenterX
-    localCenterY = saved.localCenterY
-    localRadius = saved.localRadius
-    localFeather = saved.localFeather
+    radialLights = saved.radialLights
+    selectedLocalIndex = min(selectedLocalIndex, radialLights.count - 1)
     development = saved.development
     grain = saved.grain
     halation = saved.halation
@@ -480,11 +486,7 @@ final class PhotoEditor {
     edits.shotExposure = shotExposure
     edits.shadowLight = shadowLight
     edits.highlightLight = highlightLight
-    edits.localExposure = localExposure
-    edits.localCenterX = localCenterX
-    edits.localCenterY = localCenterY
-    edits.localRadius = localRadius
-    edits.localFeather = localFeather
+    edits.radialLights = radialLights
     edits.development = development
     edits.grain = grain
     edits.halation = halation
@@ -564,11 +566,8 @@ final class PhotoEditor {
     shotExposure = defaults.shotExposure
     shadowLight = defaults.shadowLight
     highlightLight = defaults.highlightLight
-    localExposure = defaults.localExposure
-    localCenterX = defaults.localCenterX
-    localCenterY = defaults.localCenterY
-    localRadius = defaults.localRadius
-    localFeather = defaults.localFeather
+    radialLights = defaults.radialLights
+    selectedLocalIndex = 0
     development = defaults.development
     grain = defaults.grain
     halation = defaults.halation
@@ -619,6 +618,26 @@ final class PhotoEditor {
     renderPreview()
   }
 
+  func addLocalArea() {
+    guard radialLights.count < 8 else { return }
+    radialLights.append(RadialAdjustment())
+    selectedLocalIndex = radialLights.count - 1
+    editsChanged()
+  }
+
+  func removeLocalArea() {
+    guard radialLights.count > 1 else { return }
+    radialLights.remove(at: min(selectedLocalIndex, radialLights.count - 1))
+    selectedLocalIndex = min(selectedLocalIndex, radialLights.count - 1)
+    editsChanged()
+  }
+
+  func selectLocalArea(_ index: Int) {
+    guard radialLights.indices.contains(index) else { return }
+    selectedLocalIndex = index
+    if showLocalMask { renderPreview() }
+  }
+
   func setMaskPreview(_ visible: Bool) {
     showLocalMask = visible
     if visible {
@@ -629,10 +648,12 @@ final class PhotoEditor {
   }
 
   private func localMaskImage() -> CIImage? {
-    guard let source,
+    guard let source else { return nil }
+    let area = radialLights[min(selectedLocalIndex, radialLights.count - 1)]
+    guard
       let mask = LocalExposure.mask(
-        for: source, centerX: localCenterX, centerY: localCenterY,
-        radius: localRadius, feather: localFeather)
+        for: source, centerX: area.centerX, centerY: area.centerY,
+        radius: area.radius, feather: area.feather, inverted: area.inverted)
     else { return nil }
     return framedImage(mask)
   }
@@ -650,9 +671,12 @@ final class PhotoEditor {
       }
       image = shaped
     }
-    image = LocalExposure.apply(
-      to: image, ev: localExposure, centerX: localCenterX, centerY: localCenterY,
-      radius: localRadius, feather: localFeather)
+    for area in radialLights where abs(area.exposure) > 0.001 {
+      image = LocalExposure.apply(
+        to: image, ev: area.exposure, centerX: area.centerX,
+        centerY: area.centerY, radius: area.radius, feather: area.feather,
+        inverted: area.inverted)
+    }
     if stockIndex == 1 || stockIndex == 2 {
       guard let measuredNegativeKernel,
         let portraPositiveKernel,
@@ -891,11 +915,6 @@ struct ContentView: View {
     .onChange(of: editor.shotExposure) { editor.editsChanged() }
     .onChange(of: editor.shadowLight) { editor.editsChanged() }
     .onChange(of: editor.highlightLight) { editor.editsChanged() }
-    .onChange(of: editor.localExposure) { editor.editsChanged() }
-    .onChange(of: editor.localCenterX) { editor.editsChanged() }
-    .onChange(of: editor.localCenterY) { editor.editsChanged() }
-    .onChange(of: editor.localRadius) { editor.editsChanged() }
-    .onChange(of: editor.localFeather) { editor.editsChanged() }
     .onChange(of: editor.development) { editor.editsChanged() }
     .onChange(of: editor.grain) { editor.editsChanged() }
     .onChange(of: editor.halation) { editor.editsChanged() }
@@ -1133,18 +1152,37 @@ struct ContentView: View {
           control("Saturation", value: $editor.selectiveSaturation, range: -1...1)
         case .local:
           Text("Radial light").font(.headline)
+          Picker(
+            "Area",
+            selection: Binding(
+              get: { editor.selectedLocalIndex },
+              set: { editor.selectLocalArea($0) }
+            )
+          ) {
+            ForEach(editor.radialLights.indices, id: \.self) { index in
+              Text("Area \(index + 1)").tag(index)
+            }
+          }
+          .pickerStyle(.menu)
+          HStack {
+            Button("Add area", systemImage: "plus") { editor.addLocalArea() }
+              .disabled(editor.radialLights.count >= 8)
+            Button("Remove area", systemImage: "minus") { editor.removeLocalArea() }
+              .disabled(editor.radialLights.count <= 1)
+          }
           Toggle(
             "Show mask",
             isOn: Binding(
               get: { editor.showLocalMask },
               set: { editor.setMaskPreview($0) }))
-          control("Exposure (EV)", value: $editor.localExposure, range: -2...2)
-          control("Horizontal center", value: $editor.localCenterX, range: 0...1)
-          control("Vertical center", value: $editor.localCenterY, range: 0...1)
-          control("Size", value: $editor.localRadius, range: 0.05...0.8)
-          control("Feather", value: $editor.localFeather, range: 0.05...1)
+          Toggle("Invert area", isOn: localBoolBinding(\.inverted))
+          control("Exposure (EV)", value: localBinding(\.exposure), range: -2...2)
+          control("Horizontal center", value: localBinding(\.centerX), range: 0...1)
+          control("Vertical center", value: localBinding(\.centerY), range: 0...1)
+          control("Size", value: localBinding(\.radius), range: 0.05...0.8)
+          control("Feather", value: localBinding(\.feather), range: 0.05...1)
           Text(
-            "Adjusts scene light in an elliptical area before film processing. The mask view is temporary and never exported; 0 EV disables the adjustment."
+            "Each area changes scene light before film processing. Show mask is temporary; 0 EV disables the selected area."
           )
           .font(.caption).foregroundStyle(.secondary)
         case .framing:
@@ -1182,6 +1220,28 @@ struct ContentView: View {
     }
     .frame(width: 310)
     .background(Color(white: 0.11))
+  }
+
+  private func localBinding(_ keyPath: WritableKeyPath<RadialAdjustment, Double>) -> Binding<Double>
+  {
+    Binding(
+      get: { editor.radialLights[editor.selectedLocalIndex][keyPath: keyPath] },
+      set: { value in
+        editor.radialLights[editor.selectedLocalIndex][keyPath: keyPath] = value
+        editor.editsChanged()
+      }
+    )
+  }
+
+  private func localBoolBinding(_ keyPath: WritableKeyPath<RadialAdjustment, Bool>) -> Binding<Bool>
+  {
+    Binding(
+      get: { editor.radialLights[editor.selectedLocalIndex][keyPath: keyPath] },
+      set: { value in
+        editor.radialLights[editor.selectedLocalIndex][keyPath: keyPath] = value
+        editor.editsChanged()
+      }
+    )
   }
 
   private func mixerBinding(_ keyPath: WritableKeyPath<ColorMix, Double>) -> Binding<Double> {
