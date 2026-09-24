@@ -799,7 +799,7 @@ struct ContentView: View {
           }
           .pickerStyle(.menu)
           if editor.stockIndex == 1 {
-            Toggle("Endura paper tone", isOn: $editor.enduraPaperTone)
+            Toggle("Endura paper response", isOn: $editor.enduraPaperTone)
             if editor.enduraPaperTone {
               control("Paper exposure (EV)", value: $editor.paperExposure, range: -2...2)
               control("Paper strength", value: $editor.paperStrength, range: 0...1)
@@ -813,7 +813,7 @@ struct ContentView: View {
           Text(
             editor.stockIndex == 1
               ? (editor.enduraPaperTone
-                ? "Kodak negative and paper tone curves; color paper response is still approximate."
+                ? "Kodak negative and paper curves; color response is still approximate."
                 : "Kodak negative-density curves with provisional positive rendering.")
               : "Exposure-dependent study stock. Film measurements will replace this model."
           )

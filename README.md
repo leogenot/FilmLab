@@ -12,7 +12,7 @@ A small native macOS photo editor focused on film rendering and color grading.
 - Renders previews asynchronously in sRGB, coalescing rapid control changes so the canvas stays responsive. Exports full-resolution sRGB JPEG or 16-bit Display P3 TIFF in a separate background renderer.
 - Leaves the source photo unchanged.
 
-The original study stock is a provisional response model. The Portra density study uses approximate samples from Kodak’s published negative-density chart, followed by a provisional balanced positive transform. Its optional paper tone stage blends the provisional positive with negative density mapped through an approximate green-channel curve from Kodak’s Portra Endura paper sheet. Paper Exposure controls the paper’s light exposure, and Paper Strength controls the blend; existing edits default to 0 EV and 50%. It uses one curve for all channels, so it is a tone study rather than calibrated color-paper reproduction. The spectral and print/scan stages remain incomplete.
+The original study stock is a provisional response model. The Portra density study uses approximate samples from Kodak’s published negative-density chart, followed by a provisional balanced positive transform. Its optional paper stage blends the provisional positive with negative density mapped through approximate red, green and blue curves from Kodak’s Portra Endura paper sheet. Paper Exposure controls the paper’s light exposure, and Paper Strength controls the blend; existing edits default to 0 EV and 50%. This is an exploratory paper color response rather than calibrated color-paper reproduction. The spectral and print/scan stages remain incomplete.
 
 ## Run
 

@@ -105,12 +105,17 @@ enum FilmKernels {
                           amount), original.a);
     }
 
-    // Kodak E-4021 page-7 green Status A paper density, sampled from the graph.
+    // Kodak E-4021 page-7 Status A paper density, approximately sampled in RGB order.
     constant float enduraH[10] = {-3.0, -2.5, -2.0, -1.75, -1.5,
                                   -1.25, -1.0, -0.75, -0.5, -0.25};
-    constant float enduraD[10] = {0.10, 0.11, 0.19, 0.45, 1.05,
-                                  1.82, 2.37, 2.48, 2.49, 2.52};
-    inline float enduraDensityAt(float logH) {
+    constant float3 enduraD[10] = {
+        float3(0.10, 0.10, 0.10), float3(0.11, 0.11, 0.11),
+        float3(0.19, 0.19, 0.19), float3(0.45, 0.45, 0.45),
+        float3(1.05, 1.05, 1.05), float3(1.85, 1.82, 1.80),
+        float3(2.44, 2.37, 2.34), float3(2.57, 2.51, 2.41),
+        float3(2.62, 2.61, 2.43), float3(2.66, 2.63, 2.44)
+    };
+    inline float3 enduraDensityAt(float logH) {
         if (logH <= enduraH[0]) return enduraD[0];
         for (int i = 0; i < 9; i++) {
             if (logH <= enduraH[i + 1]) {
@@ -125,9 +130,9 @@ enum FilmKernels {
         float3 paperExposure = float3(-1.625 + paperExposureStops * 0.30103)
                              - (negativeDensity - reference);
         float3 paperDensity = float3(
-            enduraDensityAt(paperExposure.r),
-            enduraDensityAt(paperExposure.g),
-            enduraDensityAt(paperExposure.b)
+            enduraDensityAt(paperExposure.r).r,
+            enduraDensityAt(paperExposure.g).g,
+            enduraDensityAt(paperExposure.b).b
         );
         // Neutral enlarger balance and a 0.75-density mid-gray aim are assumptions.
         paperDensity = clamp(paperDensity - enduraDensityAt(-1.625) + 0.75,
