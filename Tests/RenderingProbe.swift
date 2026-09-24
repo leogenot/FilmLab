@@ -56,6 +56,28 @@ struct RenderingProbe {
       abs(rendered(1, 2)[0] - rendered(2, 2)[0]) > 0.01,
       "Portra and Ektar have indistinguishable bright response")
 
+    func ektarPaper(_ paperExposure: Double) -> [Float] {
+      let source = patch(0.18)
+      let density = negative.apply(
+        extent: source.extent, arguments: [source, 0.0, 0.0, 2.0])!
+      return channels(
+        positive.apply(
+          extent: source.extent,
+          arguments: [density, source, 0.0, 1.0, 1.0, paperExposure, 2.0])!)
+    }
+    let paperUnder = ektarPaper(-2)
+    let paperNormal = ektarPaper(0)
+    let paperOver = ektarPaper(2)
+    for channel in 0..<3 {
+      precondition(
+        paperUnder[channel] > paperNormal[channel]
+          && paperNormal[channel] > paperOver[channel],
+        "Endura Premier paper exposure response is reversed")
+      precondition(
+        abs(paperNormal[channel] - 0.18) < 0.004,
+        "Endura Premier reference gray is not neutral")
+    }
+
     func shaped(_ light: Double, _ shadowEV: Double, _ highlightEV: Double) -> Float {
       let source = patch(light)
       return channels(

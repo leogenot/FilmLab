@@ -27,6 +27,7 @@ private struct PhotoEdits: Codable, Equatable {
   var filmAmount = 1.0
   var stockIndex = 0
   var enduraPaperTone = false
+  var premierPaperTone = false
   var paperStrength = 0.5
   var paperExposure = 0.0
   var shotExposure = 0.0
@@ -74,6 +75,7 @@ private struct PhotoEdits: Codable, Equatable {
     filmAmount = try values.decodeIfPresent(Double.self, forKey: .filmAmount) ?? 1.0
     stockIndex = try values.decodeIfPresent(Int.self, forKey: .stockIndex) ?? 0
     enduraPaperTone = try values.decodeIfPresent(Bool.self, forKey: .enduraPaperTone) ?? false
+    premierPaperTone = try values.decodeIfPresent(Bool.self, forKey: .premierPaperTone) ?? false
     paperStrength = try values.decodeIfPresent(Double.self, forKey: .paperStrength) ?? 0.5
     paperExposure = try values.decodeIfPresent(Double.self, forKey: .paperExposure) ?? 0
     shotExposure = try values.decodeIfPresent(Double.self, forKey: .shotExposure) ?? 0
@@ -122,6 +124,7 @@ final class PhotoEditor {
   var filmAmount = 1.0
   var stockIndex = 0
   var enduraPaperTone = false
+  var premierPaperTone = false
   var paperStrength = 0.5
   var paperExposure = 0.0
   var shotExposure = 0.0
@@ -326,6 +329,7 @@ final class PhotoEditor {
     filmAmount = saved.filmAmount
     stockIndex = saved.stockIndex
     enduraPaperTone = saved.enduraPaperTone
+    premierPaperTone = saved.premierPaperTone
     paperStrength = saved.paperStrength
     paperExposure = saved.paperExposure
     shotExposure = saved.shotExposure
@@ -448,6 +452,7 @@ final class PhotoEditor {
     edits.filmAmount = filmAmount
     edits.stockIndex = stockIndex
     edits.enduraPaperTone = enduraPaperTone
+    edits.premierPaperTone = premierPaperTone
     edits.paperStrength = paperStrength
     edits.paperExposure = paperExposure
     edits.shotExposure = shotExposure
@@ -526,6 +531,7 @@ final class PhotoEditor {
     filmAmount = defaults.filmAmount
     stockIndex = defaults.stockIndex
     enduraPaperTone = defaults.enduraPaperTone
+    premierPaperTone = defaults.premierPaperTone
     paperStrength = defaults.paperStrength
     paperExposure = defaults.paperExposure
     shotExposure = defaults.shotExposure
@@ -601,7 +607,8 @@ final class PhotoEditor {
           extent: image.extent,
           arguments: [
             negative, image, shotExposure, filmAmount,
-            stockIndex == 1 && enduraPaperTone ? paperStrength : 0.0, paperExposure,
+            (stockIndex == 1 && enduraPaperTone) || (stockIndex == 2 && premierPaperTone)
+              ? paperStrength : 0.0, paperExposure,
             Double(stockIndex),
           ]
         )
@@ -971,12 +978,16 @@ struct ContentView: View {
           .pickerStyle(.menu)
           if editor.stockIndex == 1 {
             Toggle("Endura paper response", isOn: $editor.enduraPaperTone)
-            if editor.enduraPaperTone {
-              control("Paper exposure (EV)", value: $editor.paperExposure, range: -2...2)
-              control("Paper strength", value: $editor.paperStrength, range: 0...1)
-              Text("More paper exposure makes the print darker.")
-                .font(.caption).foregroundStyle(.secondary)
-            }
+          } else if editor.stockIndex == 2 {
+            Toggle("Endura Premier paper response", isOn: $editor.premierPaperTone)
+          }
+          if (editor.stockIndex == 1 && editor.enduraPaperTone)
+            || (editor.stockIndex == 2 && editor.premierPaperTone)
+          {
+            control("Paper exposure (EV)", value: $editor.paperExposure, range: -2...2)
+            control("Paper strength", value: $editor.paperStrength, range: 0...1)
+            Text("More paper exposure makes the print darker.")
+              .font(.caption).foregroundStyle(.secondary)
           }
           control("Shot exposure (EV)", value: $editor.shotExposure, range: -3...3)
           control("Development", value: $editor.development, range: -2...2)
@@ -987,7 +998,9 @@ struct ContentView: View {
                 ? "Kodak negative and paper curves; color response is still approximate."
                 : "Kodak negative-density curves with provisional positive rendering.")
               : (editor.stockIndex == 2
-                ? "Kodak Ektar negative-density curves with provisional positive rendering."
+                ? (editor.premierPaperTone
+                  ? "Kodak negative and Endura Premier paper curves; color balance is approximate."
+                  : "Kodak Ektar negative-density curves with provisional positive rendering.")
                 : "Exposure-dependent study stock. Film measurements will replace this model.")
           )
           .font(.caption).foregroundStyle(.secondary)

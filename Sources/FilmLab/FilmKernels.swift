@@ -162,6 +162,8 @@ enum FilmKernels {
     }
     inline float3 enduraPaperReflectance(float3 negativeDensity, float3 reference,
                                         float paperExposure);
+    inline float3 premierPaperReflectance(float3 negativeDensity, float3 reference,
+                                         float paperExposure);
     [[stitchable]] float4 portraPositive(coreimage::sample_t negative,
                                           coreimage::sample_t original,
                                           float ev, float amount, float paperMix,
@@ -173,7 +175,9 @@ enum FilmKernels {
         float3 positive = 1.08 * linear / (linear + 0.9);
         return float4(mix(max(original.rgb, float3(0.0)) * exp2(ev),
                           mix(positive,
-                              enduraPaperReflectance(negative.rgb, reference, paperExposure),
+                              stock > 1.5
+                                  ? premierPaperReflectance(negative.rgb, reference, paperExposure)
+                                  : enduraPaperReflectance(negative.rgb, reference, paperExposure),
                               paperMix),
                           amount), original.a);
     }
@@ -223,6 +227,58 @@ enum FilmKernels {
         );
         // Neutral enlarger balance and a 0.75-density mid-gray aim are assumptions.
         paperDensity = clamp(paperDensity - enduraDensityAt(-1.625) + 0.75,
+                             float3(0.0), float3(3.0));
+        return pow(float3(10.0), -paperDensity);
+    }
+
+    // Kodak E-4070 page-4 Status A ENDURA Premier paper density, approximate RGB readings.
+    constant float premierH[12] = {-3.0, -2.5, -2.0, -1.75, -1.5, -1.25,
+                                   -1.0, -0.9, -0.8, -0.7, -0.5, -0.25};
+    constant float3 premierD[12] = {
+        float3(0.08, 0.07, 0.06), float3(0.10, 0.08, 0.06),
+        float3(0.12, 0.10, 0.08), float3(0.18, 0.16, 0.13),
+        float3(0.50, 0.48, 0.44), float3(1.38, 1.32, 1.25),
+        float3(2.32, 2.22, 2.20), float3(2.53, 2.36, 2.33),
+        float3(2.65, 2.44, 2.39), float3(2.70, 2.48, 2.42),
+        float3(2.75, 2.51, 2.44), float3(2.76, 2.53, 2.45)
+    };
+    // Monotone PCHIP tangents from Research/endura-premier-paper-tone.csv.
+    constant float3 premierTangent[12] = {
+        float3(0.040000, 0.010000, 0.000000),
+        float3(0.040000, 0.026667, 0.000000),
+        float3(0.074483, 0.074483, 0.072000),
+        float3(0.404211, 0.404211, 0.344444),
+        float3(1.877333, 1.853793, 1.793571),
+        float3(3.636044, 3.475862, 3.497727),
+        float3(2.590066, 1.896774, 1.810471),
+        float3(1.527273, 1.018182, 0.821053),
+        float3(0.705882, 0.533333, 0.400000),
+        float3(0.346154, 0.229787, 0.158824),
+        float3(0.070866, 0.105537, 0.058065),
+        float3(0.000000, 0.041111, 0.006667)
+    };
+    inline float3 premierDensityAt(float logH) {
+        if (logH <= premierH[0]) return premierD[0];
+        for (int i = 0; i < 11; i++) {
+            if (logH <= premierH[i + 1]) {
+                return smoothDensity(logH, premierH[i], premierH[i + 1],
+                                     premierD[i], premierD[i + 1],
+                                     premierTangent[i], premierTangent[i + 1]);
+            }
+        }
+        return premierD[11];
+    }
+    inline float3 premierPaperReflectance(float3 negativeDensity, float3 reference,
+                                         float paperExposureStops) {
+        float3 paperExposure = float3(-1.4 + paperExposureStops * 0.30103)
+                             - (negativeDensity - reference);
+        float3 paperDensity = float3(
+            premierDensityAt(paperExposure.r).r,
+            premierDensityAt(paperExposure.g).g,
+            premierDensityAt(paperExposure.b).b
+        );
+        // Enlarger balance and mid-gray aim remain assumptions, not Kodak measurements.
+        paperDensity = clamp(paperDensity - premierDensityAt(-1.4) + 0.75,
                              float3(0.0), float3(3.0));
         return pow(float3(10.0), -paperDensity);
     }
