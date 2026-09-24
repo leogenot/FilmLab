@@ -47,6 +47,7 @@ private struct PhotoEdits: Codable, Equatable {
   var selectiveSaturation = 0.0
   var mixer = Array(repeating: ColorMix(), count: 8)
   var frameRotation = 0
+  var frameStraighten = 0.0
   var frameAspect = 0
   var frameOffsetX = 0.0
   var frameOffsetY = 0.0
@@ -94,6 +95,7 @@ private struct PhotoEdits: Codable, Equatable {
     let savedMixer = try values.decodeIfPresent([ColorMix].self, forKey: .mixer) ?? []
     mixer = Array((savedMixer + Array(repeating: ColorMix(), count: 8)).prefix(8))
     frameRotation = try values.decodeIfPresent(Int.self, forKey: .frameRotation) ?? 0
+    frameStraighten = try values.decodeIfPresent(Double.self, forKey: .frameStraighten) ?? 0
     frameAspect = try values.decodeIfPresent(Int.self, forKey: .frameAspect) ?? 0
     frameOffsetX = try values.decodeIfPresent(Double.self, forKey: .frameOffsetX) ?? 0
     frameOffsetY = try values.decodeIfPresent(Double.self, forKey: .frameOffsetY) ?? 0
@@ -140,6 +142,7 @@ final class PhotoEditor {
   var selectiveSaturation = 0.0
   var mixer = Array(repeating: ColorMix(), count: 8)
   var frameRotation = 0
+  var frameStraighten = 0.0
   var frameAspect = 0
   var frameOffsetX = 0.0
   var frameOffsetY = 0.0
@@ -343,6 +346,7 @@ final class PhotoEditor {
     selectiveSaturation = saved.selectiveSaturation
     mixer = saved.mixer
     frameRotation = saved.frameRotation
+    frameStraighten = saved.frameStraighten
     frameAspect = saved.frameAspect
     frameOffsetX = saved.frameOffsetX
     frameOffsetY = saved.frameOffsetY
@@ -464,6 +468,7 @@ final class PhotoEditor {
     edits.selectiveSaturation = selectiveSaturation
     edits.mixer = mixer
     edits.frameRotation = frameRotation
+    edits.frameStraighten = frameStraighten
     edits.frameAspect = frameAspect
     edits.frameOffsetX = frameOffsetX
     edits.frameOffsetY = frameOffsetY
@@ -541,6 +546,7 @@ final class PhotoEditor {
     selectiveSaturation = defaults.selectiveSaturation
     mixer = defaults.mixer
     frameRotation = defaults.frameRotation
+    frameStraighten = defaults.frameStraighten
     frameAspect = defaults.frameAspect
     frameOffsetX = defaults.frameOffsetX
     frameOffsetY = defaults.frameOffsetY
@@ -641,28 +647,9 @@ final class PhotoEditor {
   }
 
   private func framedImage(_ image: CIImage) -> CIImage {
-    let turns = ((frameRotation % 4) + 4) % 4
-    var framed = image
-    if turns != 0 {
-      framed = framed.transformed(by: CGAffineTransform(rotationAngle: CGFloat(turns) * .pi / 2))
-      framed = framed.transformed(
-        by: CGAffineTransform(translationX: -framed.extent.minX, y: -framed.extent.minY))
-    }
-    let extent = framed.extent
-    let ratio: CGFloat? =
-      switch frameAspect {
-      case 1: 1
-      case 2: 4.0 / 5.0
-      case 3: 3.0 / 2.0
-      case 4: 16.0 / 9.0
-      default: nil
-      }
-    guard let ratio, extent.width > 0, extent.height > 0 else { return framed }
-    let width = min(extent.width, floor(extent.height * ratio))
-    let height = min(extent.height, floor(extent.width / ratio))
-    let x = extent.minX + (extent.width - width) * CGFloat(min(max(frameOffsetX, -1), 1) + 1) / 2
-    let y = extent.minY + (extent.height - height) * CGFloat(min(max(frameOffsetY, -1), 1) + 1) / 2
-    return framed.cropped(to: CGRect(x: floor(x), y: floor(y), width: width, height: height))
+    Framing.apply(
+      to: image, quarterTurns: frameRotation, straightenDegrees: frameStraighten,
+      aspect: frameAspect, offsetX: frameOffsetX, offsetY: frameOffsetY)
   }
 
   func rotateFrame(_ steps: Int) {
@@ -1066,6 +1053,7 @@ struct ContentView: View {
             Button("Rotate left", systemImage: "rotate.left") { editor.rotateFrame(-1) }
             Button("Rotate right", systemImage: "rotate.right") { editor.rotateFrame(1) }
           }
+          control("Straighten (°)", value: $editor.frameStraighten, range: -15...15)
           Picker("Crop ratio", selection: $editor.frameAspect) {
             Text("Original").tag(0)
             Text("Square 1:1").tag(1)

@@ -10,3 +10,8 @@ DEVELOPER_DIR="$developer_dir" swiftc \
   "$project_dir/Tests/RenderingProbe.swift" \
   -o "$project_dir/.build/FilmLabRenderingProbe"
 "$project_dir/.build/FilmLabRenderingProbe"
+DEVELOPER_DIR="$developer_dir" swiftc \
+  "$project_dir/Sources/FilmLab/Framing.swift" \
+  "$project_dir/Tests/FramingProbe.swift" \
+  -o "$project_dir/.build/FilmLabFramingProbe"
+"$project_dir/.build/FilmLabFramingProbe"
