@@ -88,3 +88,7 @@ RAW import now uses ImageIO’s detected type and `UTType.rawImage` conformance 
 ## Input-specific stock defaults, 24 September 2026
 
 New RAW imports start at 1.0 Stock amount, while new JPEG imports start at 0.7. Reset Edits uses the same input-specific defaults. This reflects their different starting points: the JPEG has a camera or software tone rendering baked in, while the RAW decoder can supply a flatter working image. Explicitly saved stock amounts are still restored as chosen. These are starting values, not calibrated stock measurements.
+
+### RAW highlight recovery
+
+When macOS reports support for highlight recovery in a RAW file, Develop exposes the decoder's Highlight recovery switch. It defaults on, as the decoder does. The choice is saved per image and changing it re-decodes the RAW before the film response. The control is hidden for JPEGs and for RAW decoders that do not support it. This can reconstruct detail only when the camera data contains enough unclipped color-channel information; it cannot recover fully saturated sensor values.

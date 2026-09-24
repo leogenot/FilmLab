@@ -40,6 +40,7 @@ private struct PhotoEdits: Codable {
   var selectiveShift = 0.0
   var selectiveSaturation = 0.0
   var flatRAW = false
+  var rawHighlightRecovery = true
   var rawTemperature: Double?
   var rawTint: Double?
 
@@ -67,6 +68,8 @@ private struct PhotoEdits: Codable {
     selectiveShift = try values.decodeIfPresent(Double.self, forKey: .selectiveShift) ?? 0
     selectiveSaturation = try values.decodeIfPresent(Double.self, forKey: .selectiveSaturation) ?? 0
     flatRAW = try values.decodeIfPresent(Bool.self, forKey: .flatRAW) ?? false
+    rawHighlightRecovery =
+      try values.decodeIfPresent(Bool.self, forKey: .rawHighlightRecovery) ?? true
     rawTemperature = try values.decodeIfPresent(Double.self, forKey: .rawTemperature)
     rawTint = try values.decodeIfPresent(Double.self, forKey: .rawTint)
   }
@@ -100,6 +103,8 @@ final class PhotoEditor {
   var selectiveShift = 0.0
   var selectiveSaturation = 0.0
   var flatRAW = false
+  var rawHighlightRecovery = true
+  var rawHighlightRecoverySupported = false
   var rawTemperature = 6500.0
   var rawTint = 0.0
   var error: String?
@@ -110,6 +115,7 @@ final class PhotoEditor {
 
   private var source: CIImage?
   private var decodedFlatRAW = false
+  private var decodedHighlightRecovery = true
   private var decodedRawTemperature = 6500.0
   private var decodedRawTint = 0.0
   private var cameraRawTemperature = 6500.0
@@ -140,7 +146,8 @@ final class PhotoEditor {
       let saved = savedEdits(for: url, isRAW: isRAW)
       let decoded = try decodeImage(
         from: url, isRAW: isRAW, flatRAW: saved.flatRAW,
-        temperature: saved.rawTemperature, tint: saved.rawTint
+        highlightRecovery: saved.rawHighlightRecovery, temperature: saved.rawTemperature,
+        tint: saved.rawTint
       )
       let image = decoded.image
       guard image.extent.width.isFinite, image.extent.height.isFinite,
@@ -156,6 +163,8 @@ final class PhotoEditor {
       sourceURL = url
       sourceIsRAW = isRAW
       decodedFlatRAW = saved.flatRAW
+      decodedHighlightRecovery = saved.rawHighlightRecovery
+      rawHighlightRecoverySupported = decoded.highlightRecoverySupported
       cameraRawTemperature = decoded.cameraTemperature ?? 6500
       cameraRawTint = decoded.cameraTint ?? 0
       decodedRawTemperature = saved.rawTemperature ?? cameraRawTemperature
@@ -203,12 +212,21 @@ final class PhotoEditor {
   }
 
   private func decodeImage(
-    from url: URL, isRAW: Bool, flatRAW: Bool, temperature: Double?, tint: Double?
-  ) throws -> (image: CIImage, cameraTemperature: Double?, cameraTint: Double?) {
+    from url: URL, isRAW: Bool, flatRAW: Bool, highlightRecovery: Bool,
+    temperature: Double?, tint: Double?
+  ) throws -> (
+    image: CIImage, cameraTemperature: Double?, cameraTint: Double?,
+    highlightRecoverySupported: Bool
+  ) {
     if isRAW {
       guard let raw = CIRAWFilter(imageURL: url) else { throw EditorError.unsupported }
       let cameraTemperature = Double(raw.neutralTemperature)
       let cameraTint = Double(raw.neutralTint)
+      var highlightRecoverySupported = false
+      if #available(macOS 26.0, *) {
+        highlightRecoverySupported = raw.isHighlightRecoverySupported
+        if highlightRecoverySupported { raw.isHighlightRecoveryEnabled = highlightRecovery }
+      }
       if let temperature { raw.neutralTemperature = Float(temperature) }
       if let tint { raw.neutralTint = Float(tint) }
       if flatRAW {
@@ -217,13 +235,13 @@ final class PhotoEditor {
         raw.localToneMapAmount = 0
       }
       guard let image = raw.outputImage else { throw EditorError.unsupported }
-      return (image, cameraTemperature, cameraTint)
+      return (image, cameraTemperature, cameraTint, highlightRecoverySupported)
     }
     let data = try Data(contentsOf: url)
     guard let image = CIImage(data: data, options: [.applyOrientationProperty: true]) else {
       throw EditorError.unsupported
     }
-    return (image, nil, nil)
+    return (image, nil, nil, false)
   }
 
   private func restoreEdits(_ saved: PhotoEdits) {
@@ -247,6 +265,7 @@ final class PhotoEditor {
     selectiveShift = saved.selectiveShift
     selectiveSaturation = saved.selectiveSaturation
     flatRAW = saved.flatRAW
+    rawHighlightRecovery = saved.rawHighlightRecovery
     rawTemperature = saved.rawTemperature ?? cameraRawTemperature
     rawTint = saved.rawTint ?? cameraRawTint
   }
@@ -254,10 +273,12 @@ final class PhotoEditor {
   func rawModeChanged() {
     guard isRAWSource, let url = sourceURL else { return }
     let requestedFlatRAW = flatRAW
+    let requestedHighlightRecovery = rawHighlightRecovery
     let requestedTemperature = rawTemperature
     let requestedTint = rawTint
     let needsDecode =
       requestedFlatRAW != decodedFlatRAW
+      || (rawHighlightRecoverySupported && requestedHighlightRecovery != decodedHighlightRecovery)
       || abs(requestedTemperature - decodedRawTemperature) > 0.01
       || abs(requestedTint - decodedRawTint) > 0.01
     guard needsDecode else {
@@ -281,13 +302,15 @@ final class PhotoEditor {
       do {
         let decoded = try decodeImage(
           from: url, isRAW: true, flatRAW: requestedFlatRAW,
-          temperature: requestedTemperature, tint: requestedTint
+          highlightRecovery: requestedHighlightRecovery, temperature: requestedTemperature,
+          tint: requestedTint
         )
         guard !Task.isCancelled, version == rawDecodeVersion, sourceURL == url else { return }
         previewTask?.cancel()
         renderVersion += 1
         source = decoded.image
         decodedFlatRAW = requestedFlatRAW
+        decodedHighlightRecovery = requestedHighlightRecovery
         decodedRawTemperature = requestedTemperature
         decodedRawTint = requestedTint
         rawDecodeTask = nil
@@ -295,6 +318,7 @@ final class PhotoEditor {
       } catch {
         guard version == rawDecodeVersion else { return }
         flatRAW = decodedFlatRAW
+        rawHighlightRecovery = decodedHighlightRecovery
         rawTemperature = decodedRawTemperature
         rawTint = decodedRawTint
         isRendering = false
@@ -336,6 +360,7 @@ final class PhotoEditor {
     edits.selectiveShift = selectiveShift
     edits.selectiveSaturation = selectiveSaturation
     edits.flatRAW = flatRAW
+    edits.rawHighlightRecovery = rawHighlightRecovery
     if isRAWSource {
       edits.rawTemperature = rawTemperature
       edits.rawTint = rawTint
@@ -374,6 +399,7 @@ final class PhotoEditor {
     selectiveShift = defaults.selectiveShift
     selectiveSaturation = defaults.selectiveSaturation
     flatRAW = defaults.flatRAW
+    rawHighlightRecovery = defaults.rawHighlightRecovery
     rawTemperature = cameraRawTemperature
     rawTint = cameraRawTint
     showOriginal = false
@@ -592,6 +618,7 @@ struct ContentView: View {
     .onChange(of: editor.selectiveShift) { editor.editsChanged() }
     .onChange(of: editor.selectiveSaturation) { editor.editsChanged() }
     .onChange(of: editor.flatRAW) { editor.rawModeChanged() }
+    .onChange(of: editor.rawHighlightRecovery) { editor.rawModeChanged() }
     .onChange(of: editor.rawTemperature) { editor.rawModeChanged() }
     .onChange(of: editor.rawTint) { editor.rawModeChanged() }
   }
@@ -731,6 +758,9 @@ struct ContentView: View {
               fractionDigits: 0)
             control("Tint", value: $editor.rawTint, range: -100...100)
             Divider()
+            if editor.rawHighlightRecoverySupported {
+              Toggle("Highlight recovery", isOn: $editor.rawHighlightRecovery)
+            }
             Toggle("Flat RAW input", isOn: $editor.flatRAW)
             Text("Removes the decoder's global and shadow tone boosts before film processing.")
               .font(.caption).foregroundStyle(.secondary)
