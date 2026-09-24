@@ -4,7 +4,7 @@ FilmLab is a digital image editor that simulates photographic film. The film sto
 
 ## What the current prototype does
 
-`Sources/FilmLab/main.swift` currently decodes RAW through `CIRAWFilter`, then applies `CIExposureAdjust`, `CIColorControls`, a five-point `CIToneCurve`, and global `CITemperatureAndTint`. RAW and JPEG share this simplistic transform. This proves import, preview, and export, but does not yet provide a believable stock response. The curve operates on display-oriented 0–1 control points and does not model film density versus log exposure or channel interaction. Calling the input “16-bit” is not enough by itself: intermediate processing must preserve high-precision, extended-range values until output conversion.
+`Sources/FilmLab/main.swift` decodes RAW through `CIRAWFilter` and JPEG through Core Image, then applies the provisional exposure-dependent stock response and finishing controls. RAW decoder settings, including white balance, act before the stock. Shot Exposure changes the stock's log-light input; Output Exposure, contrast, saturation, warmth and color timing act after it. Preview and export use extended-linear sRGB working spaces with half-float and float precision respectively, then convert to their output profiles. The stock response is still a study model rather than a measured emulsion profile.
 
 ## Target pipeline
 
@@ -92,3 +92,7 @@ New RAW imports start at 1.0 Stock amount, while new JPEG imports start at 0.7. 
 ### RAW highlight recovery
 
 When macOS reports support for highlight recovery in a RAW file, Develop exposes the decoder's Highlight recovery switch. It defaults on, as the decoder does. The choice is saved per image and changing it re-decodes the RAW before the film response. The control is hidden for JPEGs and for RAW decoders that do not support it. This can reconstruct detail only when the camera data contains enough unclipped color-channel information; it cannot recover fully saturated sensor values.
+
+## Exposure stages, 24 September 2026
+
+The old Develop Exposure correction, contrast and saturation controls ran before the film response. This made Exposure correction overlap with Shot Exposure. They now run after the stock response, and the slider is named Output exposure (EV). On a neutral linear-light test patch, +2 Shot Exposure produced approximately 0.52–0.56 per channel after the stock shoulder, while +2 Output Exposure produced approximately 0.83–0.84. The same stage order feeds preview and export. Previously saved nonzero Develop exposure, contrast or saturation edits may look different after this rendering change; their numeric settings are preserved.

@@ -428,13 +428,6 @@ final class PhotoEditor {
 
   private func developedImage() -> CIImage? {
     guard var image = source else { return nil }
-    image = image.applyingFilter("CIExposureAdjust", parameters: [kCIInputEVKey: exposure])
-    image = image.applyingFilter(
-      "CIColorControls",
-      parameters: [
-        kCIInputContrastKey: contrast,
-        kCIInputSaturationKey: saturation,
-      ])
     if let filmKernel,
       let film = filmKernel.apply(
         extent: image.extent,
@@ -446,6 +439,13 @@ final class PhotoEditor {
     } else {
       error = "The film response could not be loaded."
     }
+    image = image.applyingFilter("CIExposureAdjust", parameters: [kCIInputEVKey: exposure])
+    image = image.applyingFilter(
+      "CIColorControls",
+      parameters: [
+        kCIInputContrastKey: contrast,
+        kCIInputSaturationKey: saturation,
+      ])
     let temperature = CIFilter.temperatureAndTint()
     temperature.inputImage = image
     temperature.neutral = CIVector(x: 6500, y: 0)
@@ -766,7 +766,7 @@ struct ContentView: View {
               .font(.caption).foregroundStyle(.secondary)
             Divider()
           }
-          control("Exposure correction", value: $editor.exposure, range: -3...3)
+          control("Output exposure (EV)", value: $editor.exposure, range: -3...3)
           control("Contrast", value: $editor.contrast, range: 0.5...1.5)
           control("Saturation", value: $editor.saturation, range: 0...1.5)
           control("Warmth", value: $editor.warmth, range: -1...1)
