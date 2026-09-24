@@ -193,3 +193,7 @@ The framing probe covers unframed points, all three nonzero quarter turns, a cen
 ## Freeform crop verification (2026-09-24)
 
 The Framing workspace now supports a non-destructive freeform rectangle after rotation and straighten. Width, height, and center use normalized coordinates; a temporary full-frame view exposes draggable bounds while the actual preview and export use the selected crop. The rectangle and ratio persist with the photo edits, and older edit records decode with a default centered rectangle. The framing probe checks output dimensions, source-point mapping, and edge clamping. Metal rendering, grain, local-light, and framing probes pass; the release app builds and passes strict code signing. In the signed app, the RAW test file `FilmLab-linear-default.ARW` displayed the rectangle and dragging it changed horizontal and vertical center values.
+
+### Freeform export check
+
+I verified the signed app through its Save dialog on both input types. `FilmLab-linear-default.ARW` exported with 80% width and height to a 3737 × 5606 JPEG from its 4672 × 7008 source. `FilmLab-jpeg-default.jpg`, with its saved quarter-turn rotation, exported at 5606 × 3737. Two exports of the JPEG with the same edit settings, once with the temporary crop bounds visible and once hidden, were byte-identical (SHA-256 `a003634f4e5af08aa049e66d5b691bf37ca6892c1512118fecf986a273abfbc6`). This checks that the bounds overlay does not enter the render/export pipeline. It does not establish pixel-level equivalence between RAW and JPEG, whose input processing differs.
