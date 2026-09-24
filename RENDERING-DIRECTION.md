@@ -66,3 +66,7 @@ The inspector now displays a 64-bin luminance histogram of a downsampled sRGB re
 ## RAW white balance, 24 September 2026
 
 Develop now shows the RAW decoder’s camera temperature and tint as editable, per-photo values. These change `CIRAWFilter` before the film response, while the existing Warmth slider remains a later creative color adjustment. The Sony RAW opened at 5634 K and tint 4.0; moving temperature to roughly 9236 K visibly warmed the scene, then increasing tint to roughly 36.6 shifted it toward magenta. The histogram changed with the render, and Reset Edits restored the camera defaults. JPEGs do not show these RAW controls.
+
+## RAW control responsiveness, 24 September 2026
+
+RAW decoder changes are coalesced for 90 milliseconds before rebuilding the source image. This prevents each intermediate slider value from triggering its own decode. The first revision cancelled the initial preview while restoring camera defaults; that cancellation ordering was corrected. Reopening the Sony RAW now shows the image and histogram, and three rapid temperature changes resolve to the final 7407 K preview. The test edit was reset.

@@ -120,6 +120,8 @@ final class PhotoEditor {
   private var scopedURL: URL?
   private var saveTask: Task<Void, Never>?
   private var previewTask: Task<Void, Never>?
+  private var rawDecodeTask: Task<Void, Never>?
+  private var rawDecodeVersion = 0
   private var renderVersion = 0
   private let previewRenderer = PreviewRenderer()
   private let exporter = ImageExporter()
@@ -129,6 +131,8 @@ final class PhotoEditor {
   private let filmKernel = FilmKernels.kernel("filmResponse")
 
   func open(_ url: URL) {
+    rawDecodeTask?.cancel()
+    rawDecodeVersion += 1
     saveTask?.cancel()
     if sourceURL != nil { saveEdits() }
     let access = url.startAccessingSecurityScopedResource()
@@ -235,28 +239,53 @@ final class PhotoEditor {
 
   func rawModeChanged() {
     guard isRAWSource, let url = sourceURL else { return }
-    guard
-      flatRAW != decodedFlatRAW
-        || abs(rawTemperature - decodedRawTemperature) > 0.01
-        || abs(rawTint - decodedRawTint) > 0.01
-    else { return }
-    do {
-      let decoded = try decodeImage(
-        from: url, flatRAW: flatRAW,
-        temperature: rawTemperature, tint: rawTint
-      )
-      previewTask?.cancel()
-      renderVersion += 1
-      source = decoded.image
-      decodedFlatRAW = flatRAW
-      decodedRawTemperature = rawTemperature
-      decodedRawTint = rawTint
-      editsChanged()
-    } catch {
-      flatRAW = decodedFlatRAW
-      rawTemperature = decodedRawTemperature
-      rawTint = decodedRawTint
-      self.error = "Could not update RAW input: \(error.localizedDescription)"
+    let requestedFlatRAW = flatRAW
+    let requestedTemperature = rawTemperature
+    let requestedTint = rawTint
+    let needsDecode =
+      requestedFlatRAW != decodedFlatRAW
+      || abs(requestedTemperature - decodedRawTemperature) > 0.01
+      || abs(requestedTint - decodedRawTint) > 0.01
+    guard needsDecode else {
+      if rawDecodeTask != nil {
+        rawDecodeTask?.cancel()
+        rawDecodeTask = nil
+        rawDecodeVersion += 1
+        isRendering = false
+      }
+      return
+    }
+    rawDecodeTask?.cancel()
+    rawDecodeVersion += 1
+    previewTask?.cancel()
+    renderVersion += 1
+    let version = rawDecodeVersion
+    isRendering = true
+    rawDecodeTask = Task {
+      do { try await Task.sleep(for: .milliseconds(90)) } catch { return }
+      guard !Task.isCancelled, version == rawDecodeVersion, sourceURL == url else { return }
+      do {
+        let decoded = try decodeImage(
+          from: url, flatRAW: requestedFlatRAW,
+          temperature: requestedTemperature, tint: requestedTint
+        )
+        guard !Task.isCancelled, version == rawDecodeVersion, sourceURL == url else { return }
+        previewTask?.cancel()
+        renderVersion += 1
+        source = decoded.image
+        decodedFlatRAW = requestedFlatRAW
+        decodedRawTemperature = requestedTemperature
+        decodedRawTint = requestedTint
+        rawDecodeTask = nil
+        editsChanged()
+      } catch {
+        guard version == rawDecodeVersion else { return }
+        flatRAW = decodedFlatRAW
+        rawTemperature = decodedRawTemperature
+        rawTint = decodedRawTint
+        isRendering = false
+        self.error = "Could not update RAW input: \(error.localizedDescription)"
+      }
     }
   }
 
