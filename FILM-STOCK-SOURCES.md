@@ -7,9 +7,9 @@ Primary source: Kodak Alaris, *KODAK PROFESSIONAL PORTRA 400 Film*, publication 
 ### Direct observations
 
 - The characteristic plot is **negative density versus log exposure (lux-seconds)**, measured in daylight using Status M densitometry. It labels a reference log H of **-1.44** and separately plots blue, green and red density.
-- Within the published graph (approximately -3.4 to +0.6 log H), all three channels rise from a toe into a long, nearly straight region. The chart does **not show a clear upper shoulder**. Its rightmost plotted exposure is about 2.0 log units, or about 6.8 stops, above the labeled -1.44 reference. That is a reading of graph bounds, not a claimed usable dynamic-range specification.
+- Within the published graph (approximately -3.4 to +0.6 log H), all three channels rise from a toe into a long, nearly straight region. The blue density slope is visibly steeper than green and red in the straight region. The chart does **not show a clear upper shoulder**. Its rightmost plotted exposure is about 2.0 log units, or about 6.8 stops, above the labeled -1.44 reference. That is a reading of graph bounds, not a claimed usable dynamic-range specification.
 - The blue and green density curves sit above red because the processed negative has an orange mask. Their absolute offsets are not positive-image color casts. The workbook explains that the curves are read through blue, green and red densitometer filters and must be interpreted as dye-image densities.
-- Kodak gives a numeric red-filter density of **0.77 to 0.87** for its gray card at normal exposure, on page 3. This is a useful calibration check for a digitized characteristic curve.
+- Kodak gives a numeric red-filter density of **0.77 to 0.87** for its gray card at normal exposure, on page 3. This is a useful independent sanity check, but the plotted Log H reference is not explicitly identified as the exposure of that gray-card measurement.
 - The spectral-sensitivity graph gives broad, overlapping responses for the yellow-, magenta- and cyan-forming layers. The spectral-dye-density graph supplies a midscale neutral and minimum-density spectrum, but not a complete set of separately measured dye spectra across every exposure.
 - The datasheet reports Print Grain Index values of 37, 59 and 89 for 35 mm negatives printed at 4×6, 8×10 and 16×20 inches. Kodak explicitly says this scale is not directly comparable to RMS granularity; it does not give FilmLab a pixel-grain amplitude.
 
@@ -21,8 +21,12 @@ A faithful workflow needs three distinct models: (1) scene-linear light to film-
 
 ### Next implementation step
 
-Digitize the three characteristic curves from the manufacturer's chart into versioned log-H/density samples, recording chart-coordinate error bounds and checking the red gray-card density against 0.77–0.87. Implement a standalone density-evaluation stage and a **separate, clearly provisional positive-rendering stage**. Keep the existing study stock available while comparing both across the -2/0/+2 EV RAW grid. Do not call the resulting positive image an exact Portra 400 match without matched scans or a measured print/scanner transform.
+Use the initial chart samples in `Research/portra400-density.csv` to implement a standalone density-evaluation stage and a **separate, clearly provisional positive-rendering stage**. Keep the existing study stock available while comparing both across the -2/0/+2 EV RAW grid. Do not call the resulting positive image an exact Portra 400 match without matched scans or a measured print/scanner transform.
 
 ## Source licensing boundary
 
 The manufacturer document is a reference for measurements and descriptive facts. Other film-simulation repositories were reviewed for conceptual context only; FilmLab has not copied their code, profiles or LUTs. In particular, `spektrafilm` advertises GPLv3 code and separately licensed profile data, so importing either would require deliberate license review.
+
+### Initial curve digitization
+
+`Research/portra400-density.csv` contains nine approximate points sampled from the three plotted curves. The PDF's page 4 was rendered at 160 dpi (1360 × 1760 pixels); the plotted axes were read at x = 180 for log H -4, x = 590 for log H +1, y = 638 for density 0, and y = 228 for density 4. At each sampled x, the center of each dark curve stroke was converted with `density = (638 - pixel_y) / 102.5`. The points are graph readings, not laboratory measurements; treat their absolute values as approximate within roughly 0.03 density and 0.03 log-H units. They do not encode the dye spectra, print stage or a camera-to-film spectral transform.
