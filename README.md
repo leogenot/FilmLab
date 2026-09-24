@@ -12,13 +12,13 @@ A small native macOS photo editor focused on film rendering and color grading.
 - Renders previews asynchronously in sRGB, coalescing rapid control changes so the canvas stays responsive. Exports full-resolution sRGB JPEG or 16-bit Display P3 TIFF in a separate background renderer.
 - Leaves the source photo unchanged.
 
-The original study stock is a provisional response model. The Portra and Ektar density studies use approximate samples from Kodak’s separate published negative-density charts, followed by a provisional balanced positive transform. The Portra study’s optional paper stage blends the provisional positive with negative density mapped through approximate red, green and blue curves from Kodak’s Portra Endura paper sheet. Paper Exposure controls the paper’s light exposure, and Paper Strength controls the blend; existing edits default to 0 EV and 50%. This is an exploratory paper color response rather than calibrated color-paper reproduction. The spectral and print/scan stages remain incomplete.
+The original study stock is a provisional response model. The Portra and Ektar density studies use approximate samples from Kodak’s separate published negative-density charts, followed by a provisional balanced positive transform. The Portra study’s optional paper stage blends the provisional positive with negative density mapped through approximate red, green and blue curves from Kodak’s Portra Endura paper sheet. Paper Exposure controls the paper’s light exposure, and Paper Strength controls the blend; existing edits default to 0 EV and 50%. This is an exploratory paper color response rather than calibrated color-paper reproduction. The spectral and print/scan stages remain incomplete; see `CALIBRATION-PLAN.md` for the reference data needed to validate them.
 
 Existing saved RAW edits keep their chosen decoder mode. Reset Edits returns a RAW to linear input. JPEGs remain tagged-display images converted into the extended-linear working space; lost highlight detail or an unknown camera JPEG tone curve cannot be recovered from them.
 
 ## Run
 
-Open `Package.swift` in Xcode and run the `FilmLab` executable target. For a signed local release bundle, run `Scripts/build-app.sh` and open `Dist/FilmLab.app`. The script builds with SwiftPM in release mode, assembles the bundle, signs it ad hoc, and verifies the signature. This local build is not notarized for distribution to other Macs. The root `FilmLab.app` is a manually updated development bundle.
+Open `Package.swift` in Xcode and run the `FilmLab` executable target. For a signed local release bundle, run `Scripts/build-app.sh` and open `Dist/FilmLab.app`. The script builds with SwiftPM in release mode, assembles the bundle, signs it ad hoc, and verifies the signature. This local build is not notarized for distribution to other Macs. The root `FilmLab.app` is a manually updated development bundle. Run `Scripts/verify-rendering.sh` to compile the Metal kernels and check neutral balance, exposure order, distinct stock response and pre-film tonal controls.
 
 ## Next image-quality milestone
 
