@@ -30,3 +30,15 @@ The manufacturer document is a reference for measurements and descriptive facts.
 ### Initial curve digitization
 
 `Research/portra400-density.csv` contains nine approximate points sampled from the three plotted curves. The PDF's page 4 was rendered at 160 dpi (1360 × 1760 pixels); the plotted axes were read at x = 180 for log H -4, x = 590 for log H +1, y = 638 for density 0, and y = 228 for density 4. At each sampled x, the center of each dark curve stroke was converted with `density = (638 - pixel_y) / 102.5`. The points are graph readings, not laboratory measurements; treat their absolute values as approximate within roughly 0.03 density and 0.03 log-H units. They do not encode the dye spectra, print stage or a camera-to-film spectral transform.
+
+### RGB-to-layer approximation, 24 September 2026
+
+Kodak's spectral-sensitivity plot shows broad blue-, green-, and red-sensitive bands with overlap. A three-channel camera file cannot uniquely determine the original scene spectrum, so FilmLab currently approximates layer exposure with a neutral-preserving RGB matrix before looking up negative density:
+
+| Film-sensitive layer | Input R | Input G | Input B |
+| --- | ---: | ---: | ---: |
+| Red / cyan-forming | 0.94 | 0.06 | 0.00 |
+| Green / magenta-forming | 0.10 | 0.82 | 0.08 |
+| Blue / yellow-forming | 0.00 | 0.12 | 0.88 |
+
+Each row sums to one, so a neutral scene patch stays neutral before the different density curves act. The coefficients are conservative modeling assumptions suggested by the plotted overlap, **not** values published or measured by Kodak. A future spectral reconstruction and film-layer integration should replace them. The print/scan stage is still provisional.

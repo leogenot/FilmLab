@@ -67,8 +67,16 @@ enum FilmKernels {
         return portraD[8] + (portraD[8] - portraD[7]) * ((logH - 0.5) / 0.5);
     }
     [[stitchable]] float4 portraNegative(coreimage::sample_t pixel, float ev, float dev) {
-        float3 light = max(pixel.rgb, float3(0.000001));
-        float3 logH = log10(light / 0.18) + float3(-1.44 + ev * 0.30103);
+        float3 light = max(pixel.rgb, float3(0.0));
+        // Approximate spectral-layer overlap from E-4050's broad sensitivity bands.
+        // These RGB weights are a modeling assumption, not digitized Kodak measurements.
+        float3 layerLight = float3(
+            dot(light, float3(0.94, 0.06, 0.00)),
+            dot(light, float3(0.10, 0.82, 0.08)),
+            dot(light, float3(0.00, 0.12, 0.88))
+        );
+        float3 logH = log10(max(layerLight, float3(0.000001)) / 0.18)
+                    + float3(-1.44 + ev * 0.30103);
         float3 density = float3(
             portraDensityAt(logH.r).r,
             portraDensityAt(logH.g).g,
