@@ -50,3 +50,7 @@ The Color workspace now includes target hue, color range, hue shift and saturati
 ## Metal kernel migration, 24 September 2026
 
 The response, tonal grade, selective color, grain, highlight mask and halation kernels now use stitchable Metal functions loaded through Core Image. All six compiled and rendered on this Mac in a small synthetic-image probe. The signed app also reopened the Sony RAW and rendered active grain and halation controls without an error; the test edits were reset. Runtime Metal compilation is appropriate for this Swift package prototype, though a future Xcode app target should bundle a precompiled Metal library. This migration preserves the provisional response equations; it does not calibrate them.
+
+## Split comparison, 24 September 2026
+
+The canvas now offers a draggable Before/After split at Fit zoom. Both sides are rendered from the same source image with the same explicit sRGB preview conversion; the edited side uses the full current film graph. The split was visually checked on the Sony RAW, then dragged across the image. It makes exposure and color changes easier to judge spatially without changing the export graph.

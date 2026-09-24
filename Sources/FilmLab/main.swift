@@ -69,6 +69,9 @@ private struct PhotoEdits: Codable {
 final class PhotoEditor {
   var sourceURL: URL?
   var preview: NSImage?
+  var comparisonPreview: NSImage?
+  var compareEnabled = false
+  var compareFraction = 0.5
   var exposure = 0.0
   var contrast = 1.0
   var saturation = 1.0
@@ -132,6 +135,8 @@ final class PhotoEditor {
       sourceURL = url
       showOriginal = false
       zoom100 = false
+      compareEnabled = false
+      comparisonPreview = nil
       restoreEdits(for: url)
       preview = nil
       error = nil
@@ -241,16 +246,26 @@ final class PhotoEditor {
     selectiveShift = defaults.selectiveShift
     selectiveSaturation = defaults.selectiveSaturation
     showOriginal = false
+    compareEnabled = false
     editsChanged()
   }
 
   func toggleBeforeAfter() {
+    compareEnabled = false
     showOriginal.toggle()
     renderPreview()
   }
 
   func toggleZoom() {
+    compareEnabled = false
     zoom100.toggle()
+    renderPreview()
+  }
+
+  func toggleCompare() {
+    compareEnabled.toggle()
+    showOriginal = false
+    zoom100 = false
     renderPreview()
   }
 
@@ -301,7 +316,10 @@ final class PhotoEditor {
     }
     isRendering = true
     let scale = zoom100 ? 1 : min(1, 1800 / max(image.extent.width, image.extent.height))
-    let request = PreviewRequest(image: image, scale: scale, sourceURL: scopedURL)
+    let request = PreviewRequest(
+      image: image, scale: scale, sourceURL: scopedURL,
+      originalImage: compareEnabled ? source : nil
+    )
     previewTask = Task {
       do { try await Task.sleep(for: .milliseconds(60)) } catch { return }
       let result = await previewRenderer.render(request)
@@ -309,6 +327,9 @@ final class PhotoEditor {
       if let result {
         let image = result.image
         preview = NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
+        comparisonPreview = result.original.map {
+          NSImage(cgImage: $0, size: NSSize(width: $0.width, height: $0.height))
+        }
         error = nil
       } else {
         error = "Could not render this photo."
@@ -393,6 +414,12 @@ struct ContentView: View {
       .disabled(editor.preview == nil)
       Button(editor.showOriginal ? "After" : "Before", systemImage: "square.on.square") {
         editor.toggleBeforeAfter()
+      }
+      .disabled(editor.preview == nil)
+      Button(
+        editor.compareEnabled ? "Close Compare" : "Compare", systemImage: "rectangle.split.2x1"
+      ) {
+        editor.toggleCompare()
       }
       .disabled(editor.preview == nil)
       Button("Reset Edits", systemImage: "arrow.counterclockwise") { editor.resetEdits() }
@@ -484,7 +511,40 @@ struct ContentView: View {
           .zIndex(1)
       }
       if let preview = editor.preview {
-        if editor.zoom100 {
+        if editor.compareEnabled, let original = editor.comparisonPreview {
+          GeometryReader { geometry in
+            ZStack(alignment: .leading) {
+              Image(nsImage: preview)
+                .resizable()
+                .scaledToFit()
+                .frame(width: geometry.size.width, height: geometry.size.height)
+              Image(nsImage: original)
+                .resizable()
+                .scaledToFit()
+                .frame(width: geometry.size.width, height: geometry.size.height)
+                .mask(alignment: .leading) {
+                  Rectangle().frame(width: geometry.size.width * editor.compareFraction)
+                }
+              Rectangle()
+                .fill(.white.opacity(0.8))
+                .frame(width: 2, height: geometry.size.height)
+                .offset(x: geometry.size.width * editor.compareFraction)
+              Text("BEFORE")
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+              Text("AFTER")
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+            }
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(.white)
+            .contentShape(Rectangle())
+            .gesture(
+              DragGesture(minimumDistance: 0).onChanged { value in
+                editor.compareFraction = min(
+                  max(value.location.x / geometry.size.width, 0.02), 0.98)
+              })
+          }
+          .padding(24)
+        } else if editor.zoom100 {
           ScrollView([.horizontal, .vertical]) {
             Image(nsImage: preview)
               .resizable()
