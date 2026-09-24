@@ -62,3 +62,7 @@ On `LEO00403.ARW`, Core Image initialized global boost to 1.0 and shadow boost t
 ## Output histogram, 24 September 2026
 
 The inspector now displays a 64-bin luminance histogram of a downsampled sRGB render of the current image. Near-black and near-white percentages count pixels within roughly the outer four 8-bit luminance levels. The histogram updates with the preview and is calculated outside the UI actor. On the Sony RAW, increasing Shot Exposure to +2.56 EV moved the plot to the right and raised near-white coverage to 24.1%; the edit was reset. These are display-output diagnostics, not a measurement of clipped sensor values or available RAW headroom.
+
+## RAW white balance, 24 September 2026
+
+Develop now shows the RAW decoder’s camera temperature and tint as editable, per-photo values. These change `CIRAWFilter` before the film response, while the existing Warmth slider remains a later creative color adjustment. The Sony RAW opened at 5634 K and tint 4.0; moving temperature to roughly 9236 K visibly warmed the scene, then increasing tint to roughly 36.6 shifted it toward magenta. The histogram changed with the render, and Reset Edits restored the camera defaults. JPEGs do not show these RAW controls.

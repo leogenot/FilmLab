@@ -5,7 +5,7 @@ A small native macOS photo editor focused on film rendering and color grading.
 ## Current prototype
 
 - Opens JPEG and RAW formats supported by the Mac's Core Image decoder. Verified with a Sony ILCE-7M4 ARW at 4672 × 7008 pixels.
-- Provides exposure correction, contrast, saturation, warmth, an optional flatter RAW decode, plus Shot Exposure, Development and Amount for an exposure-dependent film response.
+- Provides RAW white balance, exposure correction, contrast, saturation, creative warmth, an optional flatter RAW decode, plus Shot Exposure, Development and Amount for an exposure-dependent film response.
 - Adds shadow, midtone, and highlight color timing, a hue-range selective color adjustment, plus content-dependent grain and highlight-edge halation. These controls default to off.
 - Saves non-destructive edits per source file in `~/Library/Application Support/FilmLab/Edits/` and restores them on reopening.
 - Includes an output luminance histogram, Before/After, a draggable split comparison, Reset Edits, and a scrollable 100% source-pixel inspection mode.

@@ -39,6 +39,8 @@ private struct PhotoEdits: Codable {
   var selectiveShift = 0.0
   var selectiveSaturation = 0.0
   var flatRAW = false
+  var rawTemperature: Double?
+  var rawTint: Double?
 
   init() {}
 
@@ -64,6 +66,8 @@ private struct PhotoEdits: Codable {
     selectiveShift = try values.decodeIfPresent(Double.self, forKey: .selectiveShift) ?? 0
     selectiveSaturation = try values.decodeIfPresent(Double.self, forKey: .selectiveSaturation) ?? 0
     flatRAW = try values.decodeIfPresent(Bool.self, forKey: .flatRAW) ?? false
+    rawTemperature = try values.decodeIfPresent(Double.self, forKey: .rawTemperature)
+    rawTint = try values.decodeIfPresent(Double.self, forKey: .rawTint)
   }
 }
 
@@ -95,6 +99,8 @@ final class PhotoEditor {
   var selectiveShift = 0.0
   var selectiveSaturation = 0.0
   var flatRAW = false
+  var rawTemperature = 6500.0
+  var rawTint = 0.0
   var error: String?
   var showOriginal = false
   var zoom100 = false
@@ -103,6 +109,10 @@ final class PhotoEditor {
 
   private var source: CIImage?
   private var decodedFlatRAW = false
+  private var decodedRawTemperature = 6500.0
+  private var decodedRawTint = 0.0
+  private var cameraRawTemperature = 6500.0
+  private var cameraRawTint = 0.0
   private let rawExtensions: Set<String> = ["arw", "cr2", "cr3", "dng", "nef", "raf", "rw2"]
   var isRAWSource: Bool {
     sourceURL.map { rawExtensions.contains($0.pathExtension.lowercased()) } ?? false
@@ -124,7 +134,11 @@ final class PhotoEditor {
     let access = url.startAccessingSecurityScopedResource()
     do {
       let saved = savedEdits(for: url)
-      let image = try decodeImage(from: url, flatRAW: saved.flatRAW)
+      let decoded = try decodeImage(
+        from: url, flatRAW: saved.flatRAW,
+        temperature: saved.rawTemperature, tint: saved.rawTint
+      )
+      let image = decoded.image
       guard image.extent.width.isFinite, image.extent.height.isFinite,
         image.extent.width > 0, image.extent.height > 0
       else {
@@ -137,6 +151,10 @@ final class PhotoEditor {
       source = image
       sourceURL = url
       decodedFlatRAW = saved.flatRAW
+      cameraRawTemperature = decoded.cameraTemperature ?? 6500
+      cameraRawTint = decoded.cameraTint ?? 0
+      decodedRawTemperature = saved.rawTemperature ?? cameraRawTemperature
+      decodedRawTint = saved.rawTint ?? cameraRawTint
       showOriginal = false
       zoom100 = false
       compareEnabled = false
@@ -166,22 +184,28 @@ final class PhotoEditor {
     } ?? PhotoEdits()
   }
 
-  private func decodeImage(from url: URL, flatRAW: Bool) throws -> CIImage {
+  private func decodeImage(
+    from url: URL, flatRAW: Bool, temperature: Double?, tint: Double?
+  ) throws -> (image: CIImage, cameraTemperature: Double?, cameraTint: Double?) {
     if rawExtensions.contains(url.pathExtension.lowercased()) {
       guard let raw = CIRAWFilter(imageURL: url) else { throw EditorError.unsupported }
+      let cameraTemperature = Double(raw.neutralTemperature)
+      let cameraTint = Double(raw.neutralTint)
+      if let temperature { raw.neutralTemperature = Float(temperature) }
+      if let tint { raw.neutralTint = Float(tint) }
       if flatRAW {
         raw.boostAmount = 0
         raw.boostShadowAmount = 0
         raw.localToneMapAmount = 0
       }
       guard let image = raw.outputImage else { throw EditorError.unsupported }
-      return image
+      return (image, cameraTemperature, cameraTint)
     }
     let data = try Data(contentsOf: url)
     guard let image = CIImage(data: data, options: [.applyOrientationProperty: true]) else {
       throw EditorError.unsupported
     }
-    return image
+    return (image, nil, nil)
   }
 
   private func restoreEdits(_ saved: PhotoEdits) {
@@ -205,19 +229,33 @@ final class PhotoEditor {
     selectiveShift = saved.selectiveShift
     selectiveSaturation = saved.selectiveSaturation
     flatRAW = saved.flatRAW
+    rawTemperature = saved.rawTemperature ?? cameraRawTemperature
+    rawTint = saved.rawTint ?? cameraRawTint
   }
 
   func rawModeChanged() {
-    guard isRAWSource, flatRAW != decodedFlatRAW, let url = sourceURL else { return }
+    guard isRAWSource, let url = sourceURL else { return }
+    guard
+      flatRAW != decodedFlatRAW
+        || abs(rawTemperature - decodedRawTemperature) > 0.01
+        || abs(rawTint - decodedRawTint) > 0.01
+    else { return }
     do {
-      let image = try decodeImage(from: url, flatRAW: flatRAW)
+      let decoded = try decodeImage(
+        from: url, flatRAW: flatRAW,
+        temperature: rawTemperature, tint: rawTint
+      )
       previewTask?.cancel()
       renderVersion += 1
-      source = image
+      source = decoded.image
       decodedFlatRAW = flatRAW
+      decodedRawTemperature = rawTemperature
+      decodedRawTint = rawTint
       editsChanged()
     } catch {
       flatRAW = decodedFlatRAW
+      rawTemperature = decodedRawTemperature
+      rawTint = decodedRawTint
       self.error = "Could not update RAW input: \(error.localizedDescription)"
     }
   }
@@ -255,6 +293,10 @@ final class PhotoEditor {
     edits.selectiveShift = selectiveShift
     edits.selectiveSaturation = selectiveSaturation
     edits.flatRAW = flatRAW
+    if isRAWSource {
+      edits.rawTemperature = rawTemperature
+      edits.rawTint = rawTint
+    }
     let url = editsURL(for: sourceURL)
     do {
       try FileManager.default.createDirectory(
@@ -288,6 +330,8 @@ final class PhotoEditor {
     selectiveShift = defaults.selectiveShift
     selectiveSaturation = defaults.selectiveSaturation
     flatRAW = defaults.flatRAW
+    rawTemperature = cameraRawTemperature
+    rawTint = cameraRawTint
     showOriginal = false
     compareEnabled = false
     editsChanged()
@@ -504,6 +548,8 @@ struct ContentView: View {
     .onChange(of: editor.selectiveShift) { editor.editsChanged() }
     .onChange(of: editor.selectiveSaturation) { editor.editsChanged() }
     .onChange(of: editor.flatRAW) { editor.rawModeChanged() }
+    .onChange(of: editor.rawTemperature) { editor.rawModeChanged() }
+    .onChange(of: editor.rawTint) { editor.rawModeChanged() }
   }
 
   private var navigationRail: some View {
@@ -635,6 +681,12 @@ struct ContentView: View {
             .font(.caption).foregroundStyle(.secondary)
         case .develop:
           if editor.isRAWSource {
+            Text("RAW white balance").font(.headline)
+            control(
+              "Temperature (K)", value: $editor.rawTemperature, range: 2000...12000,
+              fractionDigits: 0)
+            control("Tint", value: $editor.rawTint, range: -100...100)
+            Divider()
             Toggle("Flat RAW input", isOn: $editor.flatRAW)
             Text("Removes the decoder's global and shadow tone boosts before film processing.")
               .font(.caption).foregroundStyle(.secondary)
@@ -679,14 +731,14 @@ struct ContentView: View {
     .background(Color(white: 0.11))
   }
 
-  private func control(_ title: String, value: Binding<Double>, range: ClosedRange<Double>)
-    -> some View
-  {
+  private func control(
+    _ title: String, value: Binding<Double>, range: ClosedRange<Double>, fractionDigits: Int = 2
+  ) -> some View {
     VStack(alignment: .leading) {
       HStack {
         Text(title)
         Spacer()
-        Text(value.wrappedValue.formatted(.number.precision(.fractionLength(2))))
+        Text(value.wrappedValue.formatted(.number.precision(.fractionLength(fractionDigits))))
           .monospacedDigit()
       }
       .font(.subheadline)
