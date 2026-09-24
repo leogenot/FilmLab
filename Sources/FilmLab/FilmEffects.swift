@@ -29,15 +29,12 @@ enum FilmEffects {
             result, mask, blurred, halation,
           ]) ?? result
     }
-    if grain > 0,
-      let grainKernel,
-      let noise = CIFilter.randomGenerator().outputImage?.cropped(to: image.extent)
-    {
+    if grain > 0, let grainKernel {
       result =
         grainKernel.apply(
           extent: image.extent,
           arguments: [
-            result, noise, grain,
+            result, grain,
           ]) ?? result
     }
     return result

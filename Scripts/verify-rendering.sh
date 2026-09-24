@@ -15,3 +15,9 @@ DEVELOPER_DIR="$developer_dir" swiftc \
   "$project_dir/Tests/FramingProbe.swift" \
   -o "$project_dir/.build/FilmLabFramingProbe"
 "$project_dir/.build/FilmLabFramingProbe"
+DEVELOPER_DIR="$developer_dir" swiftc \
+  "$project_dir/Sources/FilmLab/FilmKernels.swift" \
+  "$project_dir/Sources/FilmLab/FilmEffects.swift" \
+  "$project_dir/Tests/TextureProbe.swift" \
+  -o "$project_dir/.build/FilmLabTextureProbe"
+"$project_dir/.build/FilmLabTextureProbe"

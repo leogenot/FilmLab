@@ -316,10 +316,20 @@ enum FilmKernels {
                   return float4(max(adjusted, float3(0.0)), pixel.a);
               }
 
-    [[stitchable]] float4 applyGrain(coreimage::sample_t pixel, coreimage::sample_t noise, float amount) {
+    [[stitchable]] float4 applyGrain(coreimage::sample_t pixel,
+                                    float amount, coreimage::destination destination) {
+                  int2 location = int2(floor(destination.coord()));
+                  uint hash = uint(location.x) * 0x8da6b343u
+                            ^ uint(location.y) * 0xd8163841u ^ 0xcb1ab31fu;
+                  hash ^= hash >> 16;
+                  hash *= 0x7feb352du;
+                  hash ^= hash >> 15;
+                  hash *= 0x846ca68bu;
+                  hash ^= hash >> 16;
+                  float noise = float(hash & 0x00ffffffu) / 16777216.0;
                   float luminance = dot(pixel.rgb, float3(0.2126, 0.7152, 0.0722));
                   float weight = sqrt(clamp(luminance, 0.02, 1.0));
-                  float grain = (noise.r - 0.5) * amount * 0.14 * weight;
+                  float grain = (noise - 0.5) * amount * 0.14 * weight;
                   return float4(max(pixel.rgb + float3(grain), float3(0.0)), pixel.a);
               }
 
