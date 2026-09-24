@@ -5,14 +5,14 @@ A small native macOS photo editor focused on film rendering and color grading.
 ## Current prototype
 
 - Opens JPEG and RAW formats supported by the Mac's Core Image decoder, identifying RAW through the file's ImageIO type. Verified with a Sony ILCE-7M4 ARW at 4672 × 7008 pixels.
-- Provides RAW white balance, exposure correction, contrast, saturation, creative warmth, an optional flatter RAW decode, plus Shot Exposure, Development and Amount for an exposure-dependent film response. The Film workspace offers the original study stock and an experimental Portra 400 density study based on Kodak’s published negative curves.
+- Provides RAW white balance, exposure correction, contrast, saturation, creative warmth, an optional flatter RAW decode, plus Shot Exposure, Development and Amount for an exposure-dependent film response. The Film workspace offers the original study stock and an experimental Portra 400 density study based on Kodak’s published negative curves, with an optional Endura paper tone stage.
 - Adds shadow, midtone, and highlight color timing, a hue-range selective color adjustment, plus content-dependent grain and highlight-edge halation. These controls default to off.
 - Saves non-destructive edits per source file in `~/Library/Application Support/FilmLab/Edits/` and restores them on reopening.
 - Includes an output luminance histogram, Before/After, a draggable split comparison, Reset Edits, and a scrollable 100% source-pixel inspection mode.
 - Renders previews asynchronously in sRGB, coalescing rapid control changes so the canvas stays responsive. Exports full-resolution sRGB JPEG or 16-bit Display P3 TIFF in a separate background renderer.
 - Leaves the source photo unchanged.
 
-The original study stock is a provisional response model. The Portra density study uses approximate samples from Kodak’s published negative-density chart, followed by a provisional balanced positive transform. Neither is a claim of faithful Portra 400 color reproduction; the spectral and print/scan stages remain incomplete.
+The original study stock is a provisional response model. The Portra density study uses approximate samples from Kodak’s published negative-density chart, followed by a provisional balanced positive transform. Its optional paper tone stage blends the provisional positive with negative density mapped through an approximate green-channel curve from Kodak’s Portra Endura paper sheet. It uses that one curve for all channels, so it is a tone study rather than calibrated color-paper reproduction. The spectral and print/scan stages remain incomplete.
 
 ## Run
 

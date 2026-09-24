@@ -87,16 +87,46 @@ enum FilmKernels {
         density = reference + (density - reference) * (1.0 + dev * 0.10);
         return float4(density, pixel.a);
     }
+    inline float3 enduraPaperReflectance(float3 negativeDensity, float3 reference);
     [[stitchable]] float4 portraPositive(coreimage::sample_t negative,
                                           coreimage::sample_t original,
-                                          float ev, float amount) {
+                                          float ev, float amount, float paperMix) {
         float3 reference = portraDensityAt(-1.44);
         // Provisional balanced print/scan transform; 0.18 remains 0.18 at the reference.
         float3 linear = 0.18 * exp2(clamp((negative.rgb - reference) * (0.8 / 0.17),
                                           float3(-20.0), float3(20.0)));
         float3 positive = 1.08 * linear / (linear + 0.9);
         return float4(mix(max(original.rgb, float3(0.0)) * exp2(ev),
-                          positive, amount), original.a);
+                          mix(positive, enduraPaperReflectance(negative.rgb, reference), paperMix),
+                          amount), original.a);
+    }
+
+    // Kodak E-4021 page-7 green Status A paper density, sampled from the graph.
+    constant float enduraH[10] = {-3.0, -2.5, -2.0, -1.75, -1.5,
+                                  -1.25, -1.0, -0.75, -0.5, -0.25};
+    constant float enduraD[10] = {0.10, 0.11, 0.19, 0.45, 1.05,
+                                  1.82, 2.37, 2.48, 2.49, 2.52};
+    inline float enduraDensityAt(float logH) {
+        if (logH <= enduraH[0]) return enduraD[0];
+        for (int i = 0; i < 9; i++) {
+            if (logH <= enduraH[i + 1]) {
+                float t = (logH - enduraH[i]) / (enduraH[i + 1] - enduraH[i]);
+                return mix(enduraD[i], enduraD[i + 1], t);
+            }
+        }
+        return enduraD[9];
+    }
+    inline float3 enduraPaperReflectance(float3 negativeDensity, float3 reference) {
+        float3 paperExposure = float3(-1.625) - (negativeDensity - reference);
+        float3 paperDensity = float3(
+            enduraDensityAt(paperExposure.r),
+            enduraDensityAt(paperExposure.g),
+            enduraDensityAt(paperExposure.b)
+        );
+        // Neutral enlarger balance and a 0.75-density mid-gray aim are assumptions.
+        paperDensity = clamp(paperDensity - enduraDensityAt(-1.625) + 0.75,
+                             float3(0.0), float3(3.0));
+        return pow(float3(10.0), -paperDensity);
     }
 
     [[stitchable]] float4 grade(coreimage::sample_t pixel,

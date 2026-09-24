@@ -42,3 +42,11 @@ Kodak's spectral-sensitivity plot shows broad blue-, green-, and red-sensitive b
 | Blue / yellow-forming | 0.00 | 0.12 | 0.88 |
 
 Each row sums to one, so a neutral scene patch stays neutral before the different density curves act. The coefficients are conservative modeling assumptions suggested by the plotted overlap, **not** values published or measured by Kodak. A future spectral reconstruction and film-layer integration should replace them. The print/scan stage is still provisional.
+
+## Optional paper tone reference: Kodak Professional Portra Endura
+
+Kodak, *KODAK PROFESSIONAL PORTRA ENDURA Paper and KODAK PROFESSIONAL SUPRA ENDURA Paper*, publication E-4021, revised September 2009, https://125px.com/docs/paper/kodak/e4021-200909.pdf (Kodak-authored document hosted by a third-party archive). Page 7 plots paper density against log paper exposure after RA-4 processing, with separate Status A red, green and blue curves. The paper predates the 2010 Portra 400 emulsion; this is an illustrative print-paper pairing, not a documented calibrated film-paper combination.
+
+`Research/endura-paper-tone.csv` contains approximate readings of the **green** characteristic curve from the page-7 graph. The page was rendered at 180 dpi (1530 × 1980 pixels). The plot axes were read at x = 935 for log exposure -3, x = 1396 for 0, y = 677 for density 0 and y = 216 for density 3. Curves overlap heavily in the toe; the sampled points are approximate, with larger uncertainty there. Treat the table as graph readings, not laboratory or per-batch specifications. Kodak explicitly notes that these representative curves are not specifications for a particular box or roll.
+
+For an optical-print approximation, higher negative density transmits less enlarger light: `log H_paper = balance - (D_negative - D_reference)`. FilmLab can map that paper exposure through the sampled curve and map paper density to relative reflectance with `10^-D`. The balance and neutral-gray aim remain choices; the sheet does not provide a complete enlarger spectrum, film-to-paper calibration, separate dye absorption at every density or scanner appearance. Applying the one green curve to all three RGB channels is a **tone-only** paper study, not a full color-paper simulation.
