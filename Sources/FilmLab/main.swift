@@ -145,6 +145,8 @@ final class PhotoEditor {
   var isExporting = false
 
   private var source: CIImage?
+  private var didAttemptResume = false
+  private let lastPhotoKey = "FilmLab.lastPhotoPath"
   private var decodedFlatRAW = false
   private var decodedHighlightRecovery = true
   private var decodedRawTemperature = 6500.0
@@ -194,6 +196,7 @@ final class PhotoEditor {
       scopedURL = access ? url : nil
       source = image
       sourceURL = url
+      UserDefaults.standard.set(url.standardizedFileURL.path, forKey: lastPhotoKey)
       sourceIsRAW = isRAW
       decodedFlatRAW = saved.flatRAW
       decodedHighlightRecovery = saved.rawHighlightRecovery
@@ -215,6 +218,20 @@ final class PhotoEditor {
       if access { url.stopAccessingSecurityScopedResource() }
       self.error = error.localizedDescription
     }
+  }
+
+  func resumeLastPhoto() {
+    guard !didAttemptResume else { return }
+    didAttemptResume = true
+    guard let path = UserDefaults.standard.string(forKey: lastPhotoKey),
+      FileManager.default.fileExists(atPath: path)
+    else { return }
+    open(URL(fileURLWithPath: path))
+  }
+
+  func flushEdits() {
+    saveTask?.cancel()
+    saveEdits()
   }
 
   private func editsURL(for url: URL) -> URL {
@@ -663,6 +680,7 @@ struct ContentView: View {
   @State private var showingImporter = false
   @State private var panel: EditorPanel = .film
   @Environment(\.displayScale) private var displayScale
+  @Environment(\.scenePhase) private var scenePhase
 
   var body: some View {
     HStack(spacing: 0) {
@@ -702,6 +720,11 @@ struct ContentView: View {
       case .success(let urls): if let url = urls.first { editor.open(url) }
       case .failure(let error): editor.error = error.localizedDescription
       }
+    }
+    .onAppear { editor.resumeLastPhoto() }
+    .onDisappear { editor.flushEdits() }
+    .onChange(of: scenePhase) {
+      if scenePhase != .active { editor.flushEdits() }
     }
     .onChange(of: editor.exposure) { editor.editsChanged() }
     .onChange(of: editor.contrast) { editor.editsChanged() }

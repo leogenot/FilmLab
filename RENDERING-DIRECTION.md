@@ -129,3 +129,7 @@ A Metal render probe checked both stocks at -2, 0 and +2 Shot Exposure. Both map
 ## Non-destructive framing, 24 September 2026
 
 Rotation by quarter turns and centered crop ratios now run after grading and texture. The framing state is saved per photo, and a normalized horizontal/vertical crop position chooses the visible region without changing the source file. The same Core Image geometry is used for preview, Before/After, 100% inspection and export. A JPEG test crop rotated right and set to 1:1 rendered in the app; split comparison stayed aligned, and the full-resolution export measured 4672 × 4672 pixels. The JPEG's saved edit file recorded both the rotation and ratio. Freeform and straighten-angle cropping remain future work.
+
+## Session recovery, 24 September 2026
+
+FilmLab records the path of the last successfully opened photo and reopens it on launch when the file still exists. It flushes the current per-photo edit document when the window disappears or the app leaves the active scene, alongside the normal short delayed save while adjusting controls. In the signed app, a JPEG test file reopened automatically after quit; a vertical crop position changed immediately before quitting restored as 0.57. The current app is unsandboxed and uses a local path for this convenience. A future sandboxed distribution should use persistent security-scoped bookmarks instead.
