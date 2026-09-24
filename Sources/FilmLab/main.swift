@@ -188,6 +188,7 @@ final class PhotoEditor {
   var showLocalMask = false
   var zoom100 = false
   var isRendering = false
+  var isOpening = false
   var isExporting = false
 
   private var source: CIImage?
@@ -213,6 +214,9 @@ final class PhotoEditor {
   var canRedo: Bool { !redoStack.isEmpty }
   private var previewTask: Task<Void, Never>?
   private var rawDecodeTask: Task<Void, Never>?
+  private var openTask: Task<Void, Never>?
+  private var openVersion = 0
+  private let imageDecoder = ImageDecoder()
   private var rawDecodeVersion = 0
   private var renderVersion = 0
   private let previewRenderer = PreviewRenderer()
@@ -226,60 +230,78 @@ final class PhotoEditor {
   private let portraPositiveKernel = FilmKernels.kernel("portraPositive")
 
   func open(_ url: URL) {
-    rawDecodeTask?.cancel()
-    rawDecodeVersion += 1
-    saveTask?.cancel()
-    if sourceURL != nil { saveEdits() }
+    openTask?.cancel()
+    openVersion += 1
+    let version = openVersion
     let access = url.startAccessingSecurityScopedResource()
-    do {
-      let isRAW = isRAWFile(url)
-      let saved = savedEdits(for: url, isRAW: isRAW)
-      let decoded = try decodeImage(
-        from: url, isRAW: isRAW, flatRAW: saved.flatRAW,
-        highlightRecovery: saved.rawHighlightRecovery, temperature: saved.rawTemperature,
-        tint: saved.rawTint
-      )
-      let image = decoded.image
-      guard image.extent.width.isFinite, image.extent.height.isFinite,
-        image.extent.width > 0, image.extent.height > 0
-      else {
-        throw EditorError.unsupported
+    isOpening = true
+    error = nil
+    openTask = Task {
+      var retainAccess = false
+      defer {
+        if access && !retainAccess { url.stopAccessingSecurityScopedResource() }
+        if version == openVersion {
+          isOpening = false
+          openTask = nil
+        }
       }
-      previewTask?.cancel()
-      renderVersion += 1
-      if let scopedURL { scopedURL.stopAccessingSecurityScopedResource() }
-      scopedURL = access ? url : nil
-      source = image
-      sourceURL = url
-      UserDefaults.standard.set(url.standardizedFileURL.path, forKey: lastPhotoKey)
-      sourceIsRAW = isRAW
-      decodedFlatRAW = saved.flatRAW
-      decodedHighlightRecovery = saved.rawHighlightRecovery
-      rawHighlightRecoverySupported = decoded.highlightRecoverySupported
-      cameraRawTemperature = decoded.cameraTemperature ?? 6500
-      cameraRawTint = decoded.cameraTint ?? 0
-      decodedRawTemperature = saved.rawTemperature ?? cameraRawTemperature
-      decodedRawTint = saved.rawTint ?? cameraRawTint
-      showOriginal = false
-      showLocalMask = false
-      placingLocalArea = false
-      showCropBounds = false
-      zoom100 = false
-      compareEnabled = false
-      comparisonPreview = nil
-      histogram = nil
-      restoreEdits(saved)
-      historyTask?.cancel()
-      historyOpen = false
-      undoStack.removeAll()
-      redoStack.removeAll()
-      historyBaseline = currentEdits()
-      preview = nil
-      error = nil
-      renderPreview()
-    } catch {
-      if access { url.stopAccessingSecurityScopedResource() }
-      self.error = error.localizedDescription
+      do {
+        let isRAW = await imageDecoder.isRAWFile(url)
+        try Task.checkCancellation()
+        let saved = savedEdits(for: url, isRAW: isRAW)
+        let decoded = try await imageDecoder.decode(
+          from: url, isRAW: isRAW, flatRAW: saved.flatRAW,
+          highlightRecovery: saved.rawHighlightRecovery, temperature: saved.rawTemperature,
+          tint: saved.rawTint)
+        try Task.checkCancellation()
+        guard version == openVersion else { return }
+        let image = decoded.image
+        guard image.extent.width.isFinite, image.extent.height.isFinite,
+          image.extent.width > 0, image.extent.height > 0
+        else { throw EditorError.unsupported }
+        rawDecodeTask?.cancel()
+        rawDecodeVersion += 1
+        saveTask?.cancel()
+        if sourceURL != nil { saveEdits() }
+        previewTask?.cancel()
+        renderVersion += 1
+        if let scopedURL { scopedURL.stopAccessingSecurityScopedResource() }
+        scopedURL = access ? url : nil
+        retainAccess = access
+        source = image
+        sourceURL = url
+        UserDefaults.standard.set(url.standardizedFileURL.path, forKey: lastPhotoKey)
+        sourceIsRAW = isRAW
+        decodedFlatRAW = saved.flatRAW
+        decodedHighlightRecovery = saved.rawHighlightRecovery
+        rawHighlightRecoverySupported = decoded.highlightRecoverySupported
+        cameraRawTemperature = decoded.cameraTemperature ?? 6500
+        cameraRawTint = decoded.cameraTint ?? 0
+        decodedRawTemperature = saved.rawTemperature ?? cameraRawTemperature
+        decodedRawTint = saved.rawTint ?? cameraRawTint
+        showOriginal = false
+        showLocalMask = false
+        placingLocalArea = false
+        showCropBounds = false
+        zoom100 = false
+        compareEnabled = false
+        comparisonPreview = nil
+        histogram = nil
+        restoreEdits(saved)
+        historyTask?.cancel()
+        historyOpen = false
+        undoStack.removeAll()
+        redoStack.removeAll()
+        historyBaseline = currentEdits()
+        preview = nil
+        error = nil
+        renderPreview()
+      } catch is CancellationError {
+        return
+      } catch {
+        guard version == openVersion else { return }
+        self.error = "Could not open photo: \(error.localizedDescription)"
+      }
     }
   }
 
@@ -312,47 +334,6 @@ final class PhotoEditor {
       return saved
     }
     return PhotoEdits.defaults(forRAW: isRAW)
-  }
-
-  private func isRAWFile(_ url: URL) -> Bool {
-    guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-      let identifier = CGImageSourceGetType(source) as String?,
-      let type = UTType(identifier)
-    else { return false }
-    return type.conforms(to: .rawImage)
-  }
-
-  private func decodeImage(
-    from url: URL, isRAW: Bool, flatRAW: Bool, highlightRecovery: Bool,
-    temperature: Double?, tint: Double?
-  ) throws -> (
-    image: CIImage, cameraTemperature: Double?, cameraTint: Double?,
-    highlightRecoverySupported: Bool
-  ) {
-    if isRAW {
-      guard let raw = CIRAWFilter(imageURL: url) else { throw EditorError.unsupported }
-      let cameraTemperature = Double(raw.neutralTemperature)
-      let cameraTint = Double(raw.neutralTint)
-      var highlightRecoverySupported = false
-      if #available(macOS 26.0, *) {
-        highlightRecoverySupported = raw.isHighlightRecoverySupported
-        if highlightRecoverySupported { raw.isHighlightRecoveryEnabled = highlightRecovery }
-      }
-      if let temperature { raw.neutralTemperature = Float(temperature) }
-      if let tint { raw.neutralTint = Float(tint) }
-      if flatRAW {
-        raw.boostAmount = 0
-        raw.boostShadowAmount = 0
-        raw.localToneMapAmount = 0
-      }
-      guard let image = raw.outputImage else { throw EditorError.unsupported }
-      return (image, cameraTemperature, cameraTint, highlightRecoverySupported)
-    }
-    let data = try Data(contentsOf: url)
-    guard let image = CIImage(data: data, options: [.applyOrientationProperty: true]) else {
-      throw EditorError.unsupported
-    }
-    return (image, nil, nil, false)
   }
 
   private func restoreEdits(_ saved: PhotoEdits) {
@@ -427,7 +408,7 @@ final class PhotoEditor {
       do { try await Task.sleep(for: .milliseconds(90)) } catch { return }
       guard !Task.isCancelled, version == rawDecodeVersion, sourceURL == url else { return }
       do {
-        let decoded = try decodeImage(
+        let decoded = try await imageDecoder.decode(
           from: url, isRAW: true, flatRAW: requestedFlatRAW,
           highlightRecovery: requestedHighlightRecovery, temperature: requestedTemperature,
           tint: requestedTint
@@ -1100,14 +1081,18 @@ struct ContentView: View {
   private var photoCanvas: some View {
     ZStack {
       Color(white: 0.065)
-      if editor.isRendering || editor.isExporting {
-        ProgressView(editor.isExporting ? "Exporting photo…" : "Rendering preview…")
-          .padding(10)
-          .background(.ultraThinMaterial)
-          .clipShape(RoundedRectangle(cornerRadius: 7))
-          .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-          .padding(16)
-          .zIndex(1)
+      if editor.isOpening || editor.isRendering || editor.isExporting {
+        ProgressView(
+          editor.isExporting
+            ? "Exporting photo…"
+            : (editor.isOpening ? "Opening photo…" : "Rendering preview…")
+        )
+        .padding(10)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 7))
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+        .padding(16)
+        .zIndex(1)
       }
       if editor.placingLocalArea {
         Text("Click the photo to place Area \(editor.selectedLocalIndex + 1)")

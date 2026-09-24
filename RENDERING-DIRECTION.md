@@ -201,3 +201,7 @@ I verified the signed app through its Save dialog on both input types. `FilmLab-
 ## Cross-photo settings verification (2026-09-24)
 
 The signed app copied settings from `FilmLab-jpeg-default.jpg` and pasted them onto `FilmLab-linear-default.ARW`. The RAW Film panel changed to the JPEG source's 0.40 EV paper exposure and 0.70 stock amount; the photo also acquired its saved framing. The Develop panel still showed the RAW source's 5634 K temperature, 4 tint, highlight recovery and linear RAW input. A single Undo restored the prior RAW look. Settings transfer is intended as a starting point: different RAW/JPEG input transforms can make the same settings look different.
+
+## Background image decoding (2026-09-24)
+
+File type detection and RAW/JPEG decoding now run in an `ImageDecoder` actor. The editor keeps the current photo visible while a new file opens, shows an Opening photo progress indicator, and uses a version check to discard an older open result after a newer request. RAW white-balance and decoder-mode changes use the same off-UI decoder. On the signed app, the saved Sony ARW reopened successfully; opening `FilmLab-jpeg-default.jpg` then restored its saved Ektar/paper grade, and its Develop panel excluded RAW-only controls. This is a functional UI check, not a measured latency or memory benchmark.
