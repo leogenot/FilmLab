@@ -193,6 +193,7 @@ final class PhotoEditor {
   private var source: CIImage?
   private var didAttemptResume = false
   private let lastPhotoKey = "FilmLab.lastPhotoPath"
+  private let settingsPasteboardType = NSPasteboard.PasteboardType("app.filmlab.edits+json")
   private var decodedFlatRAW = false
   private var decodedHighlightRecovery = true
   private var decodedRawTemperature = 6500.0
@@ -536,6 +537,40 @@ final class PhotoEditor {
     } catch {
       self.error = "Could not save edits: \(error.localizedDescription)"
     }
+  }
+
+  func copySettings() {
+    guard sourceURL != nil else { return }
+    do {
+      let data = try JSONEncoder().encode(currentEdits())
+      NSPasteboard.general.clearContents()
+      NSPasteboard.general.setData(data, forType: settingsPasteboardType)
+      error = nil
+    } catch {
+      self.error = "Could not copy settings: \(error.localizedDescription)"
+    }
+  }
+
+  func pasteSettings() {
+    guard sourceURL != nil else { return }
+    guard let data = NSPasteboard.general.data(forType: settingsPasteboardType),
+      var copied = try? JSONDecoder().decode(PhotoEdits.self, from: data)
+    else {
+      error = "Copy settings from a FilmLab photo first."
+      return
+    }
+    let current = currentEdits()
+    copied.flatRAW = current.flatRAW
+    copied.rawHighlightRecovery = current.rawHighlightRecovery
+    copied.rawTemperature = current.rawTemperature
+    copied.rawTint = current.rawTint
+    restoreEdits(copied)
+    showCropBounds = false
+    showLocalMask = false
+    placingLocalArea = false
+    showOriginal = false
+    compareEnabled = false
+    editsChanged()
   }
 
   func undo() {
@@ -948,6 +983,15 @@ struct ContentView: View {
       Button("Redo", systemImage: "arrow.uturn.forward") { editor.redo() }
         .keyboardShortcut("z", modifiers: [.command, .shift])
         .disabled(!editor.canRedo)
+      Menu("Settings", systemImage: "square.on.square") {
+        Button("Copy Settings") { editor.copySettings() }
+          .keyboardShortcut("c", modifiers: [.command, .shift])
+        Button("Paste Settings") { editor.pasteSettings() }
+          .keyboardShortcut("v", modifiers: [.command, .shift])
+      }
+      .accessibilityLabel("Settings")
+      .help("Copy or paste FilmLab edit settings")
+      .disabled(editor.preview == nil)
       Button("Reset Edits", systemImage: "arrow.counterclockwise") { editor.resetEdits() }
         .disabled(editor.preview == nil)
       Button("Open…", systemImage: "folder") { showingImporter = true }

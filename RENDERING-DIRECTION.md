@@ -197,3 +197,7 @@ The Framing workspace now supports a non-destructive freeform rectangle after ro
 ### Freeform export check
 
 I verified the signed app through its Save dialog on both input types. `FilmLab-linear-default.ARW` exported with 80% width and height to a 3737 × 5606 JPEG from its 4672 × 7008 source. `FilmLab-jpeg-default.jpg`, with its saved quarter-turn rotation, exported at 5606 × 3737. Two exports of the JPEG with the same edit settings, once with the temporary crop bounds visible and once hidden, were byte-identical (SHA-256 `a003634f4e5af08aa049e66d5b691bf37ca6892c1512118fecf986a273abfbc6`). This checks that the bounds overlay does not enter the render/export pipeline. It does not establish pixel-level equivalence between RAW and JPEG, whose input processing differs.
+
+## Cross-photo settings verification (2026-09-24)
+
+The signed app copied settings from `FilmLab-jpeg-default.jpg` and pasted them onto `FilmLab-linear-default.ARW`. The RAW Film panel changed to the JPEG source's 0.40 EV paper exposure and 0.70 stock amount; the photo also acquired its saved framing. The Develop panel still showed the RAW source's 5634 K temperature, 4 tint, highlight recovery and linear RAW input. A single Undo restored the prior RAW look. Settings transfer is intended as a starting point: different RAW/JPEG input transforms can make the same settings look different.
