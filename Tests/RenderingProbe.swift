@@ -95,6 +95,21 @@ struct RenderingProbe {
     precondition(
       grayMixed.allSatisfy { abs($0 - 0.18) < 0.001 },
       "Color mixer shifted neutral pixels")
+    bands[0] = ColorMix(hue: 0, saturation: 0, luminance: 1)
+    let brighterRed = channels(ColorMixer.apply(to: redPatch, adjustments: bands))
+    let unchangedBlue = channels(ColorMixer.apply(to: bluePatch, adjustments: bands))
+    precondition(
+      brighterRed[0] > redMixed[0] + 0.2,
+      "Red mixer luminance did not raise the selected color")
+    precondition(
+      abs(unchangedBlue[2] - 0.8) < 0.003,
+      "Red mixer luminance spilled into blue pixels")
+    bands[0] = ColorMix()
+    bands[5].hue = 30
+    let shiftedBlue = channels(ColorMixer.apply(to: bluePatch, adjustments: bands))
+    precondition(
+      abs(shiftedBlue[0] - 0.08) > 0.01 || abs(shiftedBlue[1] - 0.2) > 0.01,
+      "Blue mixer hue did not affect blue pixels")
     print("Metal film rendering checks passed")
   }
 }

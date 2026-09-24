@@ -141,3 +141,9 @@ Develop now has Shadow Light and Highlight Light controls in EV. A stitchable Me
 ## Per-photo undo and redo, 24 September 2026
 
 FilmLab now keeps up to 50 edit snapshots in memory for the active photo. Rapid changes within 500 ms form one undo step; opening another photo clears the history. Undo and Redo restore all saved controls, including RAW decoder settings, and trigger a RAW re-decode when those settings change. The signed app restored Shot Exposure from +1.59 to zero and reapplied it with Redo; a new Development edit cleared Redo; undoing a Linear RAW input toggle restored that decoder mode. Persisted edit files retain the currently applied state. The history is intentionally session-local and is not yet a multi-session edit timeline.
+
+## Eight-family Color Mixer, 24 September 2026
+
+Color now offers Red, Orange, Yellow, Green, Aqua, Blue, Purple and Magenta hue families, each with hue, saturation and luminance controls. A soft hue and chroma mask is computed from the graded pixel before any mixer band runs. Each active band then adjusts the accumulated image, while its mask remains tied to that original graded pixel so shifting one hue does not cause it to enter another band. The default zero values skip all mixer passes and preserve existing edits. This is a creative RGB control after film and tonal grading, not an emulsion spectral model.
+
+The Metal probe checked that red desaturation and luminance affect a red patch while leaving a blue patch and neutral gray unchanged, and that the blue hue control changes a blue patch. The signed app opened the JPEG test copy with the mixer controls visible; the UI control session lost its window handle before a JPEG slider change could be verified. A prior RAW slider interaction visibly changed warm regions of the Sony test copy. Full-resolution export parity for nonzero mixer settings and edit persistence after relaunch remain to be checked.
