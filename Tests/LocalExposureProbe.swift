@@ -24,6 +24,27 @@ struct LocalExposureProbe {
       for: source, centerX: 0.8, centerY: 0.2, radius: 0.2, feather: 0.5)!
     precondition(red(mask, 80, 20) > 0.99, "Mask center is not white")
     precondition(red(mask, 20, 80) < 0.01, "Mask corner is not black")
+    let linearMask = LocalExposure.mask(
+      for: source, centerX: 0.5, centerY: 0.5, radius: 0.4,
+      feather: 0.5, shape: 1, angle: 90)!
+    precondition(red(linearMask, 50, 10) > 0.99, "Linear mask lower side is not white")
+    precondition(red(linearMask, 50, 90) < 0.01, "Linear mask upper side is not black")
+    precondition(abs(red(linearMask, 50, 50) - 0.5) < 0.03, "Linear mask center is not half")
+    let linearBright = LocalExposure.apply(
+      to: source, ev: 1, centerX: 0.5, centerY: 0.5, radius: 0.4,
+      feather: 0.5, shape: 1, angle: 90)
+    precondition(red(linearBright, 50, 10) > 0.35, "Linear light did not brighten lower side")
+    precondition(
+      abs(red(linearBright, 50, 90) - 0.18) < 0.002,
+      "Linear light changed the upper side")
+    let oldArea = try! JSONDecoder().decode(
+      RadialAdjustment.self,
+      from: Data(
+        #"{"exposure":1,"centerX":0.2,"centerY":0.7,"radius":0.3,"feather":0.4,"inverted":true}"#
+          .utf8))
+    precondition(
+      oldArea.shape == 0 && oldArea.angle == 90 && oldArea.inverted,
+      "Older saved radial areas did not decode")
     let unchanged = LocalExposure.apply(
       to: source, ev: 0, centerX: 0.5, centerY: 0.5, radius: 0.35, feather: 0.5)
     precondition(unchanged === source, "Zero EV should skip the local graph")

@@ -24,6 +24,7 @@ DEVELOPER_DIR="$developer_dir" swiftc \
 "$project_dir/.build/FilmLabTextureProbe"
 DEVELOPER_DIR="$developer_dir" swiftc \
   "$project_dir/Sources/FilmLab/LocalExposure.swift" \
+  "$project_dir/Sources/FilmLab/RadialAdjustment.swift" \
   "$project_dir/Tests/LocalExposureProbe.swift" \
   -o "$project_dir/.build/FilmLabLocalExposureProbe"
 "$project_dir/.build/FilmLabLocalExposureProbe"

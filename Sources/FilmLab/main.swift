@@ -671,6 +671,22 @@ final class PhotoEditor {
     if showLocalMask { renderPreview() }
   }
 
+  func setLocalShape(_ shape: Int) {
+    guard radialLights.indices.contains(selectedLocalIndex), shape == 0 || shape == 1 else {
+      return
+    }
+    let previous = radialLights[selectedLocalIndex].shape
+    guard previous != shape else { return }
+    radialLights[selectedLocalIndex].shape = shape
+    if shape == 1 {
+      var angle = 90 - Double(frameRotation) * 90 - frameStraighten
+      if angle < -180 { angle += 360 }
+      if angle > 180 { angle -= 360 }
+      radialLights[selectedLocalIndex].angle = angle
+    }
+    editsChanged()
+  }
+
   func setMaskPreview(_ visible: Bool) {
     placingLocalArea = false
     showCropBounds = false
@@ -735,7 +751,8 @@ final class PhotoEditor {
     guard
       let mask = LocalExposure.mask(
         for: source, centerX: area.centerX, centerY: area.centerY,
-        radius: area.radius, feather: area.feather, inverted: area.inverted)
+        radius: area.radius, feather: area.feather, inverted: area.inverted,
+        shape: area.shape, angle: area.angle)
     else { return nil }
     return framedImage(mask)
   }
@@ -757,7 +774,7 @@ final class PhotoEditor {
       image = LocalExposure.apply(
         to: image, ev: area.exposure, centerX: area.centerX,
         centerY: area.centerY, radius: area.radius, feather: area.feather,
-        inverted: area.inverted)
+        inverted: area.inverted, shape: area.shape, angle: area.angle)
     }
     if stockIndex == 1 || stockIndex == 2 {
       guard let measuredNegativeKernel,
@@ -1319,7 +1336,7 @@ struct ContentView: View {
           control("Hue shift", value: $editor.selectiveShift, range: -45...45)
           control("Saturation", value: $editor.selectiveSaturation, range: -1...1)
         case .local:
-          Text("Radial light").font(.headline)
+          Text("Scene light areas").font(.headline)
           Picker(
             "Area",
             selection: Binding(
@@ -1348,14 +1365,31 @@ struct ContentView: View {
             isOn: Binding(
               get: { editor.showLocalMask },
               set: { editor.setMaskPreview($0) }))
+          Picker(
+            "Shape",
+            selection: Binding(
+              get: { editor.radialLights[editor.selectedLocalIndex].shape },
+              set: { editor.setLocalShape($0) }
+            )
+          ) {
+            Text("Radial").tag(0)
+            Text("Linear gradient").tag(1)
+          }
+          .pickerStyle(.menu)
           Toggle("Invert area", isOn: localBoolBinding(\.inverted))
           control("Exposure (EV)", value: localBinding(\.exposure), range: -2...2)
           control("Horizontal center", value: localBinding(\.centerX), range: 0...1)
           control("Vertical center", value: localBinding(\.centerY), range: 0...1)
-          control("Size", value: localBinding(\.radius), range: 0.05...0.8)
-          control("Feather", value: localBinding(\.feather), range: 0.05...1)
+          control(
+            editor.radialLights[editor.selectedLocalIndex].shape == 1 ? "Transition" : "Size",
+            value: localBinding(\.radius), range: 0.05...0.8)
+          if editor.radialLights[editor.selectedLocalIndex].shape == 1 {
+            control("Direction (source °)", value: localBinding(\.angle), range: -180...180)
+          } else {
+            control("Feather", value: localBinding(\.feather), range: 0.05...1)
+          }
           Text(
-            "Each area changes scene light before film processing. Place it on the photo or use the sliders. Show mask is temporary; 0 EV disables the selected area."
+            "Each area changes scene light before film processing. Place it on the photo or use the sliders. A new linear area starts vertically in the displayed photo; its saved direction follows source pixels if you rotate later. Show mask is temporary; 0 EV disables the selected area."
           )
           .font(.caption).foregroundStyle(.secondary)
         case .framing:
