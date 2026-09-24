@@ -30,6 +30,8 @@ private struct PhotoEdits: Codable {
   var paperStrength = 0.5
   var paperExposure = 0.0
   var shotExposure = 0.0
+  var shadowLight = 0.0
+  var highlightLight = 0.0
   var development = 0.0
   var grain = 0.0
   var halation = 0.0
@@ -73,6 +75,8 @@ private struct PhotoEdits: Codable {
     paperStrength = try values.decodeIfPresent(Double.self, forKey: .paperStrength) ?? 0.5
     paperExposure = try values.decodeIfPresent(Double.self, forKey: .paperExposure) ?? 0
     shotExposure = try values.decodeIfPresent(Double.self, forKey: .shotExposure) ?? 0
+    shadowLight = try values.decodeIfPresent(Double.self, forKey: .shadowLight) ?? 0
+    highlightLight = try values.decodeIfPresent(Double.self, forKey: .highlightLight) ?? 0
     development = try values.decodeIfPresent(Double.self, forKey: .development) ?? 0
     grain = try values.decodeIfPresent(Double.self, forKey: .grain) ?? 0
     halation = try values.decodeIfPresent(Double.self, forKey: .halation) ?? 0
@@ -116,6 +120,8 @@ final class PhotoEditor {
   var paperStrength = 0.5
   var paperExposure = 0.0
   var shotExposure = 0.0
+  var shadowLight = 0.0
+  var highlightLight = 0.0
   var development = 0.0
   var grain = 0.0
   var halation = 0.0
@@ -167,6 +173,7 @@ final class PhotoEditor {
   // Scene-linear RGB enters this kernel in the context's extended linear working space.
   // This is a provisional response model, not a measured emulsion profile.
   private let filmKernel = FilmKernels.kernel("filmResponse")
+  private let sceneLightKernel = FilmKernels.kernel("shapeSceneLight")
   private let measuredNegativeKernel = FilmKernels.kernel("measuredNegative")
   private let portraPositiveKernel = FilmKernels.kernel("portraPositive")
 
@@ -303,6 +310,8 @@ final class PhotoEditor {
     paperStrength = saved.paperStrength
     paperExposure = saved.paperExposure
     shotExposure = saved.shotExposure
+    shadowLight = saved.shadowLight
+    highlightLight = saved.highlightLight
     development = saved.development
     grain = saved.grain
     halation = saved.halation
@@ -406,6 +415,8 @@ final class PhotoEditor {
     edits.paperStrength = paperStrength
     edits.paperExposure = paperExposure
     edits.shotExposure = shotExposure
+    edits.shadowLight = shadowLight
+    edits.highlightLight = highlightLight
     edits.development = development
     edits.grain = grain
     edits.halation = halation
@@ -452,6 +463,8 @@ final class PhotoEditor {
     paperStrength = defaults.paperStrength
     paperExposure = defaults.paperExposure
     shotExposure = defaults.shotExposure
+    shadowLight = defaults.shadowLight
+    highlightLight = defaults.highlightLight
     development = defaults.development
     grain = defaults.grain
     halation = defaults.halation
@@ -499,6 +512,17 @@ final class PhotoEditor {
 
   private func developedImage() -> CIImage? {
     guard var image = source else { return nil }
+    if abs(shadowLight) > 0.001 || abs(highlightLight) > 0.001 {
+      guard let sceneLightKernel,
+        let shaped = sceneLightKernel.apply(
+          extent: image.extent, arguments: [image, shadowLight, highlightLight]
+        )
+      else {
+        error = "The scene-light shaping stage could not be loaded."
+        return nil
+      }
+      image = shaped
+    }
     if stockIndex == 1 || stockIndex == 2 {
       guard let measuredNegativeKernel,
         let portraPositiveKernel,
@@ -736,6 +760,8 @@ struct ContentView: View {
     .onChange(of: editor.paperStrength) { editor.editsChanged() }
     .onChange(of: editor.paperExposure) { editor.editsChanged() }
     .onChange(of: editor.shotExposure) { editor.editsChanged() }
+    .onChange(of: editor.shadowLight) { editor.editsChanged() }
+    .onChange(of: editor.highlightLight) { editor.editsChanged() }
     .onChange(of: editor.development) { editor.editsChanged() }
     .onChange(of: editor.grain) { editor.editsChanged() }
     .onChange(of: editor.halation) { editor.editsChanged() }
@@ -924,6 +950,12 @@ struct ContentView: View {
               .font(.caption).foregroundStyle(.secondary)
             Divider()
           }
+          Text("Scene light before film").font(.headline)
+          control("Shadow light (EV)", value: $editor.shadowLight, range: -2...2)
+          control("Highlight light (EV)", value: $editor.highlightLight, range: -2...2)
+          Text("Changes the light reaching the film model in each tonal region.")
+            .font(.caption).foregroundStyle(.secondary)
+          Divider()
           control("Output exposure (EV)", value: $editor.exposure, range: -3...3)
           control("Contrast", value: $editor.contrast, range: 0.5...1.5)
           control("Saturation", value: $editor.saturation, range: 0...1.5)

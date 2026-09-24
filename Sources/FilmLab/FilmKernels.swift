@@ -46,6 +46,17 @@ enum FilmKernels {
                   return float4(mix(rgb * exp2(ev), film, amount), pixel.a);
               }
 
+    [[stitchable]] float4 shapeSceneLight(coreimage::sample_t pixel,
+                                          float shadowEV, float highlightEV) {
+        float3 light = max(pixel.rgb, float3(0.0));
+        float luminance = dot(light, float3(0.2126, 0.7152, 0.0722));
+        float stops = log2(max(luminance, 0.000001) / 0.18);
+        float shadowWeight = 1.0 - smoothstep(-4.0, -0.5, stops);
+        float highlightWeight = smoothstep(0.5, 4.0, stops);
+        float shift = shadowEV * shadowWeight + highlightEV * highlightWeight;
+        return float4(light * exp2(shift), pixel.a);
+    }
+
     // Kodak E-4050 chart samples: Status M negative density, stored in R/G/B order.
     constant float portraH[9] = {-3.4, -3.0, -2.5, -2.0, -1.5, -1.0, -0.5, 0.0, 0.5};
     constant float3 portraD[9] = {
