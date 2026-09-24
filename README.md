@@ -18,7 +18,7 @@ Existing saved RAW edits keep their chosen decoder mode. Reset Edits returns a R
 
 ## Run
 
-Open `Package.swift` in Xcode and run the `FilmLab` executable target, or open `FilmLab.app` for the last verified build. When rebuilding the bundled app manually, copy `.build/debug/FilmLab` into `FilmLab.app/Contents/MacOS/` and re-sign it with `codesign --force --deep --sign - FilmLab.app`. To rebuild from Terminal, run `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift build`.
+Open `Package.swift` in Xcode and run the `FilmLab` executable target. For a signed local release bundle, run `Scripts/build-app.sh` and open `Dist/FilmLab.app`. The script builds with SwiftPM in release mode, assembles the bundle, signs it ad hoc, and verifies the signature. This local build is not notarized for distribution to other Macs. The root `FilmLab.app` is a manually updated development bundle.
 
 ## Next image-quality milestone
 
