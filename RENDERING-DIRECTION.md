@@ -54,3 +54,7 @@ The response, tonal grade, selective color, grain, highlight mask and halation k
 ## Split comparison, 24 September 2026
 
 The canvas now offers a draggable Before/After split at Fit zoom. Both sides are rendered from the same source image with the same explicit sRGB preview conversion; the edited side uses the full current film graph. The split was visually checked on the Sony RAW, then dragged across the image. It makes exposure and color changes easier to judge spatially without changing the export graph.
+
+## RAW decoder tone modes, 24 September 2026
+
+On `LEO00403.ARW`, Core Image initialized global boost to 1.0 and shadow boost to 0.9. FilmLab now exposes a per-photo Flat RAW input switch in Develop. It sets those two boosts and local tone mapping to zero before the stock response; the default mode preserves the earlier Apple decoder rendering for existing edits. Two temporary sRGB previews showed a flatter, darker lower half and a less cyan sky from the flat decode. The in-app switch visibly changed the RAW preview, and its saved state restored after reopening the file. Flat does not imply untouched sensor data: camera profiling, white balance, demosaicing and baseline exposure still occur.

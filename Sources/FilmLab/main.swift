@@ -38,6 +38,7 @@ private struct PhotoEdits: Codable {
   var selectiveRange = 35.0
   var selectiveShift = 0.0
   var selectiveSaturation = 0.0
+  var flatRAW = false
 
   init() {}
 
@@ -62,6 +63,7 @@ private struct PhotoEdits: Codable {
     selectiveRange = try values.decodeIfPresent(Double.self, forKey: .selectiveRange) ?? 35
     selectiveShift = try values.decodeIfPresent(Double.self, forKey: .selectiveShift) ?? 0
     selectiveSaturation = try values.decodeIfPresent(Double.self, forKey: .selectiveSaturation) ?? 0
+    flatRAW = try values.decodeIfPresent(Bool.self, forKey: .flatRAW) ?? false
   }
 }
 
@@ -91,6 +93,7 @@ final class PhotoEditor {
   var selectiveRange = 35.0
   var selectiveShift = 0.0
   var selectiveSaturation = 0.0
+  var flatRAW = false
   var error: String?
   var showOriginal = false
   var zoom100 = false
@@ -98,6 +101,11 @@ final class PhotoEditor {
   var isExporting = false
 
   private var source: CIImage?
+  private var decodedFlatRAW = false
+  private let rawExtensions: Set<String> = ["arw", "cr2", "cr3", "dng", "nef", "raf", "rw2"]
+  var isRAWSource: Bool {
+    sourceURL.map { rawExtensions.contains($0.pathExtension.lowercased()) } ?? false
+  }
   private var scopedURL: URL?
   private var saveTask: Task<Void, Never>?
   private var previewTask: Task<Void, Never>?
@@ -114,15 +122,9 @@ final class PhotoEditor {
     if sourceURL != nil { saveEdits() }
     let access = url.startAccessingSecurityScopedResource()
     do {
-      let rawExtensions: Set<String> = ["arw", "cr2", "cr3", "dng", "nef", "raf", "rw2"]
-      let image: CIImage?
-      if rawExtensions.contains(url.pathExtension.lowercased()) {
-        image = CIRAWFilter(imageURL: url)?.outputImage
-      } else {
-        let data = try Data(contentsOf: url)
-        image = CIImage(data: data, options: [.applyOrientationProperty: true])
-      }
-      guard let image, image.extent.width.isFinite, image.extent.height.isFinite,
+      let saved = savedEdits(for: url)
+      let image = try decodeImage(from: url, flatRAW: saved.flatRAW)
+      guard image.extent.width.isFinite, image.extent.height.isFinite,
         image.extent.width > 0, image.extent.height > 0
       else {
         throw EditorError.unsupported
@@ -133,11 +135,12 @@ final class PhotoEditor {
       scopedURL = access ? url : nil
       source = image
       sourceURL = url
+      decodedFlatRAW = saved.flatRAW
       showOriginal = false
       zoom100 = false
       compareEnabled = false
       comparisonPreview = nil
-      restoreEdits(for: url)
+      restoreEdits(saved)
       preview = nil
       error = nil
       renderPreview()
@@ -155,11 +158,31 @@ final class PhotoEditor {
       .appendingPathComponent(key + ".json")
   }
 
-  private func restoreEdits(for url: URL) {
-    let saved =
-      (try? Data(contentsOf: editsURL(for: url))).flatMap {
-        try? JSONDecoder().decode(PhotoEdits.self, from: $0)
-      } ?? PhotoEdits()
+  private func savedEdits(for url: URL) -> PhotoEdits {
+    (try? Data(contentsOf: editsURL(for: url))).flatMap {
+      try? JSONDecoder().decode(PhotoEdits.self, from: $0)
+    } ?? PhotoEdits()
+  }
+
+  private func decodeImage(from url: URL, flatRAW: Bool) throws -> CIImage {
+    if rawExtensions.contains(url.pathExtension.lowercased()) {
+      guard let raw = CIRAWFilter(imageURL: url) else { throw EditorError.unsupported }
+      if flatRAW {
+        raw.boostAmount = 0
+        raw.boostShadowAmount = 0
+        raw.localToneMapAmount = 0
+      }
+      guard let image = raw.outputImage else { throw EditorError.unsupported }
+      return image
+    }
+    let data = try Data(contentsOf: url)
+    guard let image = CIImage(data: data, options: [.applyOrientationProperty: true]) else {
+      throw EditorError.unsupported
+    }
+    return image
+  }
+
+  private func restoreEdits(_ saved: PhotoEdits) {
     exposure = saved.exposure
     contrast = saved.contrast
     saturation = saved.saturation
@@ -179,6 +202,22 @@ final class PhotoEditor {
     selectiveRange = saved.selectiveRange
     selectiveShift = saved.selectiveShift
     selectiveSaturation = saved.selectiveSaturation
+    flatRAW = saved.flatRAW
+  }
+
+  func rawModeChanged() {
+    guard isRAWSource, flatRAW != decodedFlatRAW, let url = sourceURL else { return }
+    do {
+      let image = try decodeImage(from: url, flatRAW: flatRAW)
+      previewTask?.cancel()
+      renderVersion += 1
+      source = image
+      decodedFlatRAW = flatRAW
+      editsChanged()
+    } catch {
+      flatRAW = decodedFlatRAW
+      self.error = "Could not update RAW input: \(error.localizedDescription)"
+    }
   }
 
   func editsChanged() {
@@ -213,6 +252,7 @@ final class PhotoEditor {
     edits.selectiveRange = selectiveRange
     edits.selectiveShift = selectiveShift
     edits.selectiveSaturation = selectiveSaturation
+    edits.flatRAW = flatRAW
     let url = editsURL(for: sourceURL)
     do {
       try FileManager.default.createDirectory(
@@ -245,6 +285,7 @@ final class PhotoEditor {
     selectiveRange = defaults.selectiveRange
     selectiveShift = defaults.selectiveShift
     selectiveSaturation = defaults.selectiveSaturation
+    flatRAW = defaults.flatRAW
     showOriginal = false
     compareEnabled = false
     editsChanged()
@@ -459,6 +500,7 @@ struct ContentView: View {
     .onChange(of: editor.selectiveRange) { editor.editsChanged() }
     .onChange(of: editor.selectiveShift) { editor.editsChanged() }
     .onChange(of: editor.selectiveSaturation) { editor.editsChanged() }
+    .onChange(of: editor.flatRAW) { editor.rawModeChanged() }
   }
 
   private var navigationRail: some View {
@@ -582,6 +624,12 @@ struct ContentView: View {
           Text("Exposure-dependent study stock. Film measurements will replace this model.")
             .font(.caption).foregroundStyle(.secondary)
         case .develop:
+          if editor.isRAWSource {
+            Toggle("Flat RAW input", isOn: $editor.flatRAW)
+            Text("Removes the decoder's global and shadow tone boosts before film processing.")
+              .font(.caption).foregroundStyle(.secondary)
+            Divider()
+          }
           control("Exposure correction", value: $editor.exposure, range: -3...3)
           control("Contrast", value: $editor.contrast, range: 0.5...1.5)
           control("Saturation", value: $editor.saturation, range: 0...1.5)
