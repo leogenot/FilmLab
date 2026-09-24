@@ -58,3 +58,7 @@ The canvas now offers a draggable Before/After split at Fit zoom. Both sides are
 ## RAW decoder tone modes, 24 September 2026
 
 On `LEO00403.ARW`, Core Image initialized global boost to 1.0 and shadow boost to 0.9. FilmLab now exposes a per-photo Flat RAW input switch in Develop. It sets those two boosts and local tone mapping to zero before the stock response; the default mode preserves the earlier Apple decoder rendering for existing edits. Two temporary sRGB previews showed a flatter, darker lower half and a less cyan sky from the flat decode. The in-app switch visibly changed the RAW preview, and its saved state restored after reopening the file. Flat does not imply untouched sensor data: camera profiling, white balance, demosaicing and baseline exposure still occur.
+
+## Output histogram, 24 September 2026
+
+The inspector now displays a 64-bin luminance histogram of a downsampled sRGB render of the current image. Near-black and near-white percentages count pixels within roughly the outer four 8-bit luminance levels. The histogram updates with the preview and is calculated outside the UI actor. On the Sony RAW, increasing Shot Exposure to +2.56 EV moved the plot to the right and raised near-white coverage to 24.1%; the edit was reset. These are display-output diagnostics, not a measurement of clipped sensor values or available RAW headroom.

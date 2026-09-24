@@ -72,6 +72,7 @@ final class PhotoEditor {
   var sourceURL: URL?
   var preview: NSImage?
   var comparisonPreview: NSImage?
+  var histogram: PreviewHistogram?
   var compareEnabled = false
   var compareFraction = 0.5
   var exposure = 0.0
@@ -140,6 +141,7 @@ final class PhotoEditor {
       zoom100 = false
       compareEnabled = false
       comparisonPreview = nil
+      histogram = nil
       restoreEdits(saved)
       preview = nil
       error = nil
@@ -371,6 +373,7 @@ final class PhotoEditor {
         comparisonPreview = result.original.map {
           NSImage(cgImage: $0, size: NSSize(width: $0.width, height: $0.height))
         }
+        histogram = result.histogram
         error = nil
       } else {
         error = "Could not render this photo."
@@ -616,6 +619,13 @@ struct ContentView: View {
     ScrollView {
       VStack(alignment: .leading, spacing: 20) {
         Text(panel.rawValue).font(.title2.weight(.semibold))
+        if let histogram = editor.histogram {
+          OutputHistogram(
+            bins: histogram.bins,
+            blackFraction: histogram.blackFraction,
+            whiteFraction: histogram.whiteFraction
+          )
+        }
         switch panel {
         case .film:
           control("Shot exposure (EV)", value: $editor.shotExposure, range: -3...3)
