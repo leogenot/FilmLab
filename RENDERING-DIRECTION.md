@@ -42,3 +42,7 @@ The app now has a Fit/100% switch. At 100%, it renders the full-resolution image
 ## Responsive rendering and export, 24 September 2026
 
 Preview rendering now runs in a separate actor with a 16-bit half-float extended linear sRGB working buffer. Rapid control changes are debounced and older results are discarded. Full-resolution JPEG and 16-bit Display P3 TIFF exports run in a separate actor with a 32-bit float working buffer, so export does not freeze the editor. Each background job retains access to its source file until it completes. A Sony ARW export was verified at 4672 × 7008 pixels and 16 bits per sample. This verifies the output container and working format, not a measured film response or guaranteed recovery of source detail.
+
+## Selective color, 24 September 2026
+
+The Color workspace now includes target hue, color range, hue shift and saturation. A smooth hue and chroma mask chooses pixels after tonal grading and before texture effects; the hue rotation preserves an approximate luma value. The same graph feeds preview and export. A strong warm-color shift visibly changed the red hat and warm rock on the Sony RAW while leaving much of the blue sky alone; the test edit was reset. This is a broad color-range tool, not an object mask or measured film dye response.

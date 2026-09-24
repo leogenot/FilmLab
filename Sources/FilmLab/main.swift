@@ -34,6 +34,10 @@ private struct PhotoEdits: Codable {
   var midStrength = 0.0
   var highlightHue = 35.0
   var highlightStrength = 0.0
+  var selectiveHue = 30.0
+  var selectiveRange = 35.0
+  var selectiveShift = 0.0
+  var selectiveSaturation = 0.0
 
   init() {}
 
@@ -54,6 +58,10 @@ private struct PhotoEdits: Codable {
     midStrength = try values.decodeIfPresent(Double.self, forKey: .midStrength) ?? 0
     highlightHue = try values.decodeIfPresent(Double.self, forKey: .highlightHue) ?? 35
     highlightStrength = try values.decodeIfPresent(Double.self, forKey: .highlightStrength) ?? 0
+    selectiveHue = try values.decodeIfPresent(Double.self, forKey: .selectiveHue) ?? 30
+    selectiveRange = try values.decodeIfPresent(Double.self, forKey: .selectiveRange) ?? 35
+    selectiveShift = try values.decodeIfPresent(Double.self, forKey: .selectiveShift) ?? 0
+    selectiveSaturation = try values.decodeIfPresent(Double.self, forKey: .selectiveSaturation) ?? 0
   }
 }
 
@@ -76,6 +84,10 @@ final class PhotoEditor {
   var midStrength = 0.0
   var highlightHue = 35.0
   var highlightStrength = 0.0
+  var selectiveHue = 30.0
+  var selectiveRange = 35.0
+  var selectiveShift = 0.0
+  var selectiveSaturation = 0.0
   var error: String?
   var showOriginal = false
   var zoom100 = false
@@ -184,6 +196,10 @@ final class PhotoEditor {
     midStrength = saved.midStrength
     highlightHue = saved.highlightHue
     highlightStrength = saved.highlightStrength
+    selectiveHue = saved.selectiveHue
+    selectiveRange = saved.selectiveRange
+    selectiveShift = saved.selectiveShift
+    selectiveSaturation = saved.selectiveSaturation
   }
 
   func editsChanged() {
@@ -214,6 +230,10 @@ final class PhotoEditor {
     edits.midStrength = midStrength
     edits.highlightHue = highlightHue
     edits.highlightStrength = highlightStrength
+    edits.selectiveHue = selectiveHue
+    edits.selectiveRange = selectiveRange
+    edits.selectiveShift = selectiveShift
+    edits.selectiveSaturation = selectiveSaturation
     let url = editsURL(for: sourceURL)
     do {
       try FileManager.default.createDirectory(
@@ -242,6 +262,10 @@ final class PhotoEditor {
     midStrength = defaults.midStrength
     highlightHue = defaults.highlightHue
     highlightStrength = defaults.highlightStrength
+    selectiveHue = defaults.selectiveHue
+    selectiveRange = defaults.selectiveRange
+    selectiveShift = defaults.selectiveShift
+    selectiveSaturation = defaults.selectiveSaturation
     showOriginal = false
     editsChanged()
   }
@@ -286,7 +310,11 @@ final class PhotoEditor {
       midHue: midHue, midStrength: midStrength,
       highlightHue: highlightHue, highlightStrength: highlightStrength
     )
-    return FilmEffects.apply(to: graded, grain: grain, halation: halation)
+    let selected = SelectiveColor.apply(
+      to: graded, targetHue: selectiveHue, range: selectiveRange,
+      hueShift: selectiveShift, saturation: selectiveSaturation
+    )
+    return FilmEffects.apply(to: selected, grain: grain, halation: halation)
   }
 
   func renderPreview() {
@@ -426,6 +454,10 @@ struct ContentView: View {
     .onChange(of: editor.midStrength) { editor.editsChanged() }
     .onChange(of: editor.highlightHue) { editor.editsChanged() }
     .onChange(of: editor.highlightStrength) { editor.editsChanged() }
+    .onChange(of: editor.selectiveHue) { editor.editsChanged() }
+    .onChange(of: editor.selectiveRange) { editor.editsChanged() }
+    .onChange(of: editor.selectiveShift) { editor.editsChanged() }
+    .onChange(of: editor.selectiveSaturation) { editor.editsChanged() }
   }
 
   private var navigationRail: some View {
@@ -532,6 +564,12 @@ struct ContentView: View {
           Text("Highlights").font(.headline)
           control("Hue", value: $editor.highlightHue, range: 0...360)
           control("Strength", value: $editor.highlightStrength, range: 0...1)
+          Divider()
+          Text("Selective color").font(.headline)
+          control("Target hue", value: $editor.selectiveHue, range: 0...360)
+          control("Color range", value: $editor.selectiveRange, range: 10...90)
+          control("Hue shift", value: $editor.selectiveShift, range: -45...45)
+          control("Saturation", value: $editor.selectiveSaturation, range: -1...1)
         case .texture:
           control("Grain", value: $editor.grain, range: 0...1)
           control("Halation", value: $editor.halation, range: 0...1)
