@@ -43,6 +43,10 @@ private struct PhotoEdits: Codable {
   var selectiveRange = 35.0
   var selectiveShift = 0.0
   var selectiveSaturation = 0.0
+  var frameRotation = 0
+  var frameAspect = 0
+  var frameOffsetX = 0.0
+  var frameOffsetY = 0.0
   var flatRAW = false
   var rawHighlightRecovery = true
   var rawTemperature: Double?
@@ -82,6 +86,10 @@ private struct PhotoEdits: Codable {
     selectiveRange = try values.decodeIfPresent(Double.self, forKey: .selectiveRange) ?? 35
     selectiveShift = try values.decodeIfPresent(Double.self, forKey: .selectiveShift) ?? 0
     selectiveSaturation = try values.decodeIfPresent(Double.self, forKey: .selectiveSaturation) ?? 0
+    frameRotation = try values.decodeIfPresent(Int.self, forKey: .frameRotation) ?? 0
+    frameAspect = try values.decodeIfPresent(Int.self, forKey: .frameAspect) ?? 0
+    frameOffsetX = try values.decodeIfPresent(Double.self, forKey: .frameOffsetX) ?? 0
+    frameOffsetY = try values.decodeIfPresent(Double.self, forKey: .frameOffsetY) ?? 0
     flatRAW = try values.decodeIfPresent(Bool.self, forKey: .flatRAW) ?? false
     rawHighlightRecovery =
       try values.decodeIfPresent(Bool.self, forKey: .rawHighlightRecovery) ?? true
@@ -121,6 +129,10 @@ final class PhotoEditor {
   var selectiveRange = 35.0
   var selectiveShift = 0.0
   var selectiveSaturation = 0.0
+  var frameRotation = 0
+  var frameAspect = 0
+  var frameOffsetX = 0.0
+  var frameOffsetY = 0.0
   var flatRAW = false
   var rawHighlightRecovery = true
   var rawHighlightRecoverySupported = false
@@ -287,6 +299,10 @@ final class PhotoEditor {
     selectiveRange = saved.selectiveRange
     selectiveShift = saved.selectiveShift
     selectiveSaturation = saved.selectiveSaturation
+    frameRotation = saved.frameRotation
+    frameAspect = saved.frameAspect
+    frameOffsetX = saved.frameOffsetX
+    frameOffsetY = saved.frameOffsetY
     flatRAW = saved.flatRAW
     rawHighlightRecovery = saved.rawHighlightRecovery
     rawTemperature = saved.rawTemperature ?? cameraRawTemperature
@@ -386,6 +402,10 @@ final class PhotoEditor {
     edits.selectiveRange = selectiveRange
     edits.selectiveShift = selectiveShift
     edits.selectiveSaturation = selectiveSaturation
+    edits.frameRotation = frameRotation
+    edits.frameAspect = frameAspect
+    edits.frameOffsetX = frameOffsetX
+    edits.frameOffsetY = frameOffsetY
     edits.flatRAW = flatRAW
     edits.rawHighlightRecovery = rawHighlightRecovery
     if isRAWSource {
@@ -428,6 +448,10 @@ final class PhotoEditor {
     selectiveRange = defaults.selectiveRange
     selectiveShift = defaults.selectiveShift
     selectiveSaturation = defaults.selectiveSaturation
+    frameRotation = defaults.frameRotation
+    frameAspect = defaults.frameAspect
+    frameOffsetX = defaults.frameOffsetX
+    frameOffsetY = defaults.frameOffsetY
     flatRAW = defaults.flatRAW
     rawHighlightRecovery = defaults.rawHighlightRecovery
     rawTemperature = cameraRawTemperature
@@ -509,14 +533,44 @@ final class PhotoEditor {
       to: graded, targetHue: selectiveHue, range: selectiveRange,
       hueShift: selectiveShift, saturation: selectiveSaturation
     )
-    return FilmEffects.apply(to: selected, grain: grain, halation: halation)
+    return framedImage(FilmEffects.apply(to: selected, grain: grain, halation: halation))
+  }
+
+  private func framedImage(_ image: CIImage) -> CIImage {
+    let turns = ((frameRotation % 4) + 4) % 4
+    var framed = image
+    if turns != 0 {
+      framed = framed.transformed(by: CGAffineTransform(rotationAngle: CGFloat(turns) * .pi / 2))
+      framed = framed.transformed(
+        by: CGAffineTransform(translationX: -framed.extent.minX, y: -framed.extent.minY))
+    }
+    let extent = framed.extent
+    let ratio: CGFloat? =
+      switch frameAspect {
+      case 1: 1
+      case 2: 4.0 / 5.0
+      case 3: 3.0 / 2.0
+      case 4: 16.0 / 9.0
+      default: nil
+      }
+    guard let ratio, extent.width > 0, extent.height > 0 else { return framed }
+    let width = min(extent.width, floor(extent.height * ratio))
+    let height = min(extent.height, floor(extent.width / ratio))
+    let x = extent.minX + (extent.width - width) * CGFloat(min(max(frameOffsetX, -1), 1) + 1) / 2
+    let y = extent.minY + (extent.height - height) * CGFloat(min(max(frameOffsetY, -1), 1) + 1) / 2
+    return framed.cropped(to: CGRect(x: floor(x), y: floor(y), width: width, height: height))
+  }
+
+  func rotateFrame(_ steps: Int) {
+    frameRotation = ((frameRotation + steps) % 4 + 4) % 4
+    editsChanged()
   }
 
   func renderPreview() {
     renderVersion += 1
     let version = renderVersion
     previewTask?.cancel()
-    guard let image = showOriginal ? source : developedImage() else {
+    guard let image = showOriginal ? source.map(framedImage) : developedImage() else {
       isRendering = false
       return
     }
@@ -524,7 +578,7 @@ final class PhotoEditor {
     let scale = zoom100 ? 1 : min(1, 1800 / max(image.extent.width, image.extent.height))
     let request = PreviewRequest(
       image: image, scale: scale, sourceURL: scopedURL,
-      originalImage: compareEnabled ? source : nil
+      originalImage: compareEnabled ? source.map(framedImage) : nil
     )
     previewTask = Task {
       do { try await Task.sleep(for: .milliseconds(60)) } catch { return }
@@ -590,6 +644,7 @@ private enum EditorPanel: String, CaseIterable, Identifiable {
   case develop = "Develop"
   case color = "Color"
   case texture = "Texture"
+  case framing = "Framing"
 
   var id: Self { self }
   var symbol: String {
@@ -598,6 +653,7 @@ private enum EditorPanel: String, CaseIterable, Identifiable {
     case .develop: "slider.horizontal.3"
     case .color: "circle.lefthalf.filled"
     case .texture: "circle.hexagongrid"
+    case .framing: "crop.rotate"
     }
   }
 }
@@ -670,6 +726,9 @@ struct ContentView: View {
     .onChange(of: editor.selectiveRange) { editor.editsChanged() }
     .onChange(of: editor.selectiveShift) { editor.editsChanged() }
     .onChange(of: editor.selectiveSaturation) { editor.editsChanged() }
+    .onChange(of: editor.frameAspect) { editor.editsChanged() }
+    .onChange(of: editor.frameOffsetX) { editor.editsChanged() }
+    .onChange(of: editor.frameOffsetY) { editor.editsChanged() }
     .onChange(of: editor.flatRAW) { editor.rawModeChanged() }
     .onChange(of: editor.rawHighlightRecovery) { editor.rawModeChanged() }
     .onChange(of: editor.rawTemperature) { editor.rawModeChanged() }
@@ -864,6 +923,25 @@ struct ContentView: View {
           control("Color range", value: $editor.selectiveRange, range: 10...90)
           control("Hue shift", value: $editor.selectiveShift, range: -45...45)
           control("Saturation", value: $editor.selectiveSaturation, range: -1...1)
+        case .framing:
+          HStack {
+            Button("Rotate left", systemImage: "rotate.left") { editor.rotateFrame(-1) }
+            Button("Rotate right", systemImage: "rotate.right") { editor.rotateFrame(1) }
+          }
+          Picker("Crop ratio", selection: $editor.frameAspect) {
+            Text("Original").tag(0)
+            Text("Square 1:1").tag(1)
+            Text("Portrait 4:5").tag(2)
+            Text("Landscape 3:2").tag(3)
+            Text("Wide 16:9").tag(4)
+          }
+          .pickerStyle(.menu)
+          if editor.frameAspect != 0 {
+            control("Horizontal position", value: $editor.frameOffsetX, range: -1...1)
+            control("Vertical position", value: $editor.frameOffsetY, range: -1...1)
+          }
+          Text("Framing is saved with this photo and applied at full resolution on export.")
+            .font(.caption).foregroundStyle(.secondary)
         case .texture:
           control("Grain", value: $editor.grain, range: 0...1)
           control("Halation", value: $editor.halation, range: 0...1)

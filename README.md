@@ -8,7 +8,7 @@ A small native macOS photo editor focused on film rendering and color grading.
 - Provides RAW white balance, exposure correction, contrast, saturation, creative warmth, plus Shot Exposure, Development and Amount for an exposure-dependent film response. New RAW imports default to a linear decoder response with its global and shadow tone curves disabled; the decoder-rendered mode remains available. The Film workspace offers the original study stock and experimental Portra 400 and Ektar 100 density studies based on Kodak’s published negative curves. The Portra study has an optional Endura paper response stage.
 - Adds shadow, midtone, and highlight color timing, a hue-range selective color adjustment, plus content-dependent grain and highlight-edge halation. These controls default to off.
 - Saves non-destructive edits per source file in `~/Library/Application Support/FilmLab/Edits/` and restores them on reopening.
-- Includes an output luminance histogram, Before/After, a draggable split comparison, Reset Edits, and a scrollable 100% source-pixel inspection mode.
+- Includes an output luminance histogram, Before/After, a draggable split comparison, non-destructive rotation and crop ratios with position controls, Reset Edits, and a scrollable 100% source-pixel inspection mode.
 - Renders previews asynchronously in sRGB, coalescing rapid control changes so the canvas stays responsive. Exports full-resolution sRGB JPEG or 16-bit Display P3 TIFF in a separate background renderer.
 - Leaves the source photo unchanged.
 
@@ -32,4 +32,4 @@ Open `Package.swift` in Xcode and run the `FilmLab` executable target, or open `
 
 The film response and texture kernels are provisional. They use stitchable Metal Core Image kernels compiled at runtime on this Mac; a packaged, precompiled Metal library would improve startup and broader device support. The app has three stock choices and tonal grading, but no painted masks, full color mixer, or fully calibrated emulsion-to-print transform. The 100% view renders the full source and allows scrolling, but very large images increase memory use while inspecting. Preview rendering uses a half-float working buffer; export uses a 32-bit float working buffer before final output conversion. A tiled preview renderer is a future performance improvement. The TIFF exporter was verified on `LEO00403.ARW` at 4672 × 7008 and 16 bits per sample.
 
-The editor uses a three-column dark layout: file and workspace navigation on the left, photo canvas in the center, and one focused control group on the right.
+The editor uses a three-column dark layout: file and workspace navigation on the left, photo canvas in the center, and one focused control group on the right. Framing offers Original, 1:1, 4:5, 3:2 and 16:9 crops after quarter-turn rotation.
