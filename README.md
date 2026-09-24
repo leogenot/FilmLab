@@ -8,7 +8,7 @@ A small native macOS photo editor focused on film rendering and color grading.
 - Provides RAW white balance, pre-film shadow and highlight light controls, output exposure, contrast, saturation, creative warmth, plus Shot Exposure, Development and Amount for an exposure-dependent film response. New RAW imports default to a linear decoder response with its global and shadow tone curves disabled; the decoder-rendered mode remains available. The Film workspace offers the original study stock and experimental Portra 400 and Ektar 100 density studies based on Kodak’s published negative curves. The Portra study has an optional Endura paper response stage.
 - Adds shadow, midtone, and highlight color timing, a hue-range selective color adjustment, plus content-dependent grain and highlight-edge halation. These controls default to off.
 - Saves non-destructive edits per source file in `~/Library/Application Support/FilmLab/Edits/`, flushes them when the app leaves the foreground, and automatically reopens the last available photo on launch.
-- Includes an output luminance histogram, Before/After, a draggable split comparison, non-destructive rotation and crop ratios with position controls, Reset Edits, and a scrollable 100% source-pixel inspection mode.
+- Includes an output luminance histogram, Before/After, a draggable split comparison, non-destructive rotation and crop ratios with position controls, bounded Undo/Redo, Reset Edits, and a scrollable 100% source-pixel inspection mode.
 - Renders previews asynchronously in sRGB, coalescing rapid control changes so the canvas stays responsive. Exports full-resolution sRGB JPEG or 16-bit Display P3 TIFF in a separate background renderer.
 - Leaves the source photo unchanged.
 

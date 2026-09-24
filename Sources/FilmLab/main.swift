@@ -19,7 +19,7 @@ struct FilmLabApp: App {
   }
 }
 
-private struct PhotoEdits: Codable {
+private struct PhotoEdits: Codable, Equatable {
   var exposure = 0.0
   var contrast = 1.0
   var saturation = 1.0
@@ -163,6 +163,13 @@ final class PhotoEditor {
   var isRAWSource: Bool { sourceURL != nil && sourceIsRAW }
   private var scopedURL: URL?
   private var saveTask: Task<Void, Never>?
+  private var historyTask: Task<Void, Never>?
+  private var historyOpen = false
+  private var historyBaseline = PhotoEdits()
+  private var undoStack: [PhotoEdits] = []
+  private var redoStack: [PhotoEdits] = []
+  var canUndo: Bool { !undoStack.isEmpty }
+  var canRedo: Bool { !redoStack.isEmpty }
   private var previewTask: Task<Void, Never>?
   private var rawDecodeTask: Task<Void, Never>?
   private var rawDecodeVersion = 0
@@ -218,6 +225,11 @@ final class PhotoEditor {
       comparisonPreview = nil
       histogram = nil
       restoreEdits(saved)
+      historyTask?.cancel()
+      historyOpen = false
+      undoStack.removeAll()
+      redoStack.removeAll()
+      historyBaseline = currentEdits()
       preview = nil
       error = nil
       renderPreview()
@@ -393,6 +405,22 @@ final class PhotoEditor {
   }
 
   func editsChanged() {
+    let latest = currentEdits()
+    if latest != historyBaseline {
+      if !historyOpen {
+        undoStack.append(historyBaseline)
+        if undoStack.count > 50 { undoStack.removeFirst() }
+        redoStack.removeAll()
+        historyOpen = true
+      }
+      historyBaseline = latest
+      historyTask?.cancel()
+      historyTask = Task { @MainActor in
+        try? await Task.sleep(for: .milliseconds(500))
+        guard !Task.isCancelled else { return }
+        historyOpen = false
+      }
+    }
     renderPreview()
     saveTask?.cancel()
     saveTask = Task { @MainActor in
@@ -402,8 +430,7 @@ final class PhotoEditor {
     }
   }
 
-  private func saveEdits() {
-    guard let sourceURL else { return }
+  private func currentEdits() -> PhotoEdits {
     var edits = PhotoEdits()
     edits.exposure = exposure
     edits.contrast = contrast
@@ -440,6 +467,12 @@ final class PhotoEditor {
       edits.rawTemperature = rawTemperature
       edits.rawTint = rawTint
     }
+    return edits
+  }
+
+  private func saveEdits() {
+    guard let sourceURL else { return }
+    let edits = currentEdits()
     let url = editsURL(for: sourceURL)
     do {
       try FileManager.default.createDirectory(
@@ -449,6 +482,28 @@ final class PhotoEditor {
     } catch {
       self.error = "Could not save edits: \(error.localizedDescription)"
     }
+  }
+
+  func undo() {
+    guard let snapshot = undoStack.popLast() else { return }
+    redoStack.append(historyBaseline)
+    applyHistory(snapshot)
+  }
+
+  func redo() {
+    guard let snapshot = redoStack.popLast() else { return }
+    undoStack.append(historyBaseline)
+    applyHistory(snapshot)
+  }
+
+  private func applyHistory(_ snapshot: PhotoEdits) {
+    historyTask?.cancel()
+    historyOpen = false
+    restoreEdits(snapshot)
+    historyBaseline = currentEdits()
+    rawModeChanged()
+    renderPreview()
+    flushEdits()
   }
 
   func resetEdits() {
@@ -727,6 +782,12 @@ struct ContentView: View {
         editor.toggleCompare()
       }
       .disabled(editor.preview == nil)
+      Button("Undo", systemImage: "arrow.uturn.backward") { editor.undo() }
+        .keyboardShortcut("z", modifiers: .command)
+        .disabled(!editor.canUndo)
+      Button("Redo", systemImage: "arrow.uturn.forward") { editor.redo() }
+        .keyboardShortcut("z", modifiers: [.command, .shift])
+        .disabled(!editor.canRedo)
       Button("Reset Edits", systemImage: "arrow.counterclockwise") { editor.resetEdits() }
         .disabled(editor.preview == nil)
       Button("Open…", systemImage: "folder") { showingImporter = true }
