@@ -27,6 +27,8 @@ private struct PhotoEdits: Codable {
   var filmAmount = 1.0
   var stockIndex = 0
   var enduraPaperTone = false
+  var paperStrength = 0.5
+  var paperExposure = 0.0
   var shotExposure = 0.0
   var development = 0.0
   var grain = 0.0
@@ -57,6 +59,8 @@ private struct PhotoEdits: Codable {
     filmAmount = try values.decodeIfPresent(Double.self, forKey: .filmAmount) ?? 1.0
     stockIndex = try values.decodeIfPresent(Int.self, forKey: .stockIndex) ?? 0
     enduraPaperTone = try values.decodeIfPresent(Bool.self, forKey: .enduraPaperTone) ?? false
+    paperStrength = try values.decodeIfPresent(Double.self, forKey: .paperStrength) ?? 0.5
+    paperExposure = try values.decodeIfPresent(Double.self, forKey: .paperExposure) ?? 0
     shotExposure = try values.decodeIfPresent(Double.self, forKey: .shotExposure) ?? 0
     development = try values.decodeIfPresent(Double.self, forKey: .development) ?? 0
     grain = try values.decodeIfPresent(Double.self, forKey: .grain) ?? 0
@@ -94,6 +98,8 @@ final class PhotoEditor {
   var filmAmount = 1.0
   var stockIndex = 0
   var enduraPaperTone = false
+  var paperStrength = 0.5
+  var paperExposure = 0.0
   var shotExposure = 0.0
   var development = 0.0
   var grain = 0.0
@@ -260,6 +266,8 @@ final class PhotoEditor {
     filmAmount = saved.filmAmount
     stockIndex = saved.stockIndex
     enduraPaperTone = saved.enduraPaperTone
+    paperStrength = saved.paperStrength
+    paperExposure = saved.paperExposure
     shotExposure = saved.shotExposure
     development = saved.development
     grain = saved.grain
@@ -357,6 +365,8 @@ final class PhotoEditor {
     edits.filmAmount = filmAmount
     edits.stockIndex = stockIndex
     edits.enduraPaperTone = enduraPaperTone
+    edits.paperStrength = paperStrength
+    edits.paperExposure = paperExposure
     edits.shotExposure = shotExposure
     edits.development = development
     edits.grain = grain
@@ -398,6 +408,8 @@ final class PhotoEditor {
     filmAmount = defaults.filmAmount
     stockIndex = defaults.stockIndex
     enduraPaperTone = defaults.enduraPaperTone
+    paperStrength = defaults.paperStrength
+    paperExposure = defaults.paperExposure
     shotExposure = defaults.shotExposure
     development = defaults.development
     grain = defaults.grain
@@ -450,7 +462,10 @@ final class PhotoEditor {
         ),
         let positive = portraPositiveKernel.apply(
           extent: image.extent,
-          arguments: [negative, image, shotExposure, filmAmount, enduraPaperTone ? 0.5 : 0.0]
+          arguments: [
+            negative, image, shotExposure, filmAmount,
+            enduraPaperTone ? paperStrength : 0.0, paperExposure,
+          ]
         )
       else {
         error = "The Portra density study could not be loaded."
@@ -634,6 +649,8 @@ struct ContentView: View {
     .onChange(of: editor.filmAmount) { editor.editsChanged() }
     .onChange(of: editor.stockIndex) { editor.editsChanged() }
     .onChange(of: editor.enduraPaperTone) { editor.editsChanged() }
+    .onChange(of: editor.paperStrength) { editor.editsChanged() }
+    .onChange(of: editor.paperExposure) { editor.editsChanged() }
     .onChange(of: editor.shotExposure) { editor.editsChanged() }
     .onChange(of: editor.development) { editor.editsChanged() }
     .onChange(of: editor.grain) { editor.editsChanged() }
@@ -783,6 +800,12 @@ struct ContentView: View {
           .pickerStyle(.menu)
           if editor.stockIndex == 1 {
             Toggle("Endura paper tone", isOn: $editor.enduraPaperTone)
+            if editor.enduraPaperTone {
+              control("Paper exposure (EV)", value: $editor.paperExposure, range: -2...2)
+              control("Paper strength", value: $editor.paperStrength, range: 0...1)
+              Text("More paper exposure makes the print darker.")
+                .font(.caption).foregroundStyle(.secondary)
+            }
           }
           control("Shot exposure (EV)", value: $editor.shotExposure, range: -3...3)
           control("Development", value: $editor.development, range: -2...2)

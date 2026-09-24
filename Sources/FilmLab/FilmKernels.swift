@@ -87,17 +87,21 @@ enum FilmKernels {
         density = reference + (density - reference) * (1.0 + dev * 0.10);
         return float4(density, pixel.a);
     }
-    inline float3 enduraPaperReflectance(float3 negativeDensity, float3 reference);
+    inline float3 enduraPaperReflectance(float3 negativeDensity, float3 reference,
+                                        float paperExposure);
     [[stitchable]] float4 portraPositive(coreimage::sample_t negative,
                                           coreimage::sample_t original,
-                                          float ev, float amount, float paperMix) {
+                                          float ev, float amount, float paperMix,
+                                          float paperExposure) {
         float3 reference = portraDensityAt(-1.44);
         // Provisional balanced print/scan transform; 0.18 remains 0.18 at the reference.
         float3 linear = 0.18 * exp2(clamp((negative.rgb - reference) * (0.8 / 0.17),
                                           float3(-20.0), float3(20.0)));
         float3 positive = 1.08 * linear / (linear + 0.9);
         return float4(mix(max(original.rgb, float3(0.0)) * exp2(ev),
-                          mix(positive, enduraPaperReflectance(negative.rgb, reference), paperMix),
+                          mix(positive,
+                              enduraPaperReflectance(negative.rgb, reference, paperExposure),
+                              paperMix),
                           amount), original.a);
     }
 
@@ -116,8 +120,10 @@ enum FilmKernels {
         }
         return enduraD[9];
     }
-    inline float3 enduraPaperReflectance(float3 negativeDensity, float3 reference) {
-        float3 paperExposure = float3(-1.625) - (negativeDensity - reference);
+    inline float3 enduraPaperReflectance(float3 negativeDensity, float3 reference,
+                                        float paperExposureStops) {
+        float3 paperExposure = float3(-1.625 + paperExposureStops * 0.30103)
+                             - (negativeDensity - reference);
         float3 paperDensity = float3(
             enduraDensityAt(paperExposure.r),
             enduraDensityAt(paperExposure.g),
