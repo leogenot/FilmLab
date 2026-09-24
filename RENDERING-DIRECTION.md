@@ -84,3 +84,7 @@ JPEG export now explicitly requests 0.95 lossy compression quality. A full-resol
 ## Image type detection, 24 September 2026
 
 RAW import now uses ImageIO’s detected type and `UTType.rawImage` conformance instead of a short file-extension list. This matters because `CIRAWFilter(imageURL:)` also accepted the JPEG test file, so a non-nil filter was not a reliable RAW check. The Sony ARW was detected as `com.sony.arw-raw-image`, and the JPEG as `public.jpeg`. In the packaged app, the JPEG opened without RAW controls, while the ARW reopened with them. A full-resolution JPEG exported through the app at 4672 × 7008 with an embedded sRGB profile.
+
+## Input-specific stock defaults, 24 September 2026
+
+New RAW imports start at 1.0 Stock amount, while new JPEG imports start at 0.7. Reset Edits uses the same input-specific defaults. This reflects their different starting points: the JPEG has a camera or software tone rendering baked in, while the RAW decoder can supply a flatter working image. Explicitly saved stock amounts are still restored as chosen. These are starting values, not calibrated stock measurements.

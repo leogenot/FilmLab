@@ -136,8 +136,8 @@ final class PhotoEditor {
     if sourceURL != nil { saveEdits() }
     let access = url.startAccessingSecurityScopedResource()
     do {
-      let saved = savedEdits(for: url)
       let isRAW = isRAWFile(url)
+      let saved = savedEdits(for: url, isRAW: isRAW)
       let decoded = try decodeImage(
         from: url, isRAW: isRAW, flatRAW: saved.flatRAW,
         temperature: saved.rawTemperature, tint: saved.rawTint
@@ -183,10 +183,15 @@ final class PhotoEditor {
       .appendingPathComponent(key + ".json")
   }
 
-  private func savedEdits(for url: URL) -> PhotoEdits {
-    (try? Data(contentsOf: editsURL(for: url))).flatMap {
-      try? JSONDecoder().decode(PhotoEdits.self, from: $0)
-    } ?? PhotoEdits()
+  private func savedEdits(for url: URL, isRAW: Bool) -> PhotoEdits {
+    if let data = try? Data(contentsOf: editsURL(for: url)),
+      let saved = try? JSONDecoder().decode(PhotoEdits.self, from: data)
+    {
+      return saved
+    }
+    var defaults = PhotoEdits()
+    defaults.filmAmount = isRAW ? 1.0 : 0.7
+    return defaults
   }
 
   private func isRAWFile(_ url: URL) -> Bool {
@@ -347,7 +352,8 @@ final class PhotoEditor {
   }
 
   func resetEdits() {
-    let defaults = PhotoEdits()
+    var defaults = PhotoEdits()
+    defaults.filmAmount = isRAWSource ? 1.0 : 0.7
     exposure = defaults.exposure
     contrast = defaults.contrast
     saturation = defaults.saturation
