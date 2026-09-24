@@ -37,6 +37,30 @@ struct LocalExposureProbe {
     precondition(
       abs(red(linearBright, 50, 90) - 0.18) < 0.002,
       "Linear light changed the upper side")
+    let brush = BrushStroke(points: [
+      BrushPoint(x: 0.2, y: 0.7), BrushPoint(x: 0.35, y: 0.7),
+    ])
+    let legacyStroke = try! JSONDecoder().decode(
+      BrushStroke.self, from: Data(#"{"points":[{"x":0.2,"y":0.7}]}"#.utf8))
+    precondition(legacyStroke.size == 0.03, "Earlier painted strokes did not decode")
+    let painted = LocalExposure.mask(
+      for: source, centerX: 0.5, centerY: 0.5, radius: 0.35,
+      feather: 0.2, shape: 2, strokes: [brush])!
+    precondition(red(painted, 20, 70) > 0.95, "Painted source location is not white")
+    let resizedTool = LocalExposure.mask(
+      for: source, centerX: 0.5, centerY: 0.5, radius: 0.35,
+      feather: 0.2, shape: 2, brushSize: 0.12, strokes: [brush])!
+    precondition(
+      abs(red(resizedTool, 20, 73) - red(painted, 20, 73)) < 0.002,
+      "Changing the brush tool resized an existing stroke")
+    precondition(red(painted, 80, 20) < 0.01, "Painted mask spills into untouched area")
+    let brushBright = LocalExposure.apply(
+      to: source, ev: 1, centerX: 0.5, centerY: 0.5, radius: 0.35,
+      feather: 0.2, shape: 2, strokes: [brush])
+    precondition(red(brushBright, 20, 70) > 0.34, "Painted light did not brighten stroke")
+    precondition(
+      abs(red(brushBright, 80, 20) - 0.18) < 0.002,
+      "Painted light changed the untouched area")
     let oldArea = try! JSONDecoder().decode(
       RadialAdjustment.self,
       from: Data(

@@ -157,6 +157,7 @@ final class PhotoEditor {
   var radialLights = [RadialAdjustment()]
   var selectedLocalIndex = 0
   var placingLocalArea = false
+  var paintingLocalArea = false
   var development = 0.0
   var grain = 0.0
   var halation = 0.0
@@ -282,6 +283,7 @@ final class PhotoEditor {
         showOriginal = false
         showLocalMask = false
         placingLocalArea = false
+        paintingLocalArea = false
         showCropBounds = false
         zoom100 = false
         compareEnabled = false
@@ -549,6 +551,7 @@ final class PhotoEditor {
     showCropBounds = false
     showLocalMask = false
     placingLocalArea = false
+    paintingLocalArea = false
     showOriginal = false
     compareEnabled = false
     editsChanged()
@@ -614,6 +617,7 @@ final class PhotoEditor {
     frameOffsetY = defaults.frameOffsetY
     frameFreeCrop = defaults.frameFreeCrop
     showCropBounds = false
+    paintingLocalArea = false
     flatRAW = defaults.flatRAW
     rawHighlightRecovery = defaults.rawHighlightRecovery
     rawTemperature = cameraRawTemperature
@@ -629,12 +633,14 @@ final class PhotoEditor {
     showLocalMask = false
     showCropBounds = false
     placingLocalArea = false
+    paintingLocalArea = false
     showOriginal.toggle()
     renderPreview()
   }
 
   func toggleZoom() {
     placingLocalArea = false
+    paintingLocalArea = false
     showCropBounds = false
     compareEnabled = false
     zoom100.toggle()
@@ -646,6 +652,7 @@ final class PhotoEditor {
     showLocalMask = false
     showCropBounds = false
     placingLocalArea = false
+    paintingLocalArea = false
     showOriginal = false
     zoom100 = false
     renderPreview()
@@ -662,22 +669,26 @@ final class PhotoEditor {
     guard radialLights.count > 1 else { return }
     radialLights.remove(at: min(selectedLocalIndex, radialLights.count - 1))
     selectedLocalIndex = min(selectedLocalIndex, radialLights.count - 1)
+    if radialLights[selectedLocalIndex].shape != 2 { paintingLocalArea = false }
     editsChanged()
   }
 
   func selectLocalArea(_ index: Int) {
     guard radialLights.indices.contains(index) else { return }
     selectedLocalIndex = index
+    if radialLights[index].shape != 2 { paintingLocalArea = false }
     if showLocalMask { renderPreview() }
   }
 
   func setLocalShape(_ shape: Int) {
-    guard radialLights.indices.contains(selectedLocalIndex), shape == 0 || shape == 1 else {
+    guard radialLights.indices.contains(selectedLocalIndex), shape == 0 || shape == 1 || shape == 2
+    else {
       return
     }
     let previous = radialLights[selectedLocalIndex].shape
     guard previous != shape else { return }
     radialLights[selectedLocalIndex].shape = shape
+    if shape != 2 { paintingLocalArea = false }
     if shape == 1 {
       var angle = 90 - Double(frameRotation) * 90 - frameStraighten
       if angle < -180 { angle += 360 }
@@ -689,6 +700,7 @@ final class PhotoEditor {
 
   func setMaskPreview(_ visible: Bool) {
     placingLocalArea = false
+    paintingLocalArea = false
     showCropBounds = false
     showLocalMask = visible
     if visible {
@@ -704,6 +716,7 @@ final class PhotoEditor {
       showOriginal = false
       showLocalMask = false
       placingLocalArea = false
+      paintingLocalArea = false
       compareEnabled = false
       zoom100 = false
     }
@@ -722,6 +735,7 @@ final class PhotoEditor {
   func setPlacingLocalArea(_ placing: Bool) {
     placingLocalArea = placing && source != nil
     if placingLocalArea {
+      paintingLocalArea = false
       showCropBounds = false
       showLocalMask = false
       showOriginal = false
@@ -729,6 +743,54 @@ final class PhotoEditor {
       zoom100 = false
       renderPreview()
     }
+  }
+
+  func setPaintingLocalArea(_ painting: Bool) {
+    paintingLocalArea =
+      painting && source != nil
+      && radialLights[selectedLocalIndex].shape == 2
+    if paintingLocalArea {
+      placingLocalArea = false
+      showLocalMask = false
+      showCropBounds = false
+      showOriginal = false
+      compareEnabled = false
+      zoom100 = false
+      renderPreview()
+    }
+  }
+
+  func addPaintStroke(displayPoints: [CGPoint], canvasSize: CGSize, imageSize: CGSize) {
+    guard paintingLocalArea, let source, !displayPoints.isEmpty else { return }
+    guard radialLights[selectedLocalIndex].strokes.count < 100 else {
+      error = "This painted area has reached 100 strokes. Add another area."
+      return
+    }
+    let scale = min(canvasSize.width / imageSize.width, canvasSize.height / imageSize.height)
+    let width = imageSize.width * scale
+    let height = imageSize.height * scale
+    let left = (canvasSize.width - width) / 2
+    let top = (canvasSize.height - height) / 2
+    let points = displayPoints.compactMap { point -> BrushPoint? in
+      guard
+        let sourcePoint = Framing.sourceLocation(
+          displayX: (point.x - left) / width, displayY: (point.y - top) / height,
+          sourceExtent: source.extent, quarterTurns: frameRotation,
+          straightenDegrees: frameStraighten, aspect: frameAspect,
+          offsetX: frameOffsetX, offsetY: frameOffsetY, freeCrop: frameFreeCrop)
+      else { return nil }
+      return BrushPoint(x: Double(sourcePoint.x), y: Double(sourcePoint.y))
+    }
+    guard !points.isEmpty else { return }
+    radialLights[selectedLocalIndex].strokes.append(
+      BrushStroke(points: points, size: radialLights[selectedLocalIndex].brushSize))
+    editsChanged()
+  }
+
+  func clearPaint() {
+    guard !radialLights[selectedLocalIndex].strokes.isEmpty else { return }
+    radialLights[selectedLocalIndex].strokes.removeAll()
+    editsChanged()
   }
 
   func placeSelectedLocalArea(displayX: Double, displayY: Double) {
@@ -752,7 +814,8 @@ final class PhotoEditor {
       let mask = LocalExposure.mask(
         for: source, centerX: area.centerX, centerY: area.centerY,
         radius: area.radius, feather: area.feather, inverted: area.inverted,
-        shape: area.shape, angle: area.angle)
+        shape: area.shape, angle: area.angle,
+        brushSize: area.brushSize, strokes: area.strokes)
     else { return nil }
     return framedImage(mask)
   }
@@ -774,7 +837,8 @@ final class PhotoEditor {
       image = LocalExposure.apply(
         to: image, ev: area.exposure, centerX: area.centerX,
         centerY: area.centerY, radius: area.radius, feather: area.feather,
-        inverted: area.inverted, shape: area.shape, angle: area.angle)
+        inverted: area.inverted, shape: area.shape, angle: area.angle,
+        brushSize: area.brushSize, strokes: area.strokes)
     }
     if stockIndex == 1 || stockIndex == 2 {
       guard let measuredNegativeKernel,
@@ -951,6 +1015,7 @@ struct ContentView: View {
   @State private var panel: EditorPanel = .film
   @State private var selectedColorBand = 0
   @State private var cropDragOrigin: FreeCrop?
+  @State private var paintDragPoints: [CGPoint] = []
   @Environment(\.displayScale) private var displayScale
   @Environment(\.scenePhase) private var scenePhase
 
@@ -1014,8 +1079,12 @@ struct ContentView: View {
       if panel != .local {
         if editor.showLocalMask { editor.setMaskPreview(false) }
         editor.setPlacingLocalArea(false)
+        editor.setPaintingLocalArea(false)
       }
       if panel != .framing && editor.showCropBounds { editor.setCropBoundsPreview(false) }
+    }
+    .onChange(of: editor.paintingLocalArea) {
+      if !editor.paintingLocalArea { paintDragPoints.removeAll() }
     }
     .onChange(of: scenePhase) {
       if scenePhase != .active { editor.flushEdits() }
@@ -1111,6 +1180,17 @@ struct ContentView: View {
         .padding(16)
         .zIndex(1)
       }
+      if editor.paintingLocalArea {
+        Text("Drag on the photo to paint Area \(editor.selectedLocalIndex + 1)")
+          .font(.caption.weight(.semibold))
+          .padding(9)
+          .background(.ultraThinMaterial)
+          .clipShape(RoundedRectangle(cornerRadius: 7))
+          .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+          .padding(16)
+          .allowsHitTesting(false)
+          .zIndex(1)
+      }
       if editor.placingLocalArea {
         Text("Click the photo to place Area \(editor.selectedLocalIndex + 1)")
           .font(.caption.weight(.semibold))
@@ -1204,6 +1284,58 @@ struct ContentView: View {
                       }.onEnded { _ in cropDragOrigin = nil })
                 }
               }
+              .overlay {
+                if editor.paintingLocalArea && !paintDragPoints.isEmpty {
+                  let scale = min(
+                    geometry.size.width / preview.size.width,
+                    geometry.size.height / preview.size.height)
+                  let brushSize = editor.radialLights[editor.selectedLocalIndex].brushSize
+                  Path { path in
+                    path.addLines(paintDragPoints)
+                  }
+                  .stroke(
+                    .white.opacity(0.85),
+                    style: StrokeStyle(
+                      lineWidth: max(
+                        2,
+                        min(preview.size.width, preview.size.height) * scale
+                          * brushSize), lineCap: .round, lineJoin: .round)
+                  )
+                  .allowsHitTesting(false)
+                }
+              }
+              .simultaneousGesture(
+                DragGesture(minimumDistance: 0).onChanged { value in
+                  guard editor.paintingLocalArea else { return }
+                  let scale = min(
+                    geometry.size.width / preview.size.width,
+                    geometry.size.height / preview.size.height)
+                  let width = preview.size.width * scale
+                  let height = preview.size.height * scale
+                  let left = (geometry.size.width - width) / 2
+                  let top = (geometry.size.height - height) / 2
+                  guard value.location.x >= left, value.location.x <= left + width,
+                    value.location.y >= top, value.location.y <= top + height
+                  else { return }
+                  if paintDragPoints.isEmpty { paintDragPoints.append(value.startLocation) }
+                  if paintDragPoints.count < 500,
+                    let last = paintDragPoints.last,
+                    hypot(last.x - value.location.x, last.y - value.location.y) >= 2
+                  {
+                    paintDragPoints.append(value.location)
+                  }
+                }.onEnded { value in
+                  guard editor.paintingLocalArea else {
+                    paintDragPoints.removeAll()
+                    return
+                  }
+                  if paintDragPoints.isEmpty { paintDragPoints.append(value.location) }
+                  editor.addPaintStroke(
+                    displayPoints: paintDragPoints, canvasSize: geometry.size,
+                    imageSize: preview.size)
+                  paintDragPoints.removeAll()
+                }
+              )
               .gesture(
                 SpatialTapGesture().onEnded { tap in
                   guard editor.placingLocalArea else { return }
@@ -1355,11 +1487,22 @@ struct ContentView: View {
             Button("Remove area", systemImage: "minus") { editor.removeLocalArea() }
               .disabled(editor.radialLights.count <= 1)
           }
-          Button(
-            editor.placingLocalArea ? "Cancel placement" : "Place on photo",
-            systemImage: "scope"
-          ) { editor.setPlacingLocalArea(!editor.placingLocalArea) }
-          .disabled(editor.preview == nil)
+          if editor.radialLights[editor.selectedLocalIndex].shape == 2 {
+            HStack {
+              Button(editor.paintingLocalArea ? "Stop painting" : "Paint on photo") {
+                editor.setPaintingLocalArea(!editor.paintingLocalArea)
+              }
+              .disabled(editor.preview == nil)
+              Button("Clear strokes") { editor.clearPaint() }
+                .disabled(editor.radialLights[editor.selectedLocalIndex].strokes.isEmpty)
+            }
+          } else {
+            Button(
+              editor.placingLocalArea ? "Cancel placement" : "Place on photo",
+              systemImage: "scope"
+            ) { editor.setPlacingLocalArea(!editor.placingLocalArea) }
+            .disabled(editor.preview == nil)
+          }
           Toggle(
             "Show mask",
             isOn: Binding(
@@ -1374,22 +1517,28 @@ struct ContentView: View {
           ) {
             Text("Radial").tag(0)
             Text("Linear gradient").tag(1)
+            Text("Painted brush").tag(2)
           }
           .pickerStyle(.menu)
           Toggle("Invert area", isOn: localBoolBinding(\.inverted))
           control("Exposure (EV)", value: localBinding(\.exposure), range: -2...2)
-          control("Horizontal center", value: localBinding(\.centerX), range: 0...1)
-          control("Vertical center", value: localBinding(\.centerY), range: 0...1)
-          control(
-            editor.radialLights[editor.selectedLocalIndex].shape == 1 ? "Transition" : "Size",
-            value: localBinding(\.radius), range: 0.05...0.8)
-          if editor.radialLights[editor.selectedLocalIndex].shape == 1 {
-            control("Direction (source °)", value: localBinding(\.angle), range: -180...180)
+          if editor.radialLights[editor.selectedLocalIndex].shape == 2 {
+            control("Brush size", value: localBinding(\.brushSize), range: 0.003...0.15)
+            control("Soft edge", value: localBinding(\.feather), range: 0...1)
           } else {
-            control("Feather", value: localBinding(\.feather), range: 0.05...1)
+            control("Horizontal center", value: localBinding(\.centerX), range: 0...1)
+            control("Vertical center", value: localBinding(\.centerY), range: 0...1)
+            control(
+              editor.radialLights[editor.selectedLocalIndex].shape == 1 ? "Transition" : "Size",
+              value: localBinding(\.radius), range: 0.05...0.8)
+            if editor.radialLights[editor.selectedLocalIndex].shape == 1 {
+              control("Direction (source °)", value: localBinding(\.angle), range: -180...180)
+            } else {
+              control("Feather", value: localBinding(\.feather), range: 0.05...1)
+            }
           }
           Text(
-            "Each area changes scene light before film processing. Place it on the photo or use the sliders. A new linear area starts vertically in the displayed photo; its saved direction follows source pixels if you rotate later. Show mask is temporary; 0 EV disables the selected area."
+            "Each area changes scene light before film processing. Painted strokes follow source pixels through framing. A new linear area starts vertically in the displayed photo. Show mask is temporary; 0 EV disables the selected area."
           )
           .font(.caption).foregroundStyle(.secondary)
         case .framing:

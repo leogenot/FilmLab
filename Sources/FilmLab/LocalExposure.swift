@@ -1,3 +1,4 @@
+import CoreGraphics
 import CoreImage
 import CoreImage.CIFilterBuiltins
 
@@ -6,13 +7,21 @@ enum LocalExposure {
   static func mask(
     for image: CIImage, centerX: Double, centerY: Double,
     radius: Double, feather: Double, inverted: Bool = false,
-    shape: Int = 0, angle: Double = 90
+    shape: Int = 0, angle: Double = 90,
+    brushSize: Double = 0.03, strokes: [BrushStroke] = []
   ) -> CIImage? {
     guard image.extent.width > 0, image.extent.height > 0 else { return nil }
     let extent = image.extent
     let x = min(max(centerX, 0), 1)
     let y = min(max(centerY, 0), 1)
     let outer = min(max(radius, 0.02), 1)
+    if shape == 2 {
+      guard
+        let mask = paintedMask(
+          extent: extent, brushSize: brushSize, feather: feather, strokes: strokes)
+      else { return nil }
+      return inverted ? mask.applyingFilter("CIColorInvert").cropped(to: extent) : mask
+    }
     if shape == 1 {
       let radians = min(max(angle, -180), 180) * .pi / 180
       let distance = min(extent.width, extent.height) * outer / 2
@@ -44,10 +53,69 @@ enum LocalExposure {
     return inverted ? mask.applyingFilter("CIColorInvert").cropped(to: extent) : mask
   }
 
+  private static func paintedMask(
+    extent: CGRect, brushSize: Double, feather: Double, strokes: [BrushStroke]
+  ) -> CIImage? {
+    let scale = min(1, 4096 / max(extent.width, extent.height))
+    let width = max(1, Int(ceil(extent.width * scale)))
+    let height = max(1, Int(ceil(extent.height * scale)))
+    var pixels = [UInt8](repeating: 0, count: width * height)
+    let bitmap = pixels.withUnsafeMutableBytes { bytes -> CGImage? in
+      guard
+        let context = CGContext(
+          data: bytes.baseAddress, width: width, height: height,
+          bitsPerComponent: 8, bytesPerRow: width,
+          space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue)
+      else { return nil }
+      context.setStrokeColor(gray: 1, alpha: 1)
+      context.setFillColor(gray: 1, alpha: 1)
+      context.setLineCap(.round)
+      context.setLineJoin(.round)
+      for stroke in strokes where !stroke.points.isEmpty {
+        let diameter = min(max(stroke.size, 0.003), 0.15) * Double(min(width, height))
+        context.setLineWidth(diameter)
+        let points = stroke.points.map {
+          CGPoint(
+            x: min(max($0.x, 0), 1) * Double(width),
+            y: min(max($0.y, 0), 1) * Double(height))
+        }
+        if points.count == 1 {
+          context.fillEllipse(
+            in: CGRect(
+              x: points[0].x - diameter / 2, y: points[0].y - diameter / 2,
+              width: diameter, height: diameter))
+        } else {
+          context.beginPath()
+          context.move(to: points[0])
+          for point in points.dropFirst() { context.addLine(to: point) }
+          context.strokePath()
+        }
+      }
+      return context.makeImage()
+    }
+    guard let bitmap else { return nil }
+    let base = CIImage(cgImage: bitmap)
+    let largestStrokeSize = strokes.map(\.size).max() ?? brushSize
+    let softness =
+      min(max(feather, 0), 1) * min(max(largestStrokeSize, 0.003), 0.15)
+      * Double(min(width, height)) * 0.35
+    let softened =
+      softness > 0.5
+      ? base.applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: softness])
+      : base
+    let transformed = softened.transformed(
+      by: CGAffineTransform(
+        a: extent.width / Double(width), b: 0,
+        c: 0, d: extent.height / Double(height),
+        tx: extent.minX, ty: extent.minY))
+    return transformed.cropped(to: extent)
+  }
+
   static func apply(
     to image: CIImage, ev: Double, centerX: Double, centerY: Double,
     radius: Double, feather: Double, inverted: Bool = false,
-    shape: Int = 0, angle: Double = 90
+    shape: Int = 0, angle: Double = 90,
+    brushSize: Double = 0.03, strokes: [BrushStroke] = []
   ) -> CIImage {
     guard abs(ev) > 0.001, image.extent.width > 0, image.extent.height > 0 else {
       return image
@@ -55,7 +123,8 @@ enum LocalExposure {
     guard
       let mask = mask(
         for: image, centerX: centerX, centerY: centerY, radius: radius, feather: feather,
-        inverted: inverted, shape: shape, angle: angle)
+        inverted: inverted, shape: shape, angle: angle,
+        brushSize: brushSize, strokes: strokes)
     else { return image }
     let lit = image.applyingFilter("CIExposureAdjust", parameters: [kCIInputEVKey: ev])
     return lit.applyingFilter(
