@@ -28,3 +28,8 @@ DEVELOPER_DIR="$developer_dir" swiftc \
   "$project_dir/Tests/LocalExposureProbe.swift" \
   -o "$project_dir/.build/FilmLabLocalExposureProbe"
 "$project_dir/.build/FilmLabLocalExposureProbe"
+DEVELOPER_DIR="$developer_dir" swiftc \
+  "$project_dir/Sources/FilmLab/ImageExporter.swift" \
+  "$project_dir/Tests/ExporterProbe.swift" \
+  -o "$project_dir/.build/FilmLabExporterProbe"
+"$project_dir/.build/FilmLabExporterProbe"

@@ -221,3 +221,7 @@ The local probe checked source-point placement, unaffected pixels, exposure effe
 ### Brush eraser
 
 Painted areas now offer Paint and Erase modes. Erase strokes remove selected mask coverage in drawing order, keep their own brush size and source-space coordinates, and participate in saved edits and Undo. Older strokes decode as paint. The mask probe checked that an erase point clears only its target and preserves the rest of the stroke. In the signed app, a painted horizontal stroke on both the RAW and the quarter-turned JPEG showed a clear gap after erasing through its center. The temporary areas were removed after inspection.
+
+## Export source protection (2026-09-24)
+
+The exporter now rejects an output path that resolves to the open source photo. JPEG already used atomic data writing; TIFF now renders to a sibling temporary file, then moves or replaces it after a successful render. A probe verified that a same-path JPEG request preserves its source bytes, a JPEG output decodes, and a 16-bit TIFF can replace an existing output without leaving a partial destination. In the signed app, the JPEG test photo exported a 5606 × 3737 JPEG and the Sony RAW test photo exported a 3737 × 5606, 16-bit TIFF through the Save panel. These exports check file safety and format, not film-stock accuracy or every filesystem failure mode.

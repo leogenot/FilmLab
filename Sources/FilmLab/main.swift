@@ -960,7 +960,7 @@ final class PhotoEditor {
     panel.nameFieldStringValue =
       (sourceURL?.deletingPathExtension().lastPathComponent ?? "Photo") + "-FilmLab.jpg"
     guard panel.runModal() == .OK, let url = panel.url else { return }
-    beginExport(ExportRequest(image: image, url: url, format: .jpeg, sourceURL: scopedURL))
+    beginExport(ExportRequest(image: image, url: url, format: .jpeg, sourceURL: sourceURL))
   }
 
   func exportTIFF() {
@@ -970,7 +970,7 @@ final class PhotoEditor {
     panel.nameFieldStringValue =
       (sourceURL?.deletingPathExtension().lastPathComponent ?? "Photo") + "-FilmLab.tiff"
     guard panel.runModal() == .OK, let url = panel.url else { return }
-    beginExport(ExportRequest(image: image, url: url, format: .tiff16, sourceURL: scopedURL))
+    beginExport(ExportRequest(image: image, url: url, format: .tiff16, sourceURL: sourceURL))
   }
 
   private func beginExport(_ request: ExportRequest) {
