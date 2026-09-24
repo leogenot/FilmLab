@@ -80,3 +80,7 @@ The prior default Stock amount of 0.7 mixed 30% linear exposure back into the sh
 ## JPEG export quality, 24 September 2026
 
 JPEG export now explicitly requests 0.95 lossy compression quality. A full-resolution Sony RAW render with visible grain measured 8.3 MB at Core Image’s default quality and 13.2 MB at 0.95. The higher-quality default preserves more fine texture for the editor’s primary delivery format, at the cost of larger files. TIFF remains the lossless high-bit-depth option.
+
+## Image type detection, 24 September 2026
+
+RAW import now uses ImageIO’s detected type and `UTType.rawImage` conformance instead of a short file-extension list. This matters because `CIRAWFilter(imageURL:)` also accepted the JPEG test file, so a non-nil filter was not a reliable RAW check. The Sony ARW was detected as `com.sony.arw-raw-image`, and the JPEG as `public.jpeg`. In the packaged app, the JPEG opened without RAW controls, while the ARW reopened with them. A full-resolution JPEG exported through the app at 4672 × 7008 with an embedded sRGB profile.

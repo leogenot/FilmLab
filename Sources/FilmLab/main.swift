@@ -2,6 +2,7 @@ import AppKit
 import CoreImage
 import CoreImage.CIFilterBuiltins
 import CryptoKit
+import ImageIO
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -113,10 +114,8 @@ final class PhotoEditor {
   private var decodedRawTint = 0.0
   private var cameraRawTemperature = 6500.0
   private var cameraRawTint = 0.0
-  private let rawExtensions: Set<String> = ["arw", "cr2", "cr3", "dng", "nef", "raf", "rw2"]
-  var isRAWSource: Bool {
-    sourceURL.map { rawExtensions.contains($0.pathExtension.lowercased()) } ?? false
-  }
+  private var sourceIsRAW = false
+  var isRAWSource: Bool { sourceURL != nil && sourceIsRAW }
   private var scopedURL: URL?
   private var saveTask: Task<Void, Never>?
   private var previewTask: Task<Void, Never>?
@@ -138,8 +137,9 @@ final class PhotoEditor {
     let access = url.startAccessingSecurityScopedResource()
     do {
       let saved = savedEdits(for: url)
+      let isRAW = isRAWFile(url)
       let decoded = try decodeImage(
-        from: url, flatRAW: saved.flatRAW,
+        from: url, isRAW: isRAW, flatRAW: saved.flatRAW,
         temperature: saved.rawTemperature, tint: saved.rawTint
       )
       let image = decoded.image
@@ -154,6 +154,7 @@ final class PhotoEditor {
       scopedURL = access ? url : nil
       source = image
       sourceURL = url
+      sourceIsRAW = isRAW
       decodedFlatRAW = saved.flatRAW
       cameraRawTemperature = decoded.cameraTemperature ?? 6500
       cameraRawTint = decoded.cameraTint ?? 0
@@ -188,10 +189,18 @@ final class PhotoEditor {
     } ?? PhotoEdits()
   }
 
+  private func isRAWFile(_ url: URL) -> Bool {
+    guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+      let identifier = CGImageSourceGetType(source) as String?,
+      let type = UTType(identifier)
+    else { return false }
+    return type.conforms(to: .rawImage)
+  }
+
   private func decodeImage(
-    from url: URL, flatRAW: Bool, temperature: Double?, tint: Double?
+    from url: URL, isRAW: Bool, flatRAW: Bool, temperature: Double?, tint: Double?
   ) throws -> (image: CIImage, cameraTemperature: Double?, cameraTint: Double?) {
-    if rawExtensions.contains(url.pathExtension.lowercased()) {
+    if isRAW {
       guard let raw = CIRAWFilter(imageURL: url) else { throw EditorError.unsupported }
       let cameraTemperature = Double(raw.neutralTemperature)
       let cameraTint = Double(raw.neutralTint)
@@ -266,7 +275,7 @@ final class PhotoEditor {
       guard !Task.isCancelled, version == rawDecodeVersion, sourceURL == url else { return }
       do {
         let decoded = try decodeImage(
-          from: url, flatRAW: requestedFlatRAW,
+          from: url, isRAW: true, flatRAW: requestedFlatRAW,
           temperature: requestedTemperature, tint: requestedTint
         )
         guard !Task.isCancelled, version == rawDecodeVersion, sourceURL == url else { return }
