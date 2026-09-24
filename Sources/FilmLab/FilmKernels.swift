@@ -1,0 +1,118 @@
+import CoreImage
+
+/// Metal Core Image kernels shared by preview and full-resolution export.
+enum FilmKernels {
+  private static let kernels: [String: CIColorKernel] = {
+    do {
+      let compiled = try CIKernel.kernels(withMetalString: source)
+      return Dictionary(
+        uniqueKeysWithValues: compiled.compactMap { kernel in
+          (kernel as? CIColorKernel).map { (kernel.name, $0) }
+        })
+    } catch {
+      assertionFailure("Could not compile FilmLab Metal kernels: \(error)")
+      return [:]
+    }
+  }()
+
+  static func kernel(_ name: String) -> CIColorKernel? { kernels[name] }
+
+  private static let source = #"""
+    #include <CoreImage/CoreImage.h>
+    using namespace metal;
+
+    inline float softplus(float x) {
+                  return log(1.0 + exp(clamp(x, -30.0, 30.0)));
+              }
+              inline float response(float light, float ev, float dev, float toe, float shoulder) {
+                  float stops = log2(max(light, 0.000001) / 0.18) + ev;
+                  float slope = 1.0 + dev * 0.18;
+                  float low = toe * softplus((-stops - 4.5) / toe);
+                  float high = shoulder * softplus((stops - 2.0) / shoulder);
+                  float densityStops = slope * (stops + low - high);
+                  float zeroLow = toe * softplus(-4.5 / toe);
+                  float zeroHigh = shoulder * softplus(-2.0 / shoulder);
+                  densityStops -= slope * (zeroLow - zeroHigh);
+                  return 0.18 * exp2(densityStops);
+              }
+              [[stitchable]] float4 filmResponse(coreimage::sample_t pixel, float ev, float dev, float amount) {
+                  float3 rgb = max(pixel.rgb, float3(0.0));
+                  // Small layer differences create exposure-dependent color separation.
+                  float3 film = float3(
+                      response(rgb.r, ev, dev, 0.72, 1.10),
+                      response(rgb.g, ev, dev, 0.82, 0.92),
+                      response(rgb.b, ev, dev, 0.94, 0.78)
+                  );
+                  return float4(mix(rgb * exp2(ev), film, amount), pixel.a);
+              }
+
+    [[stitchable]] float4 grade(coreimage::sample_t pixel,
+                                float4 shadowColor, float shadowStrength,
+                                float4 midColor, float midStrength,
+                                float4 highlightColor, float highlightStrength) {
+                  float luma = dot(pixel.rgb, float3(0.2126, 0.7152, 0.0722));
+                  float shadowWeight = 1.0 - smoothstep(0.06, 0.42, luma);
+                  float highlightWeight = smoothstep(0.38, 0.88, luma);
+                  float midWeight = smoothstep(0.06, 0.38, luma)
+                                  * (1.0 - smoothstep(0.48, 0.88, luma));
+                  float3 shift = shadowColor.rgb * shadowStrength * shadowWeight
+                             + midColor.rgb * midStrength * midWeight
+                             + highlightColor.rgb * highlightStrength * highlightWeight;
+                  float density = clamp(luma + 0.18, 0.18, 1.0);
+                  return float4(max(pixel.rgb + shift * density * 0.18, float3(0.0)), pixel.a);
+              }
+
+    [[stitchable]] float4 selectiveColor(coreimage::sample_t pixel, float targetHue,
+                                         float range, float shift, float saturation) {
+                  float3 rgb = max(pixel.rgb, float3(0.0));
+                  float maximum = max(max(rgb.r, rgb.g), rgb.b);
+                  float minimum = min(min(rgb.r, rgb.g), rgb.b);
+                  float chroma = maximum - minimum;
+                  if (chroma < 0.000001) return pixel;
+
+                  float hue;
+                  if (maximum == rgb.r) hue = (rgb.g - rgb.b) / chroma;
+                  else if (maximum == rgb.g) hue = (rgb.b - rgb.r) / chroma + 2.0;
+                  else hue = (rgb.r - rgb.g) / chroma + 4.0;
+                  hue = fract(hue / 6.0 + 1.0);
+                  float distance = abs(hue - targetHue / 360.0);
+                  distance = min(distance, 1.0 - distance) * 360.0;
+                  float mask = 1.0 - smoothstep(range * 0.55, range, distance);
+                  mask *= smoothstep(0.02, 0.16, chroma / max(maximum, 0.000001));
+                  if (mask <= 0.0) return pixel;
+
+                  float angle = shift * 0.0174532925199433 * mask;
+                  float y = dot(rgb, float3(0.299, 0.587, 0.114));
+                  float i = dot(rgb, float3(0.596, -0.275, -0.321));
+                  float q = dot(rgb, float3(0.212, -0.523, 0.311));
+                  float cosine = cos(angle);
+                  float sine = sin(angle);
+                  float newI = (i * cosine - q * sine) * max(0.0, 1.0 + saturation * mask);
+                  float newQ = (i * sine + q * cosine) * max(0.0, 1.0 + saturation * mask);
+                  float3 adjusted = float3(
+                      y + 0.956 * newI + 0.621 * newQ,
+                      y - 0.272 * newI - 0.647 * newQ,
+                      y - 1.106 * newI + 1.703 * newQ
+                  );
+                  return float4(max(adjusted, float3(0.0)), pixel.a);
+              }
+
+    [[stitchable]] float4 applyGrain(coreimage::sample_t pixel, coreimage::sample_t noise, float amount) {
+                  float luminance = dot(pixel.rgb, float3(0.2126, 0.7152, 0.0722));
+                  float weight = sqrt(clamp(luminance, 0.02, 1.0));
+                  float grain = (noise.r - 0.5) * amount * 0.14 * weight;
+                  return float4(max(pixel.rgb + float3(grain), float3(0.0)), pixel.a);
+              }
+
+    [[stitchable]] float4 highlightMask(coreimage::sample_t pixel) {
+                  float luminance = dot(pixel.rgb, float3(0.2126, 0.7152, 0.0722));
+                  float value = smoothstep(0.65, 1.15, luminance);
+                  return float4(value, value, value, 1.0);
+              }
+
+    [[stitchable]] float4 applyHalation(coreimage::sample_t pixel, coreimage::sample_t mask, coreimage::sample_t blurred, float amount) {
+                  float spill = max(blurred.r - mask.r, 0.0) * amount * 0.24;
+                  return float4(pixel.rgb + float3(spill, spill * 0.30, spill * 0.12), pixel.a);
+              }
+    """#
+}

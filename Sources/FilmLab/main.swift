@@ -104,33 +104,7 @@ final class PhotoEditor {
 
   // Scene-linear RGB enters this kernel in the context's extended linear working space.
   // This is a provisional response model, not a measured emulsion profile.
-  private let filmKernel = CIColorKernel(
-    source: """
-          float softplus(float x) {
-              return log(1.0 + exp(clamp(x, -30.0, 30.0)));
-          }
-          float response(float light, float ev, float dev, float toe, float shoulder) {
-              float stops = log2(max(light, 0.000001) / 0.18) + ev;
-              float slope = 1.0 + dev * 0.18;
-              float low = toe * softplus((-stops - 4.5) / toe);
-              float high = shoulder * softplus((stops - 2.0) / shoulder);
-              float densityStops = slope * (stops + low - high);
-              float zeroLow = toe * softplus(-4.5 / toe);
-              float zeroHigh = shoulder * softplus(-2.0 / shoulder);
-              densityStops -= slope * (zeroLow - zeroHigh);
-              return 0.18 * exp2(densityStops);
-          }
-          kernel vec4 filmResponse(__sample pixel, float ev, float dev, float amount) {
-              vec3 rgb = max(pixel.rgb, vec3(0.0));
-              // Small layer differences create exposure-dependent color separation.
-              vec3 film = vec3(
-                  response(rgb.r, ev, dev, 0.72, 1.10),
-                  response(rgb.g, ev, dev, 0.82, 0.92),
-                  response(rgb.b, ev, dev, 0.94, 0.78)
-              );
-              return vec4(mix(rgb * exp2(ev), film, amount), pixel.a);
-          }
-      """)
+  private let filmKernel = FilmKernels.kernel("filmResponse")
 
   func open(_ url: URL) {
     saveTask?.cancel()

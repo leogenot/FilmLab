@@ -46,3 +46,7 @@ Preview rendering now runs in a separate actor with a 16-bit half-float extended
 ## Selective color, 24 September 2026
 
 The Color workspace now includes target hue, color range, hue shift and saturation. A smooth hue and chroma mask chooses pixels after tonal grading and before texture effects; the hue rotation preserves an approximate luma value. The same graph feeds preview and export. A strong warm-color shift visibly changed the red hat and warm rock on the Sony RAW while leaving much of the blue sky alone; the test edit was reset. This is a broad color-range tool, not an object mask or measured film dye response.
+
+## Metal kernel migration, 24 September 2026
+
+The response, tonal grade, selective color, grain, highlight mask and halation kernels now use stitchable Metal functions loaded through Core Image. All six compiled and rendered on this Mac in a small synthetic-image probe. The signed app also reopened the Sony RAW and rendered active grain and halation controls without an error; the test edits were reset. Runtime Metal compilation is appropriate for this Swift package prototype, though a future Xcode app target should bundle a precompiled Metal library. This migration preserves the provisional response equations; it does not calibrate them.

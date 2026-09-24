@@ -3,32 +3,11 @@ import CoreImage.CIFilterBuiltins
 
 /// Provisional spatial film effects. Values are intentionally conservative until calibrated.
 enum FilmEffects {
-  private static let grainKernel = CIColorKernel(
-    source: """
-          kernel vec4 applyGrain(__sample pixel, __sample noise, float amount) {
-              float luminance = dot(pixel.rgb, vec3(0.2126, 0.7152, 0.0722));
-              float weight = sqrt(clamp(luminance, 0.02, 1.0));
-              float grain = (noise.r - 0.5) * amount * 0.14 * weight;
-              return vec4(max(pixel.rgb + vec3(grain), vec3(0.0)), pixel.a);
-          }
-      """)
+  private static let grainKernel = FilmKernels.kernel("applyGrain")
 
-  private static let highlightKernel = CIColorKernel(
-    source: """
-          kernel vec4 highlightMask(__sample pixel) {
-              float luminance = dot(pixel.rgb, vec3(0.2126, 0.7152, 0.0722));
-              float value = smoothstep(0.65, 1.15, luminance);
-              return vec4(value, value, value, 1.0);
-          }
-      """)
+  private static let highlightKernel = FilmKernels.kernel("highlightMask")
 
-  private static let halationKernel = CIColorKernel(
-    source: """
-          kernel vec4 applyHalation(__sample pixel, __sample mask, __sample blurred, float amount) {
-              float spill = max(blurred.r - mask.r, 0.0) * amount * 0.24;
-              return vec4(pixel.rgb + vec3(spill, spill * 0.30, spill * 0.12), pixel.a);
-          }
-      """)
+  private static let halationKernel = FilmKernels.kernel("applyHalation")
 
   static func apply(to image: CIImage, grain: Double, halation: Double) -> CIImage {
     var result = image
