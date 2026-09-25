@@ -56,6 +56,11 @@ DEVELOPER_DIR="$developer_dir" swiftc \
   -o "$project_dir/.build/FilmLabNumericControlProbe"
 "$project_dir/.build/FilmLabNumericControlProbe"
 DEVELOPER_DIR="$developer_dir" swiftc \
+  "$project_dir/Sources/FilmLab/InputNeutralBalance.swift" \
+  "$project_dir/Tests/InputNeutralBalanceProbe.swift" \
+  -o "$project_dir/.build/FilmLabInputNeutralBalanceProbe"
+"$project_dir/.build/FilmLabInputNeutralBalanceProbe"
+DEVELOPER_DIR="$developer_dir" swiftc \
   "$project_dir/Sources/FilmLab/SavedEditStore.swift" \
   "$project_dir/Tests/SavedEditStoreProbe.swift" \
   -o "$project_dir/.build/FilmLabSavedEditStoreProbe"

@@ -38,6 +38,7 @@ private struct PhotoEdits: Codable, Equatable {
   var inputWarmth = 0.0
   var inputTint = 0.0
   var inputTone = 1.0
+  var inputNeutralBalance = InputNeutralBalance()
   var filmAmount = 1.0
   var stockIndex = 0
   var enduraPaperTone = false
@@ -103,6 +104,9 @@ private struct PhotoEdits: Codable, Equatable {
     inputWarmth = try values.decodeIfPresent(Double.self, forKey: .inputWarmth) ?? 0
     inputTint = try values.decodeIfPresent(Double.self, forKey: .inputTint) ?? 0
     inputTone = try values.decodeIfPresent(Double.self, forKey: .inputTone) ?? 1
+    inputNeutralBalance =
+      try values.decodeIfPresent(InputNeutralBalance.self, forKey: .inputNeutralBalance)
+      ?? InputNeutralBalance()
     filmAmount = try values.decodeIfPresent(Double.self, forKey: .filmAmount) ?? 1.0
     stockIndex = try values.decodeIfPresent(Int.self, forKey: .stockIndex) ?? 0
     enduraPaperTone = try values.decodeIfPresent(Bool.self, forKey: .enduraPaperTone) ?? false
@@ -180,6 +184,7 @@ final class PhotoEditor {
   var inputWarmth = 0.0
   var inputTint = 0.0
   var inputTone = 1.0
+  var inputNeutralBalance = InputNeutralBalance()
   var filmAmount = 1.0
   var stockIndex = 0
   var enduraPaperTone = false
@@ -192,6 +197,8 @@ final class PhotoEditor {
   var radialLights = [RadialAdjustment()]
   var selectedLocalIndex = 0
   var placingLocalArea = false
+  var pickingNeutralArea = false
+  var neutralNotice: String?
   var paintingLocalArea = false
   var erasingLocalArea = false
   var development = 0.0
@@ -275,8 +282,11 @@ final class PhotoEditor {
   private var renderVersion = 0
   private let previewRenderer = PreviewRenderer()
   private let pixelSampler = PixelSampler()
+  private let neutralPatchSampler = NeutralPatchSampler()
   private var pixelTask: Task<Void, Never>?
+  private var neutralTask: Task<Void, Never>?
   private var pixelVersion = 0
+  private var neutralVersion = 0
   private let exporter = ImageExporter()
 
   // Scene-linear RGB enters this kernel in the context's extended linear working space.
@@ -336,6 +346,10 @@ final class PhotoEditor {
         pixelVersion += 1
         pixelReadout = nil
         selectedPixel = nil
+        neutralTask?.cancel()
+        neutralVersion += 1
+        pickingNeutralArea = false
+        neutralNotice = nil
         if let scopedURL { scopedURL.stopAccessingSecurityScopedResource() }
         scopedURL = access ? url : nil
         retainAccess = access
@@ -442,6 +456,7 @@ final class PhotoEditor {
     inputWarmth = saved.inputWarmth
     inputTint = saved.inputTint
     inputTone = saved.inputTone
+    inputNeutralBalance = saved.inputNeutralBalance
     filmAmount = saved.filmAmount
     stockIndex = saved.stockIndex
     enduraPaperTone = saved.enduraPaperTone
@@ -503,6 +518,8 @@ final class PhotoEditor {
     }
     rawDecodeTask?.cancel()
     rawDecodeVersion += 1
+    neutralTask?.cancel()
+    neutralVersion += 1
     previewTask?.cancel()
     renderVersion += 1
     let version = rawDecodeVersion
@@ -578,6 +595,7 @@ final class PhotoEditor {
     edits.inputWarmth = inputWarmth
     edits.inputTint = inputTint
     edits.inputTone = inputTone
+    edits.inputNeutralBalance = inputNeutralBalance
     edits.filmAmount = filmAmount
     edits.stockIndex = stockIndex
     edits.enduraPaperTone = enduraPaperTone
@@ -670,6 +688,7 @@ final class PhotoEditor {
     settings.inputWarmth = 0
     settings.inputTint = 0
     settings.inputTone = 1
+    settings.inputNeutralBalance = InputNeutralBalance()
     do {
       try LookFile(settings: settings).write(to: url)
       error = nil
@@ -705,11 +724,13 @@ final class PhotoEditor {
     copied.inputWarmth = current.inputWarmth
     copied.inputTint = current.inputTint
     copied.inputTone = current.inputTone
+    copied.inputNeutralBalance = current.inputNeutralBalance
     restoreEdits(copied)
     showCropBounds = false
     showLocalMask = false
     placingLocalArea = false
     paintingLocalArea = false
+    setPickingNeutralArea(false)
     erasingLocalArea = false
     showOriginal = false
     compareEnabled = false
@@ -752,6 +773,7 @@ final class PhotoEditor {
     inputWarmth = defaults.inputWarmth
     inputTint = defaults.inputTint
     inputTone = defaults.inputTone
+    inputNeutralBalance = defaults.inputNeutralBalance
     filmAmount = defaults.filmAmount
     stockIndex = defaults.stockIndex
     enduraPaperTone = defaults.enduraPaperTone
@@ -787,6 +809,7 @@ final class PhotoEditor {
     frameFreeCrop = defaults.frameFreeCrop
     showCropBounds = false
     paintingLocalArea = false
+    setPickingNeutralArea(false)
     flatRAW = defaults.flatRAW
     rawHighlightRecovery = defaults.rawHighlightRecovery
     rawTemperature = cameraRawTemperature
@@ -798,6 +821,7 @@ final class PhotoEditor {
   }
 
   func toggleBeforeAfter() {
+    setPickingNeutralArea(false)
     compareEnabled = false
     showLocalMask = false
     showCropBounds = false
@@ -808,6 +832,7 @@ final class PhotoEditor {
   }
 
   func toggleZoom() {
+    setPickingNeutralArea(false)
     placingLocalArea = false
     paintingLocalArea = false
     showCropBounds = false
@@ -817,6 +842,7 @@ final class PhotoEditor {
   }
 
   func toggleCompare() {
+    setPickingNeutralArea(false)
     compareEnabled.toggle()
     showLocalMask = false
     showCropBounds = false
@@ -873,6 +899,7 @@ final class PhotoEditor {
   }
 
   func setMaskPreview(_ visible: Bool) {
+    setPickingNeutralArea(false)
     placingLocalArea = false
     paintingLocalArea = false
     showCropBounds = false
@@ -885,6 +912,7 @@ final class PhotoEditor {
   }
 
   func setCropBoundsPreview(_ visible: Bool) {
+    setPickingNeutralArea(false)
     showCropBounds = visible && frameAspect == 5 && source != nil
     if showCropBounds {
       showOriginal = false
@@ -907,6 +935,7 @@ final class PhotoEditor {
   }
 
   func setPlacingLocalArea(_ placing: Bool) {
+    setPickingNeutralArea(false)
     placingLocalArea = placing && source != nil
     if placingLocalArea {
       paintingLocalArea = false
@@ -920,6 +949,7 @@ final class PhotoEditor {
   }
 
   func setPaintingLocalArea(_ painting: Bool) {
+    setPickingNeutralArea(false)
     paintingLocalArea =
       painting && source != nil
       && radialLights[selectedLocalIndex].shape == 2
@@ -998,6 +1028,7 @@ final class PhotoEditor {
 
   private func developedImage(previewUncropped: Bool = false) -> CIImage? {
     guard var image = source else { return nil }
+    image = inputNeutralBalance.apply(to: image)
     if !sourceIsRAW && abs(inputTone - 1) > 0.001 {
       guard let renderedInputToneKernel,
         let toned = renderedInputToneKernel.apply(
@@ -1212,6 +1243,63 @@ final class PhotoEditor {
     }
   }
 
+  func setPickingNeutralArea(_ picking: Bool) {
+    neutralTask?.cancel()
+    neutralVersion += 1
+    pickingNeutralArea = picking && source != nil
+    if pickingNeutralArea {
+      neutralNotice = nil
+      placingLocalArea = false
+      paintingLocalArea = false
+      inspectPixel = false
+      selectedPixel = nil
+      pixelReadout = nil
+      showCropBounds = false
+      showLocalMask = false
+      showOriginal = false
+      compareEnabled = false
+      zoom100 = false
+      renderPreview()
+    }
+  }
+
+  func pickNeutralArea(displayX: Double, displayY: Double) {
+    guard pickingNeutralArea, let source, let sourceURL,
+      let location = Framing.sourceLocation(
+        displayX: displayX, displayY: displayY, sourceExtent: source.extent,
+        quarterTurns: frameRotation, straightenDegrees: frameStraighten,
+        aspect: frameAspect, offsetX: frameOffsetX, offsetY: frameOffsetY,
+        freeCrop: frameFreeCrop)
+    else { return }
+    pickingNeutralArea = false
+    neutralTask?.cancel()
+    neutralVersion += 1
+    let version = neutralVersion
+    let request = NeutralSampleRequest(
+      image: source, location: location, sourceURL: scopedURL)
+    neutralTask = Task {
+      let balance = await neutralPatchSampler.sample(request)
+      guard !Task.isCancelled, version == neutralVersion, self.sourceURL == sourceURL else {
+        return
+      }
+      neutralTask = nil
+      guard let balance else {
+        neutralNotice = "Choose an unclipped gray or white area with visible detail."
+        return
+      }
+      inputNeutralBalance = balance
+      neutralNotice = nil
+      editsChanged()
+    }
+  }
+
+  func clearNeutralBalance() {
+    setPickingNeutralArea(false)
+    inputNeutralBalance = InputNeutralBalance()
+    neutralNotice = nil
+    editsChanged()
+  }
+
   func exportJPEG() {
     guard canExport else { return }
     guard let image = developedImage() else { return }
@@ -1362,6 +1450,7 @@ struct ContentView: View {
     .onAppear { editor.resumeLastPhoto() }
     .onDisappear { editor.flushEdits() }
     .onChange(of: panel) {
+      if panel != .develop { editor.setPickingNeutralArea(false) }
       if panel != .local {
         if editor.showLocalMask { editor.setMaskPreview(false) }
         editor.setPlacingLocalArea(false)
@@ -1491,6 +1580,17 @@ struct ContentView: View {
       }
       if editor.placingLocalArea {
         Text("Click the photo to place Area \(editor.selectedLocalIndex + 1)")
+          .font(.caption.weight(.semibold))
+          .padding(9)
+          .background(.ultraThinMaterial)
+          .clipShape(RoundedRectangle(cornerRadius: 7))
+          .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+          .padding(16)
+          .allowsHitTesting(false)
+          .zIndex(1)
+      }
+      if editor.pickingNeutralArea {
+        Text("Click a neutral gray or white area with visible detail")
           .font(.caption.weight(.semibold))
           .padding(9)
           .background(.ultraThinMaterial)
@@ -1643,7 +1743,9 @@ struct ContentView: View {
                     paintDragPoints.append(value.location)
                   }
                 }.onEnded { value in
-                  if editor.inspectPixel || editor.placingLocalArea {
+                  if editor.inspectPixel || editor.placingLocalArea
+                    || editor.pickingNeutralArea
+                  {
                     let scale = min(
                       geometry.size.width / preview.size.width,
                       geometry.size.height / preview.size.height)
@@ -1653,7 +1755,9 @@ struct ContentView: View {
                     let top = (geometry.size.height - imageHeight) / 2
                     let x = (value.location.x - left) / imageWidth
                     let y = (value.location.y - top) / imageHeight
-                    if editor.inspectPixel {
+                    if editor.pickingNeutralArea {
+                      editor.pickNeutralArea(displayX: x, displayY: y)
+                    } else if editor.inspectPixel {
                       editor.inspect(displayX: x, displayY: y)
                     } else {
                       editor.placeSelectedLocalArea(displayX: x, displayY: y)
@@ -1723,6 +1827,7 @@ struct ContentView: View {
                 editor.pixelReadout = nil
                 editor.selectedPixel = nil
                 if enabled {
+                  editor.setPickingNeutralArea(false)
                   editor.zoom100 = false
                   editor.compareEnabled = false
                   editor.placingLocalArea = false
@@ -1812,6 +1917,24 @@ struct ContentView: View {
           )
           .font(.caption).foregroundStyle(.secondary)
         case .develop:
+          Text("Input neutral correction").font(.headline)
+          HStack {
+            Button(editor.pickingNeutralArea ? "Cancel pick" : "Pick neutral area") {
+              editor.setPickingNeutralArea(!editor.pickingNeutralArea)
+            }
+            Button("Clear") { editor.clearNeutralBalance() }
+              .disabled(editor.inputNeutralBalance.isNeutral)
+          }
+          Text(
+            "R \(editor.inputNeutralBalance.red.formatted(.number.precision(.fractionLength(2))))×  G \(editor.inputNeutralBalance.green.formatted(.number.precision(.fractionLength(2))))×  B \(editor.inputNeutralBalance.blue.formatted(.number.precision(.fractionLength(2))))×"
+          )
+          .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+          if let notice = editor.neutralNotice {
+            Text(notice).font(.caption).foregroundStyle(.orange)
+          }
+          Text("Balances decoded RGB before film. RAW decoder white balance stays separate.")
+            .font(.caption).foregroundStyle(.secondary)
+          Divider()
           if editor.isRAWSource {
             Text("RAW white balance").font(.headline)
             control(
