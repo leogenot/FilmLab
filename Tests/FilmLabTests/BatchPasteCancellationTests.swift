@@ -4,6 +4,38 @@ import XCTest
 @testable import FilmLab
 
 final class BatchPasteCancellationTests: XCTestCase {
+  @MainActor func testBatchKeepsItsInitiallyOpenPhotoExcludedAfterNavigation() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("FilmLab-batch-active-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let original = root.appendingPathComponent("original.jpg")
+    let next = root.appendingPathComponent("next.jpg")
+    try Data("photo".utf8).write(to: original)
+    try Data("photo".utf8).write(to: next)
+    let editsDirectory = FileManager.default.urls(
+      for: .applicationSupportDirectory, in: .userDomainMask)[0]
+      .appendingPathComponent("FilmLab/Edits")
+    let location = EditRecordLocator.locate(sourceURL: original, directory: editsDirectory)
+    defer {
+      try? FileManager.default.removeItem(at: location.primaryURL)
+      try? FileManager.default.removeItem(at: location.pathURL)
+    }
+
+    let editor = PhotoEditor()
+    editor.sourceURL = original
+    editor.shotExposure = 1.25
+    editor.copyWorkspace(.film)
+    let outcome = await editor.pasteSettings(to: [original.path], workspaceOnly: true) { _, _ in
+      editor.sourceURL = next
+    }
+
+    XCTAssertEqual(outcome.changedPaths, [])
+    XCTAssertTrue(outcome.summary.contains("Skipped 1"), outcome.summary)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: location.pathURL.path))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: location.primaryURL.path))
+  }
+
   private struct PendingChange: Encodable {
     let path: String
     let location: EditRecordLocation

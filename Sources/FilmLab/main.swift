@@ -1183,6 +1183,7 @@ final class PhotoEditor {
       return BatchPasteOutcome(
         summary: "Select photos in the catalog first.", changedPaths: [], cancelled: false)
     }
+    let activePathAtStart = sourceURL?.standardizedFileURL.path
     let decoder = ImageDecoder()
     var changes: [BatchSettingsChange] = []
     let previousBatch = lastBatchChanges
@@ -1201,7 +1202,7 @@ final class PhotoEditor {
         cancelled = true
         break
       }
-      if sourceURL?.standardizedFileURL.path == path {
+      if activePathAtStart == path || sourceURL?.standardizedFileURL.path == path {
         skipped += 1
         continue
       }
@@ -1216,6 +1217,11 @@ final class PhotoEditor {
         if access { url.stopAccessingSecurityScopedResource() }
         cancelled = true
         break
+      }
+      if sourceURL?.standardizedFileURL.path == path {
+        if access { url.stopAccessingSecurityScopedResource() }
+        skipped += 1
+        continue
       }
       let location = EditRecordLocator.locate(sourceURL: url, directory: editsDirectory)
       let loaded = SavedEditStore.load(
