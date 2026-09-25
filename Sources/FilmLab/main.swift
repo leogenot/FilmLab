@@ -29,6 +29,7 @@ struct PhotoEdits: Codable, Equatable {
   var exposure = 0.0
   var contrast = 1.0
   var saturation = 1.0
+  var outputSaturationVersion = 2
   var vibrance = 0.0
   var warmth = 0.0
   var tint = 0.0
@@ -173,6 +174,7 @@ struct PhotoEdits: Codable, Equatable {
       result.exposure = source.exposure
       result.contrast = source.contrast
       result.saturation = source.saturation
+      result.outputSaturationVersion = source.outputSaturationVersion
       result.warmth = source.warmth
       result.tint = source.tint
       result.curveShadow = source.curveShadow
@@ -221,6 +223,8 @@ struct PhotoEdits: Codable, Equatable {
     exposure = try values.decodeIfPresent(Double.self, forKey: .exposure) ?? 0
     contrast = try values.decodeIfPresent(Double.self, forKey: .contrast) ?? 1
     saturation = try values.decodeIfPresent(Double.self, forKey: .saturation) ?? 1
+    outputSaturationVersion =
+      try values.decodeIfPresent(Int.self, forKey: .outputSaturationVersion) ?? 1
     vibrance = try values.decodeIfPresent(Double.self, forKey: .vibrance) ?? 0
     warmth = try values.decodeIfPresent(Double.self, forKey: .warmth) ?? 0
     tint = try values.decodeIfPresent(Double.self, forKey: .tint) ?? 0
@@ -399,6 +403,7 @@ final class PhotoEditor {
   var exposure = 0.0
   var contrast = 1.0
   var saturation = 1.0
+  var outputSaturationVersion = 2
   var vibrance = 0.0
   var warmth = 0.0
   var tint = 0.0
@@ -598,6 +603,7 @@ final class PhotoEditor {
   private let outputShoulderKernel = FilmKernels.kernel("outputShoulder")
   private let outputToneCurveKernel = FilmKernels.kernel("outputToneCurve")
   private let vibranceKernel = FilmKernels.kernel("vibrance")
+  private let outputSaturationKernel = FilmKernels.kernel("localSaturation")
 
   func open(_ url: URL) {
     clearExposureStudy()
@@ -831,6 +837,7 @@ final class PhotoEditor {
     exposure = saved.exposure
     contrast = saved.contrast
     saturation = saved.saturation
+    outputSaturationVersion = saved.outputSaturationVersion
     vibrance = saved.vibrance
     warmth = saved.warmth
     tint = saved.tint
@@ -1008,6 +1015,7 @@ final class PhotoEditor {
     edits.exposure = exposure
     edits.contrast = contrast
     edits.saturation = saturation
+    edits.outputSaturationVersion = outputSaturationVersion
     edits.vibrance = vibrance
     edits.warmth = warmth
     edits.tint = tint
@@ -1427,6 +1435,7 @@ final class PhotoEditor {
     exposure = defaults.exposure
     contrast = defaults.contrast
     saturation = defaults.saturation
+    outputSaturationVersion = defaults.outputSaturationVersion
     vibrance = defaults.vibrance
     warmth = defaults.warmth
     tint = defaults.tint
@@ -1901,8 +1910,18 @@ final class PhotoEditor {
       "CIColorControls",
       parameters: [
         kCIInputContrastKey: contrast,
-        kCIInputSaturationKey: saturation,
+        kCIInputSaturationKey: outputSaturationVersion >= 2 ? 1.0 : saturation,
       ])
+    if outputSaturationVersion >= 2, abs(saturation - 1) > 0.001 {
+      guard let outputSaturationKernel,
+        let adjusted = outputSaturationKernel.apply(
+          extent: image.extent, arguments: [image, saturation - 1])
+      else {
+        error = "The output saturation stage could not be loaded."
+        return nil
+      }
+      image = adjusted
+    }
     if abs(curveShadow) > 0.001 || abs(curveMidtone) > 0.001
       || abs(curveHighlight) > 0.001
     {
@@ -2293,6 +2312,12 @@ final class PhotoEditor {
   func useSceneLightHalation() {
     guard halationVersion < 2 else { return }
     halationVersion = 2
+    editsChanged()
+  }
+
+  func useNonnegativeOutputSaturation() {
+    guard outputSaturationVersion < 2 else { return }
+    outputSaturationVersion = 2
     editsChanged()
   }
 
@@ -4620,6 +4645,13 @@ struct ContentView: View {
           control("Output exposure (EV)", value: $editor.exposure, range: -3...3)
           control("Contrast", value: $editor.contrast, range: 0.5...1.5)
           control("Saturation", value: $editor.saturation, range: 0...1.5)
+          if editor.outputSaturationVersion == 1 && abs(editor.saturation - 1) > 0.001 {
+            Button("Use nonnegative output saturation") {
+              editor.useNonnegativeOutputSaturation()
+            }
+            Text("This changes the rendering of this saved grade. Undo restores it.")
+              .font(.caption).foregroundStyle(.secondary)
+          }
           control("Warmth", value: $editor.warmth, range: -1...1)
           control("Output tint (magenta +)", value: $editor.tint, range: -1...1)
           Divider()

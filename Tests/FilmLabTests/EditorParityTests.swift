@@ -69,6 +69,7 @@ final class EditorParityTests: XCTestCase {
       editor.shadowLight = 0.2
       editor.filmLightWarmth = 0.1
       editor.exposure = -0.2
+      editor.saturation = 1.35
       editor.curveShadow = 0.12
       editor.vibrance = 0.15
       editor.shadowStrength = 0.12
