@@ -96,6 +96,35 @@ struct ExporterProbe {
     precondition(srgbProperties[kCGImagePropertyPixelWidth as String] as? Int == 32)
     precondition(srgbProperties[kCGImagePropertyPixelHeight as String] as? Int == 24)
     precondition(srgbProperties[kCGImagePropertyOrientation as String] as? Int == 1)
+    let displayP3 = CGColorSpace(name: CGColorSpace.displayP3)!
+    let wideGreen = CIImage(
+      color: CIColor(red: 0, green: 1, blue: 0, colorSpace: displayP3)!
+    ).cropped(to: CGRect(x: 0, y: 0, width: 1, height: 1))
+    let wideURL = directory.appendingPathComponent("wide-green-p3.tiff")
+    let narrowURL = directory.appendingPathComponent("wide-green-srgb.tiff")
+    try await exporter.export(
+      ExportRequest(image: wideGreen, url: wideURL, format: .tiff16DisplayP3, sourceURL: nil))
+    try await exporter.export(
+      ExportRequest(image: wideGreen, url: narrowURL, format: .tiff16SRGB, sourceURL: nil))
+    let context = CIContext(options: [
+      .workingColorSpace: CGColorSpace(name: CGColorSpace.extendedLinearSRGB)!,
+      .workingFormat: CIFormat.RGBAf,
+    ])
+    func p3Channels(_ url: URL) -> [Float] {
+      let image = CIImage(contentsOf: url)!
+      var pixel = [Float](repeating: 0, count: 4)
+      pixel.withUnsafeMutableBytes { bytes in
+        context.render(
+          image, toBitmap: bytes.baseAddress!, rowBytes: 16,
+          bounds: CGRect(x: 0, y: 0, width: 1, height: 1), format: .RGBAf,
+          colorSpace: displayP3)
+      }
+      return pixel
+    }
+    let wide = p3Channels(wideURL)
+    let narrow = p3Channels(narrowURL)
+    precondition(wide[1] > narrow[1] + 0.01, "P3 TIFF lost wide green saturation")
+    precondition(wide[0] + 0.05 < narrow[0], "sRGB TIFF retained out-of-gamut P3 green")
     let savedSource = try Data(contentsOf: sourceURL)
     precondition(savedSource == original)
     print("Export source-protection, metadata and atomic TIFF checks passed")

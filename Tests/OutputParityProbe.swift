@@ -1,5 +1,6 @@
 import CoreImage
 import Foundation
+import ImageIO
 
 private enum ProbeError: Error { case unreadable }
 
@@ -68,13 +69,28 @@ struct OutputParityProbe {
         guard let previewImage = preview?.image else { throw ProbeError.unreadable }
         let previewPixels = pixels(CIImage(cgImage: previewImage))
 
-        for format in [ExportFormat.tiff16SRGB, .jpeg] {
+        for format in [ExportFormat.tiff16SRGB, .tiff16DisplayP3, .jpeg] {
+          let formatName =
+            switch format {
+            case .tiff16SRGB: "srgb-tiff"
+            case .tiff16DisplayP3: "p3-tiff"
+            case .jpeg: "jpeg"
+            }
           let outputURL = directory.appendingPathComponent(
-            "\(kind)-\(exposure)-\(format == .jpeg ? "jpeg" : "tiff").\(format == .jpeg ? "jpg" : "tiff")"
+            "\(kind)-\(exposure)-\(formatName).\(format.fileExtension)"
           )
           try await exporter.export(
             ExportRequest(image: developed, url: outputURL, format: format, sourceURL: url))
           guard let exported = CIImage(contentsOf: outputURL) else { throw ProbeError.unreadable }
+          if format == .tiff16DisplayP3 {
+            guard let file = CGImageSourceCreateWithURL(outputURL as CFURL, nil),
+              let metadata = CGImageSourceCopyPropertiesAtIndex(file, 0, nil)
+                as? [String: Any],
+              let cgImage = CGImageSourceCreateImageAtIndex(file, 0, nil)
+            else { throw ProbeError.unreadable }
+            precondition(cgImage.colorSpace?.name == CGColorSpace.displayP3)
+            precondition(metadata[kCGImagePropertyDepth as String] as? Int == 16)
+          }
           let reduced = exported.applyingFilter(
             "CILanczosScaleTransform",
             parameters: [kCIInputScaleKey: 0.5, kCIInputAspectRatioKey: 1])
