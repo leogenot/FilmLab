@@ -38,6 +38,32 @@ struct PreviewHistogram: Sendable {
   let greenNearWhiteFraction: Double
   let blueNearWhiteFraction: Double
   let outsideSRGBFraction: Double
+  let waveform: WaveformDistribution
+}
+
+struct WaveformDistribution: Sendable {
+  static let columns = 64
+  static let levels = 64
+  let intensities: [Double]
+
+  static func make(from pixels: [UInt8], width: Int, height: Int) -> WaveformDistribution {
+    var counts = [Int](repeating: 0, count: columns * levels)
+    guard width > 0, height > 0, pixels.count >= width * height * 4 else {
+      return WaveformDistribution(intensities: counts.map { _ in 0 })
+    }
+    for index in 0..<(width * height) {
+      let offset = index * 4
+      let luminance =
+        0.2126 * Double(pixels[offset]) + 0.7152 * Double(pixels[offset + 1])
+        + 0.0722 * Double(pixels[offset + 2])
+      let column = min(columns - 1, index % width * columns / width)
+      let level = min(levels - 1, Int(luminance * Double(levels) / 256))
+      counts[level * columns + column] += 1
+    }
+    let peak = Double(max(1, counts.max() ?? 0))
+    return WaveformDistribution(
+      intensities: counts.map { $0 == 0 ? 0 : log1p(Double($0)) / log1p(peak) })
+  }
 }
 
 actor PreviewRenderer {
@@ -152,7 +178,8 @@ actor PreviewRenderer {
       redNearWhiteFraction: Double(redNearWhite) / total,
       greenNearWhiteFraction: Double(greenNearWhite) / total,
       blueNearWhiteFraction: Double(blueNearWhite) / total,
-      outsideSRGBFraction: Double(outside) / total
+      outsideSRGBFraction: Double(outside) / total,
+      waveform: WaveformDistribution.make(from: pixels, width: width, height: height)
     )
   }
 

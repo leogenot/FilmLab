@@ -2128,6 +2128,11 @@ private enum LibrarySort: String, CaseIterable, Identifiable {
   var id: Self { self }
 }
 
+private enum OutputScopeKind: String, CaseIterable {
+  case histogram = "Histogram"
+  case waveform = "Waveform"
+}
+
 struct ContentView: View {
   @Bindable var editor: PhotoEditor
   @Binding var showingImporter: Bool
@@ -2158,6 +2163,7 @@ struct ContentView: View {
   @State private var batchExportProgress = ""
   @State private var batchExportTask: Task<Void, Never>?
   @State private var panel: EditorPanel = .film
+  @State private var outputScope: OutputScopeKind = .histogram
   @State private var selectedColorBand = 0
   @State private var cropDragOrigin: FreeCrop?
   @State private var paintDragPoints: [CGPoint] = []
@@ -3484,18 +3490,28 @@ struct ContentView: View {
           }
         }
         if let histogram = editor.histogram {
-          OutputHistogram(
-            bins: histogram.bins,
-            redBins: histogram.redBins,
-            greenBins: histogram.greenBins,
-            blueBins: histogram.blueBins,
-            blackFraction: histogram.blackFraction,
-            whiteFraction: histogram.whiteFraction,
-            redNearWhiteFraction: histogram.redNearWhiteFraction,
-            greenNearWhiteFraction: histogram.greenNearWhiteFraction,
-            blueNearWhiteFraction: histogram.blueNearWhiteFraction,
-            outsideSRGBFraction: histogram.outsideSRGBFraction
-          )
+          Picker("Output scope", selection: $outputScope) {
+            ForEach(OutputScopeKind.allCases, id: \.self) { scope in
+              Text(scope.rawValue).tag(scope)
+            }
+          }
+          .pickerStyle(.segmented)
+          if outputScope == .histogram {
+            OutputHistogram(
+              bins: histogram.bins,
+              redBins: histogram.redBins,
+              greenBins: histogram.greenBins,
+              blueBins: histogram.blueBins,
+              blackFraction: histogram.blackFraction,
+              whiteFraction: histogram.whiteFraction,
+              redNearWhiteFraction: histogram.redNearWhiteFraction,
+              greenNearWhiteFraction: histogram.greenNearWhiteFraction,
+              blueNearWhiteFraction: histogram.blueNearWhiteFraction,
+              outsideSRGBFraction: histogram.outsideSRGBFraction
+            )
+          } else {
+            OutputWaveform(distribution: histogram.waveform)
+          }
         }
         Toggle("Float preview", isOn: $editor.highPrecisionPreview)
           .font(.caption)
