@@ -191,6 +191,16 @@ struct PhotoLibrary: Codable, Equatable {
 }
 
 enum PhotoLibraryStore {
+  static func updating(
+    _ library: PhotoLibrary, at url: URL, change: (inout PhotoLibrary) -> Void
+  ) throws -> PhotoLibrary {
+    var updated = library
+    change(&updated)
+    guard updated != library else { return library }
+    try save(updated, to: url)
+    return updated
+  }
+
   static func loadSafely(from url: URL) -> SavedEditLoad<PhotoLibrary> {
     let loaded = SavedEditStore.load(from: url, defaultValue: PhotoLibrary.empty())
     guard loaded.canSave, loaded.notice == nil else { return loaded }

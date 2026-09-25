@@ -2231,9 +2231,7 @@ struct ContentView: View {
     ) { result in
       switch result {
       case .success(let urls):
-        library.importPhotos(urls)
-        saveLibrary()
-        if let url = urls.first {
+        if updateLibrary({ $0.importPhotos(urls) }), let url = urls.first {
           showingLibrary = false
           editor.open(url)
         }
@@ -2256,9 +2254,9 @@ struct ContentView: View {
     .alert("New Catalog", isPresented: $showingNewCatalog) {
       TextField("Catalog name", text: $newCatalogName)
       Button("Create") {
-        library.createCatalog(named: newCatalogName)
-        saveLibrary()
-        showingLibrary = true
+        if updateLibrary({ $0.createCatalog(named: newCatalogName) }) {
+          showingLibrary = true
+        }
         newCatalogName = ""
       }
       Button("Cancel", role: .cancel) { newCatalogName = "" }
@@ -2274,8 +2272,7 @@ struct ContentView: View {
       TextField("Catalog name", text: $renamedCatalogName)
       Button("Rename") {
         if let catalogToRename {
-          library.renameCatalog(catalogToRename.id, to: renamedCatalogName)
-          saveLibrary()
+          updateLibrary { $0.renameCatalog(catalogToRename.id, to: renamedCatalogName) }
         }
         catalogToRename = nil
       }
@@ -2289,8 +2286,7 @@ struct ContentView: View {
     ) {
       Button("Remove Catalog", role: .destructive) {
         if let catalogToDelete {
-          library.deleteCatalog(catalogToDelete.id)
-          saveLibrary()
+          updateLibrary { $0.deleteCatalog(catalogToDelete.id) }
         }
         catalogToDelete = nil
       }
@@ -2457,6 +2453,21 @@ struct ContentView: View {
     }
     do {
       try PhotoLibraryStore.save(library, to: libraryURL)
+      return true
+    } catch {
+      libraryNotice = "Could not save library: \(error.localizedDescription)"
+      return false
+    }
+  }
+
+  @discardableResult
+  private func updateLibrary(_ change: (inout PhotoLibrary) -> Void) -> Bool {
+    guard libraryLoad.canSave else {
+      libraryNotice = "Library saving is paused to protect its unreadable index."
+      return false
+    }
+    do {
+      library = try PhotoLibraryStore.updating(library, at: libraryURL, change: change)
       return true
     } catch {
       libraryNotice = "Could not save library: \(error.localizedDescription)"
@@ -2704,8 +2715,7 @@ struct ContentView: View {
         }
         ForEach(library.catalogs) { catalog in
           Button {
-            library.selectedCatalogID = catalog.id
-            saveLibrary()
+            updateLibrary { $0.selectedCatalogID = catalog.id }
           } label: {
             HStack {
               Image(systemName: "folder")
@@ -2912,8 +2922,7 @@ struct ContentView: View {
                     Button(
                       library.favoritePaths.contains(path) ? "Remove Favorite" : "Add Favorite"
                     ) {
-                      library.toggleFavorite(path)
-                      saveLibrary()
+                      updateLibrary { $0.toggleFavorite(path) }
                     }
                     if library.catalogs.count > 1 {
                       catalogTransferMenu(for: [path])
@@ -2925,13 +2934,11 @@ struct ContentView: View {
                       }
                     }
                     Button("Remove from Catalog") {
-                      library.removePhoto(path)
-                      saveLibrary()
+                      updateLibrary { $0.removePhoto(path) }
                     }
                   }
                   Button {
-                    library.toggleFavorite(path)
-                    saveLibrary()
+                    updateLibrary { $0.toggleFavorite(path) }
                   } label: {
                     Label(
                       library.favoritePaths.contains(path) ? "Remove Favorite" : "Add Favorite",
