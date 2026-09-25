@@ -227,6 +227,8 @@ final class PhotoEditor {
   var editRecoveryURL: URL?
   var showOriginal = false
   var showGamutWarning = false
+  var inspectPixel = false
+  var pixelReadout: PixelReadout?
   var showLocalMask = false
   var zoom100 = false
   var isRendering = false
@@ -271,6 +273,9 @@ final class PhotoEditor {
   private var rawDecodeVersion = 0
   private var renderVersion = 0
   private let previewRenderer = PreviewRenderer()
+  private let pixelSampler = PixelSampler()
+  private var pixelTask: Task<Void, Never>?
+  private var pixelVersion = 0
   private let exporter = ImageExporter()
 
   // Scene-linear RGB enters this kernel in the context's extended linear working space.
@@ -326,6 +331,9 @@ final class PhotoEditor {
         if sourceURL != nil { saveEdits() }
         previewTask?.cancel()
         renderVersion += 1
+        pixelTask?.cancel()
+        pixelVersion += 1
+        pixelReadout = nil
         if let scopedURL { scopedURL.stopAccessingSecurityScopedResource() }
         scopedURL = access ? url : nil
         retainAccess = access
@@ -1136,6 +1144,9 @@ final class PhotoEditor {
 
   func renderPreview() {
     renderVersion += 1
+    pixelTask?.cancel()
+    pixelVersion += 1
+    pixelReadout = nil
     let version = renderVersion
     previewTask?.cancel()
     let image =
@@ -1170,6 +1181,28 @@ final class PhotoEditor {
         error = "Could not render this photo."
       }
       isRendering = false
+    }
+  }
+
+  func inspect(displayX: Double, displayY: Double) {
+    guard inspectPixel, let source,
+      let location = Framing.sourceLocation(
+        displayX: displayX, displayY: displayY, sourceExtent: source.extent,
+        quarterTurns: frameRotation, straightenDegrees: frameStraighten,
+        aspect: frameAspect, offsetX: frameOffsetX, offsetY: frameOffsetY,
+        freeCrop: frameFreeCrop),
+      let output = developedImage()
+    else { return }
+    pixelTask?.cancel()
+    pixelVersion += 1
+    let version = pixelVersion
+    let request = PixelSampleRequest(
+      input: source, output: output, inputLocation: location,
+      displayX: displayX, displayY: displayY, sourceURL: scopedURL)
+    pixelTask = Task {
+      let result = await pixelSampler.sample(request)
+      guard !Task.isCancelled, version == pixelVersion else { return }
+      pixelReadout = result
     }
   }
 
@@ -1583,6 +1616,23 @@ struct ContentView: View {
                     paintDragPoints.append(value.location)
                   }
                 }.onEnded { value in
+                  if editor.inspectPixel || editor.placingLocalArea {
+                    let scale = min(
+                      geometry.size.width / preview.size.width,
+                      geometry.size.height / preview.size.height)
+                    let imageWidth = preview.size.width * scale
+                    let imageHeight = preview.size.height * scale
+                    let left = (geometry.size.width - imageWidth) / 2
+                    let top = (geometry.size.height - imageHeight) / 2
+                    let x = (value.location.x - left) / imageWidth
+                    let y = (value.location.y - top) / imageHeight
+                    if editor.inspectPixel {
+                      editor.inspect(displayX: x, displayY: y)
+                    } else {
+                      editor.placeSelectedLocalArea(displayX: x, displayY: y)
+                    }
+                    return
+                  }
                   guard editor.paintingLocalArea else {
                     paintDragPoints.removeAll()
                     return
@@ -1594,20 +1644,6 @@ struct ContentView: View {
                   paintDragPoints.removeAll()
                 }
               )
-              .gesture(
-                SpatialTapGesture().onEnded { tap in
-                  guard editor.placingLocalArea else { return }
-                  let scale = min(
-                    geometry.size.width / preview.size.width,
-                    geometry.size.height / preview.size.height)
-                  let imageWidth = preview.size.width * scale
-                  let imageHeight = preview.size.height * scale
-                  let left = (geometry.size.width - imageWidth) / 2
-                  let top = (geometry.size.height - imageHeight) / 2
-                  editor.placeSelectedLocalArea(
-                    displayX: (tap.location.x - left) / imageWidth,
-                    displayY: (tap.location.y - top) / imageHeight)
-                })
           }
           .padding(24)
         }
@@ -1645,6 +1681,53 @@ struct ContentView: View {
           )
         }
         if editor.preview != nil {
+          Toggle(
+            "Inspect pixel",
+            isOn: Binding(
+              get: { editor.inspectPixel },
+              set: { enabled in
+                editor.inspectPixel = enabled
+                editor.pixelReadout = nil
+                if enabled {
+                  editor.zoom100 = false
+                  editor.compareEnabled = false
+                  editor.placingLocalArea = false
+                  editor.paintingLocalArea = false
+                  editor.showCropBounds = false
+                  editor.renderPreview()
+                }
+              }
+            )
+          )
+          .font(.caption)
+          if editor.inspectPixel {
+            if let sample = editor.pixelReadout {
+              VStack(alignment: .leading, spacing: 4) {
+                Text("EXTENDED LINEAR RGB").font(.caption2.weight(.semibold))
+                  .tracking(1).foregroundStyle(.secondary)
+                Text(
+                  "Input  R \(sample.input.red.formatted(.number.precision(.fractionLength(4))))  G \(sample.input.green.formatted(.number.precision(.fractionLength(4))))  B \(sample.input.blue.formatted(.number.precision(.fractionLength(4))))"
+                )
+                Text(
+                  "Output R \(sample.output.red.formatted(.number.precision(.fractionLength(4))))  G \(sample.output.green.formatted(.number.precision(.fractionLength(4))))  B \(sample.output.blue.formatted(.number.precision(.fractionLength(4))))"
+                )
+                Text(
+                  "Luminance \(sample.input.luminance.formatted(.number.precision(.fractionLength(4)))) → \(sample.output.luminance.formatted(.number.precision(.fractionLength(4))))"
+                )
+              }
+              .font(.system(.caption2, design: .monospaced))
+              .textSelection(.enabled)
+            } else {
+              Text(
+                "Click a point on the Fit preview to compare decoded input and developed output."
+              )
+              .font(.caption2).foregroundStyle(.secondary)
+            }
+            Text(
+              "Linear values can exceed 1 or fall below 0. RAW input is after macOS demosaic and white balance; JPEG input is already rendered."
+            )
+            .font(.caption2).foregroundStyle(.secondary)
+          }
           Toggle(
             "Show sRGB gamut warning",
             isOn: Binding(
