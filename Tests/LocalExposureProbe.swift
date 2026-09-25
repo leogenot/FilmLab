@@ -81,8 +81,31 @@ struct LocalExposureProbe {
           .utf8))
     precondition(
       oldArea.shape == 0 && oldArea.angle == 90 && oldArea.inverted
-        && oldArea.warmth == 0 && oldArea.tint == 0,
+        && oldArea.warmth == 0 && oldArea.tint == 0 && !oldArea.toneRangeEnabled,
       "Older saved radial areas did not decode")
+    var tonalPixels = [Float](repeating: 1, count: 3 * 4)
+    for (index, luminance) in [Float(0.018), 0.18, 1.8].enumerated() {
+      for channel in 0..<3 { tonalPixels[index * 4 + channel] = luminance }
+    }
+    let tonalSource = tonalPixels.withUnsafeBytes { bytes in
+      CIImage(
+        bitmapData: Data(bytes), bytesPerRow: 3 * 4 * MemoryLayout<Float>.size,
+        size: CGSize(width: 3, height: 1), format: .RGBAf, colorSpace: space)
+    }
+    let tonalMask = LocalExposure.mask(
+      for: tonalSource, centerX: 0.5, centerY: 0.5, radius: 1,
+      feather: 0.01, toneRangeEnabled: true, toneCenter: 0,
+      toneWidth: 1, toneFeather: 0.5)!
+    precondition(red(tonalMask, 0, 0) < 0.01, "Tonal mask included deep shadow")
+    precondition(red(tonalMask, 1, 0) > 0.99, "Tonal mask omitted middle gray")
+    precondition(red(tonalMask, 2, 0) < 0.01, "Tonal mask included bright highlight")
+    let tonalBright = LocalExposure.apply(
+      to: tonalSource, ev: 1, centerX: 0.5, centerY: 0.5,
+      radius: 1, feather: 0.01, toneRangeEnabled: true,
+      toneCenter: 0, toneWidth: 1, toneFeather: 0.5)
+    precondition(abs(red(tonalBright, 0, 0) - 0.018) < 0.002, "Deep shadow changed")
+    precondition(red(tonalBright, 1, 0) > 0.35, "Middle gray did not brighten")
+    precondition(abs(red(tonalBright, 2, 0) - 1.8) < 0.002, "Bright highlight changed")
     let unchanged = LocalExposure.apply(
       to: source, ev: 0, centerX: 0.5, centerY: 0.5, radius: 0.35, feather: 0.5)
     precondition(unchanged === source, "Zero EV should skip the local graph")

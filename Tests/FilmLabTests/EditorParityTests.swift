@@ -73,7 +73,8 @@ final class EditorParityTests: XCTestCase {
       editor.radialLights = [
         RadialAdjustment(
           exposure: 0.35, warmth: 0.1, centerX: 0.52, centerY: 0.46,
-          radius: 0.3, feather: 0.6)
+          radius: 0.3, feather: 0.6, toneRangeEnabled: true,
+          toneCenter: 0, toneWidth: 4, toneFeather: 1)
       ]
       editor.frameRotation = 1
       editor.frameAspect = 2
@@ -89,6 +90,13 @@ final class EditorParityTests: XCTestCase {
         _, _ in
       }
       XCTAssertTrue(summary.contains("Exported 1 photo"), summary)
+      let savedData = try Data(contentsOf: location.primaryURL)
+      let saved = try XCTUnwrap(
+        JSONSerialization.jsonObject(with: savedData) as? [String: Any])
+      let areas = try XCTUnwrap(saved["radialLights"] as? [[String: Any]])
+      let area = try XCTUnwrap(areas.first)
+      XCTAssertEqual(area["toneRangeEnabled"] as? Bool, true)
+      XCTAssertEqual(area["toneWidth"] as? Double, 4)
       let output = directory.appendingPathComponent("\(kind)-FilmLab.tiff")
       let exported = try XCTUnwrap(CIImage(contentsOf: output))
       let difference = compare(preview: previewImage, export: exported)

@@ -16,6 +16,7 @@ enum FilmKernels {
           "outputToneCurve",
           "vibrance",
           "outputGamutWarning",
+          "localLuminanceMask",
         ])
         guard required.isSubset(of: Set(names)) else {
           throw KernelLoadError.incompleteLibrary
@@ -88,6 +89,17 @@ enum FilmKernels {
             scale = min(scale, luminance / max(luminance - floor, 0.000001));
         }
         return float4(luminance + (rgb - luminance) * scale, pixel.a);
+    }
+    [[stitchable]] float4 localLuminanceMask(coreimage::sample_t pixel,
+                                            float center, float width, float feather) {
+        float luminance = max(dot(pixel.rgb, float3(0.2126, 0.7152, 0.0722)), 0.000001);
+        float stops = log2(luminance / 0.18);
+        float distance = abs(stops - clamp(center, -6.0, 6.0));
+        float halfWidth = clamp(width, 0.5, 8.0) * 0.5;
+        float softness = clamp(feather, 0.1, 2.0) * 0.5;
+        float selected = 1.0 - smoothstep(max(0.0, halfWidth - softness),
+                                          halfWidth + softness, distance);
+        return float4(selected, selected, selected, 1.0);
     }
     inline float toneCurveTangent(float previous, float next,
                                   float previousWidth, float nextWidth) {

@@ -36,13 +36,19 @@ struct RadialAdjustment: Codable, Equatable {
   var angle: Double
   var brushSize: Double
   var strokes: [BrushStroke]
+  var toneRangeEnabled: Bool
+  var toneCenter: Double
+  var toneWidth: Double
+  var toneFeather: Double
 
   init(
     exposure: Double = 0, warmth: Double = 0, tint: Double = 0,
     centerX: Double = 0.5, centerY: Double = 0.5,
     radius: Double = 0.35, feather: Double = 0.5, inverted: Bool = false,
     shape: Int = 0, angle: Double = 90,
-    brushSize: Double = 0.03, strokes: [BrushStroke] = []
+    brushSize: Double = 0.03, strokes: [BrushStroke] = [],
+    toneRangeEnabled: Bool = false, toneCenter: Double = 0,
+    toneWidth: Double = 4, toneFeather: Double = 1
   ) {
     self.exposure = exposure
     self.warmth = warmth
@@ -56,6 +62,10 @@ struct RadialAdjustment: Codable, Equatable {
     self.angle = angle
     self.brushSize = brushSize
     self.strokes = strokes
+    self.toneRangeEnabled = toneRangeEnabled
+    self.toneCenter = toneCenter
+    self.toneWidth = toneWidth
+    self.toneFeather = toneFeather
   }
 
   init(from decoder: Decoder) throws {
@@ -72,5 +82,9 @@ struct RadialAdjustment: Codable, Equatable {
     angle = try values.decodeIfPresent(Double.self, forKey: .angle) ?? 90
     brushSize = try values.decodeIfPresent(Double.self, forKey: .brushSize) ?? 0.03
     strokes = try values.decodeIfPresent([BrushStroke].self, forKey: .strokes) ?? []
+    toneRangeEnabled = try values.decodeIfPresent(Bool.self, forKey: .toneRangeEnabled) ?? false
+    toneCenter = try values.decodeIfPresent(Double.self, forKey: .toneCenter) ?? 0
+    toneWidth = try values.decodeIfPresent(Double.self, forKey: .toneWidth) ?? 4
+    toneFeather = try values.decodeIfPresent(Double.self, forKey: .toneFeather) ?? 1
   }
 }

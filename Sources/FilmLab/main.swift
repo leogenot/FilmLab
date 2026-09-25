@@ -1441,7 +1441,9 @@ final class PhotoEditor {
         for: source, centerX: area.centerX, centerY: area.centerY,
         radius: area.radius, feather: area.feather, inverted: area.inverted,
         shape: area.shape, angle: area.angle,
-        brushSize: area.brushSize, strokes: area.strokes)
+        brushSize: area.brushSize, strokes: area.strokes,
+        toneRangeEnabled: area.toneRangeEnabled, toneCenter: area.toneCenter,
+        toneWidth: area.toneWidth, toneFeather: area.toneFeather)
     else { return nil }
     return framedImage(mask)
   }
@@ -1489,7 +1491,9 @@ final class PhotoEditor {
         centerX: area.centerX,
         centerY: area.centerY, radius: area.radius, feather: area.feather,
         inverted: area.inverted, shape: area.shape, angle: area.angle,
-        brushSize: area.brushSize, strokes: area.strokes)
+        brushSize: area.brushSize, strokes: area.strokes,
+        toneRangeEnabled: area.toneRangeEnabled, toneCenter: area.toneCenter,
+        toneWidth: area.toneWidth, toneFeather: area.toneFeather)
     }
     if abs(filmLightWarmth) > 0.001 || abs(filmLightTint) > 0.001 {
       let balance = CIFilter.temperatureAndTint()
@@ -3359,6 +3363,16 @@ struct ContentView: View {
           control("Exposure (EV)", value: localBinding(\.exposure), range: -2...2)
           control("Warmth", value: localBinding(\.warmth), range: -1...1)
           control("Tint", value: localBinding(\.tint), range: -1...1)
+          Toggle("Limit by brightness", isOn: localBoolBinding(\.toneRangeEnabled))
+          if editor.radialLights[editor.selectedLocalIndex].toneRangeEnabled {
+            control("Brightness center (stops)", value: localBinding(\.toneCenter), range: -6...6)
+            control("Brightness width (stops)", value: localBinding(\.toneWidth), range: 0.5...8)
+            control("Brightness softness", value: localBinding(\.toneFeather), range: 0.1...2)
+            Text(
+              "Selects pre-film luminance relative to 18% linear gray. JPEG tone is already baked in. Use Show mask to inspect the affected pixels."
+            )
+            .font(.caption).foregroundStyle(.secondary)
+          }
           if editor.radialLights[editor.selectedLocalIndex].shape == 2 {
             control("Brush size", value: localBinding(\.brushSize), range: 0.003...0.15)
             control("Soft edge", value: localBinding(\.feather), range: 0...1)
