@@ -61,11 +61,22 @@ struct ExporterProbe {
     try await exporter.export(
       ExportRequest(image: image, url: tiffURL, format: .tiff16, sourceURL: sourceURL))
     guard let tiff = CGImageSourceCreateWithURL(tiffURL as CFURL, nil),
-      let properties = CGImageSourceCopyPropertiesAtIndex(tiff, 0, nil) as? [String: Any]
+      let properties = CGImageSourceCopyPropertiesAtIndex(tiff, 0, nil) as? [String: Any],
+      let tiffExif = properties[kCGImagePropertyExifDictionary as String] as? [String: Any],
+      let tiffTIFF = properties[kCGImagePropertyTIFFDictionary as String] as? [String: Any]
     else { preconditionFailure("TIFF replacement is unreadable") }
     precondition(properties[kCGImagePropertyDepth as String] as? Int == 16)
+    precondition(properties[kCGImagePropertyPixelWidth as String] as? Int == 32)
+    precondition(properties[kCGImagePropertyPixelHeight as String] as? Int == 24)
+    precondition(properties[kCGImagePropertyOrientation as String] as? Int == 1)
+    precondition(tiffTIFF[kCGImagePropertyTIFFOrientation as String] as? Int == 1)
+    precondition(tiffTIFF[kCGImagePropertyTIFFMake as String] as? String == "FilmLab Test Camera")
+    precondition(tiffExif[kCGImagePropertyExifPixelXDimension as String] as? Int == 32)
+    precondition(tiffExif[kCGImagePropertyExifPixelYDimension as String] as? Int == 24)
+    precondition(
+      tiffExif[kCGImagePropertyExifDateTimeOriginal as String] as? String == "2025:03:09 15:13:37")
     let savedSource = try Data(contentsOf: sourceURL)
     precondition(savedSource == original)
-    print("Export source-protection and atomic TIFF checks passed")
+    print("Export source-protection, metadata and atomic TIFF checks passed")
   }
 }

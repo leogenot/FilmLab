@@ -30,23 +30,14 @@ actor ImageExporter {
     }
     let accessing = request.sourceURL?.startAccessingSecurityScopedResource() ?? false
     defer { if accessing { request.sourceURL?.stopAccessingSecurityScopedResource() } }
+    let image = request.image.settingProperties(normalizedOutputProperties(for: request.image))
     switch request.format {
     case .jpeg:
-      let extent = request.image.extent.integral
-      var properties = request.image.properties
-      var exif = properties[kCGImagePropertyExifDictionary as String] as? [String: Any] ?? [:]
-      exif[kCGImagePropertyExifPixelXDimension as String] = Int(extent.width)
-      exif[kCGImagePropertyExifPixelYDimension as String] = Int(extent.height)
-      properties[kCGImagePropertyExifDictionary as String] = exif
-      properties[kCGImagePropertyOrientation as String] = 1
-      var tiff = properties[kCGImagePropertyTIFFDictionary as String] as? [String: Any] ?? [:]
-      tiff[kCGImagePropertyTIFFOrientation as String] = 1
-      properties[kCGImagePropertyTIFFDictionary as String] = tiff
       let quality = CIImageRepresentationOption(
         rawValue: kCGImageDestinationLossyCompressionQuality as String)
       guard
         let data = context.jpegRepresentation(
-          of: request.image.settingProperties(properties),
+          of: image,
           colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!, options: [quality: 0.95]
         )
       else {
@@ -58,7 +49,7 @@ actor ImageExporter {
         .appendingPathComponent(".FilmLab-\(UUID().uuidString).tiff")
       defer { try? FileManager.default.removeItem(at: temporaryURL) }
       try context.writeTIFFRepresentation(
-        of: request.image, to: temporaryURL, format: .RGBA16,
+        of: image, to: temporaryURL, format: .RGBA16,
         colorSpace: CGColorSpace(name: CGColorSpace.displayP3)!, options: [:]
       )
       if FileManager.default.fileExists(atPath: request.url.path) {
@@ -67,6 +58,20 @@ actor ImageExporter {
         try FileManager.default.moveItem(at: temporaryURL, to: request.url)
       }
     }
+  }
+
+  private func normalizedOutputProperties(for image: CIImage) -> [String: Any] {
+    let extent = image.extent.integral
+    var properties = image.properties
+    var exif = properties[kCGImagePropertyExifDictionary as String] as? [String: Any] ?? [:]
+    exif[kCGImagePropertyExifPixelXDimension as String] = Int(extent.width)
+    exif[kCGImagePropertyExifPixelYDimension as String] = Int(extent.height)
+    properties[kCGImagePropertyExifDictionary as String] = exif
+    properties[kCGImagePropertyOrientation as String] = 1
+    var tiff = properties[kCGImagePropertyTIFFDictionary as String] as? [String: Any] ?? [:]
+    tiff[kCGImagePropertyTIFFOrientation as String] = 1
+    properties[kCGImagePropertyTIFFDictionary as String] = tiff
+    return properties
   }
 }
 
