@@ -16,6 +16,7 @@ enum FilmKernels {
           "outputToneCurve", "channelToneCurves",
           "vibrance",
           "outputGamutWarning",
+          "compressSRGBGamut",
           "localLuminanceMask",
           "localHueMask",
           "localSaturation",
@@ -77,6 +78,23 @@ enum FilmKernels {
             return float4(mix(clamp(rgb, 0.0, 1.0), float3(1.0, 0.12, 0.05), 0.8), pixel.a);
         }
         return pixel;
+    }
+    [[stitchable]] float4 compressSRGBGamut(coreimage::sample_t pixel) {
+        float3 rgb = pixel.rgb;
+        if (!all(isfinite(rgb))) return pixel;
+        float luminance = dot(rgb, float3(0.2126, 0.7152, 0.0722));
+        // Chroma compression can preserve luminance only while the neutral lies in sRGB.
+        if (luminance <= 0.0 || luminance >= 1.0) return pixel;
+        float3 chroma = rgb - luminance;
+        float scale = 1.0;
+        for (int channel = 0; channel < 3; channel++) {
+            if (chroma[channel] < 0.0) {
+                scale = min(scale, luminance / -chroma[channel]);
+            } else if (chroma[channel] > 0.0) {
+                scale = min(scale, (1.0 - luminance) / chroma[channel]);
+            }
+        }
+        return float4(luminance + chroma * clamp(scale, 0.0, 1.0), pixel.a);
     }
     [[stitchable]] float4 vibrance(coreimage::sample_t pixel, float amount) {
         float3 rgb = pixel.rgb;

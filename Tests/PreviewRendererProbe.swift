@@ -42,6 +42,17 @@ struct PreviewRendererProbe {
       let warningData = warningImage.dataProvider?.data as Data?
     else { preconditionFailure("Gamut warning preview is unreadable") }
     precondition(plainData != warningData, "Gamut warning did not change the preview")
+    let compressedPreview = await renderer.render(
+      PreviewRequest(
+        image: image, scale: 1, sourceURL: nil, originalImage: image,
+        showGamutWarning: false, compressSRGBGamut: true))
+    guard let compressedImage = compressedPreview?.image,
+      let compressedData = compressedImage.dataProvider?.data as Data?
+    else { preconditionFailure("Compressed sRGB canvas is unreadable") }
+    precondition(compressedData != plainData)
+    precondition(compressedPreview?.histogram?.outsideSRGBFraction == 0.5)
+    precondition(compressedPreview?.histogram?.greenBins != result?.histogram?.greenBins)
+    precondition(compressedPreview?.original?.dataProvider?.data as Data? == plainData)
     let p3Space = CGColorSpace(name: CGColorSpace.displayP3)!
     let wideGreen = CIImage(
       color: CIColor(red: 0, green: 1, blue: 0, colorSpace: p3Space)!
@@ -77,6 +88,14 @@ struct PreviewRendererProbe {
       return pixel[1]
     }
     precondition(p3Green(p3Image) > p3Green(srgbImage) + 0.01)
+    let p3WithSRGBCompression = await renderer.render(
+      PreviewRequest(
+        image: wideGreen, scale: 1, sourceURL: nil, originalImage: nil,
+        showGamutWarning: false, highPrecision: true, displayP3: true,
+        compressSRGBGamut: true))
+    precondition(
+      p3WithSRGBCompression?.image.dataProvider?.data as Data?
+        == p3Image.dataProvider?.data as Data?)
     func neutralPatch(_ value: CGFloat) -> CIImage {
       CIImage(
         color: CIColor(

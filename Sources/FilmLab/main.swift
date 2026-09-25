@@ -439,6 +439,7 @@ final class PhotoEditor {
   var showGamutWarning = false
   var highPrecisionPreview = UserDefaults.standard.bool(forKey: "FilmLab.highPrecisionPreview")
   var displayP3Preview = UserDefaults.standard.bool(forKey: "FilmLab.displayP3Preview")
+  var compressSRGBGamut = UserDefaults.standard.bool(forKey: "FilmLab.compressSRGBGamut")
   var inspectPixel = false
   var pixelReadout: PixelReadout?
   var selectedPixel: CGPoint?
@@ -1836,7 +1837,8 @@ final class PhotoEditor {
       image: image, scale: scale, sourceURL: scopedURL,
       originalImage: compareEnabled ? source.map { framedImage($0) } : nil,
       showGamutWarning: showGamutWarning && !showOriginal && !showLocalMask && !showCropBounds,
-      highPrecision: highPrecisionPreview, displayP3: displayP3Preview
+      highPrecision: highPrecisionPreview, displayP3: displayP3Preview,
+      compressSRGBGamut: compressSRGBGamut && !showOriginal && !showLocalMask && !showCropBounds
     )
     previewTask = Task {
       do { try await Task.sleep(for: .milliseconds(60)) } catch { return }
@@ -2078,7 +2080,10 @@ final class PhotoEditor {
     panel.nameFieldStringValue =
       (sourceURL?.deletingPathExtension().lastPathComponent ?? "Photo") + "-FilmLab.jpg"
     guard panel.runModal() == .OK, let url = panel.url else { return }
-    beginExport(ExportRequest(image: image, url: url, format: .jpeg, sourceURL: sourceURL))
+    beginExport(
+      ExportRequest(
+        image: image, url: url, format: .jpeg, sourceURL: sourceURL,
+        compressSRGBGamut: compressSRGBGamut))
   }
 
   func exportTIFF(format: ExportFormat) {
@@ -2089,7 +2094,10 @@ final class PhotoEditor {
     panel.nameFieldStringValue =
       (sourceURL?.deletingPathExtension().lastPathComponent ?? "Photo") + "-FilmLab.tiff"
     guard panel.runModal() == .OK, let url = panel.url else { return }
-    beginExport(ExportRequest(image: image, url: url, format: format, sourceURL: sourceURL))
+    beginExport(
+      ExportRequest(
+        image: image, url: url, format: format, sourceURL: sourceURL,
+        compressSRGBGamut: compressSRGBGamut))
   }
 
   private func beginExport(_ request: ExportRequest) {
@@ -2144,6 +2152,7 @@ final class PhotoEditor {
     progress: @MainActor (Int, Int) -> Void
   ) async -> String {
     let currentPhotoSaved = flushEdits()
+    let compressOutput = compressSRGBGamut
     var result = BatchExportResult()
     for (index, path) in paths.enumerated() {
       if Task.isCancelled {
@@ -2192,7 +2201,9 @@ final class PhotoEditor {
         let output = BatchExportDestination.availableURL(
           for: url, in: directory, format: format)
         try await exporter.export(
-          ExportRequest(image: image, url: output, format: format, sourceURL: url))
+          ExportRequest(
+            image: image, url: output, format: format, sourceURL: url,
+            compressSRGBGamut: compressOutput))
         result.exported += 1
       } catch is CancellationError {
         result.cancelled = true
@@ -2572,6 +2583,10 @@ struct ContentView: View {
     }
     .onChange(of: editor.displayP3Preview) {
       UserDefaults.standard.set(editor.displayP3Preview, forKey: "FilmLab.displayP3Preview")
+      editor.renderPreview()
+    }
+    .onChange(of: editor.compressSRGBGamut) {
+      UserDefaults.standard.set(editor.compressSRGBGamut, forKey: "FilmLab.compressSRGBGamut")
       editor.renderPreview()
     }
     .onChange(of: editor.exposure) { editor.editsChanged() }
@@ -3934,6 +3949,11 @@ struct ContentView: View {
             "Red: above sRGB. Blue: below zero. Preview only; Display P3 TIFF may retain some flagged color."
           )
           .font(.caption2).foregroundStyle(.secondary)
+          Toggle("Compress sRGB colors", isOn: $editor.compressSRGBGamut)
+            .font(.caption)
+            .help(
+              "Fit out-of-gamut color into sRGB by reducing chroma while keeping linear luminance when it lies between black and white. Applies to sRGB canvas, JPEG, and sRGB TIFF; P3 TIFF stays unchanged."
+            )
         }
         switch panel {
         case .film:

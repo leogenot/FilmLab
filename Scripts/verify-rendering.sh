@@ -38,6 +38,8 @@ DEVELOPER_DIR="$developer_dir" swiftc \
   -o "$project_dir/.build/FilmLabLocalExposureProbe"
 "$project_dir/.build/FilmLabLocalExposureProbe"
 DEVELOPER_DIR="$developer_dir" swiftc \
+  "$project_dir/Sources/FilmLab/FilmKernels.swift" \
+  "$project_dir/Sources/FilmLab/OutputGamutMap.swift" \
   "$project_dir/Sources/FilmLab/ImageExporter.swift" \
   "$project_dir/Tests/ExporterProbe.swift" \
   -o "$project_dir/.build/FilmLabExporterProbe"
@@ -50,6 +52,7 @@ DEVELOPER_DIR="$developer_dir" swiftc \
 "$project_dir/.build/FilmLabImageDecoderProbe"
 DEVELOPER_DIR="$developer_dir" swiftc \
   "$project_dir/Sources/FilmLab/FilmKernels.swift" \
+  "$project_dir/Sources/FilmLab/OutputGamutMap.swift" \
   "$project_dir/Sources/FilmLab/PreviewRenderer.swift" \
   "$project_dir/Sources/FilmLab/ImageExporter.swift" \
   "$project_dir/Tests/PreviewRendererProbe.swift" \
@@ -58,6 +61,7 @@ DEVELOPER_DIR="$developer_dir" swiftc \
 if [[ -n "${FILMLAB_TEST_RAW:-}" && -n "${FILMLAB_TEST_JPEG:-}" ]]; then
   DEVELOPER_DIR="$developer_dir" swiftc \
     "$project_dir/Sources/FilmLab/FilmKernels.swift" \
+    "$project_dir/Sources/FilmLab/OutputGamutMap.swift" \
     "$project_dir/Sources/FilmLab/PreviewRenderer.swift" \
     "$project_dir/Sources/FilmLab/ImageExporter.swift" \
     "$project_dir/Sources/FilmLab/ImageDecoder.swift" \

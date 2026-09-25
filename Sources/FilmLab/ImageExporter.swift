@@ -32,6 +32,18 @@ struct ExportRequest: @unchecked Sendable {
   let url: URL
   let format: ExportFormat
   let sourceURL: URL?
+  let compressSRGBGamut: Bool
+
+  init(
+    image: CIImage, url: URL, format: ExportFormat, sourceURL: URL?,
+    compressSRGBGamut: Bool = false
+  ) {
+    self.image = image
+    self.url = url
+    self.format = format
+    self.sourceURL = sourceURL
+    self.compressSRGBGamut = compressSRGBGamut
+  }
 }
 
 actor ImageExporter {
@@ -50,7 +62,16 @@ actor ImageExporter {
     }
     let accessing = request.sourceURL?.startAccessingSecurityScopedResource() ?? false
     defer { if accessing { request.sourceURL?.stopAccessingSecurityScopedResource() } }
-    let image = request.image.settingProperties(normalizedOutputProperties(for: request.image))
+    let outputImage: CIImage
+    if request.compressSRGBGamut && request.format != .tiff16DisplayP3 {
+      guard let mapped = OutputGamutMap.apply(to: request.image) else {
+        throw ExportError.renderFailed
+      }
+      outputImage = mapped
+    } else {
+      outputImage = request.image
+    }
+    let image = outputImage.settingProperties(normalizedOutputProperties(for: request.image))
     switch request.format {
     case .jpeg:
       let quality = CIImageRepresentationOption(

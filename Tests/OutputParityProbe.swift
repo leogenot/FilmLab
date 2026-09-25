@@ -119,6 +119,34 @@ struct OutputParityProbe {
           print("\(kind) \(exposure) EV \(format): mean \(mean), max \(maximum) / 255")
           precondition(mean < (format == .jpeg ? 2 : 1), "Large preview/export drift")
         }
+        if exposure == 0 {
+          let compressedPreview = await previewRenderer.render(
+            PreviewRequest(
+              image: developed, scale: 0.5, sourceURL: url,
+              originalImage: nil, showGamutWarning: false,
+              highPrecision: true, compressSRGBGamut: true))
+          guard let compressedImage = compressedPreview?.image else {
+            throw ProbeError.unreadable
+          }
+          let compressedURL = directory.appendingPathComponent("\(kind)-compressed-srgb.tiff")
+          try await exporter.export(
+            ExportRequest(
+              image: developed, url: compressedURL, format: .tiff16SRGB,
+              sourceURL: url, compressSRGBGamut: true))
+          guard let compressedExport = CIImage(contentsOf: compressedURL) else {
+            throw ProbeError.unreadable
+          }
+          let reducedExport = compressedExport.applyingFilter(
+            "CILanczosScaleTransform",
+            parameters: [kCIInputScaleKey: 0.5, kCIInputAspectRatioKey: 1])
+          let canvas = pixels(CIImage(cgImage: compressedImage))
+          let file = pixels(reducedExport)
+          let mean =
+            Double(zip(canvas, file).map { abs(Int($0) - Int($1)) }.reduce(0, +))
+            / Double(canvas.count)
+          print("\(kind) compressed sRGB TIFF: mean \(mean) / 255")
+          precondition(mean < 1, "Compressed sRGB preview/export drift")
+        }
       }
     }
   }

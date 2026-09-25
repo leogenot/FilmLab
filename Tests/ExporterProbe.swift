@@ -125,6 +125,45 @@ struct ExporterProbe {
     let narrow = p3Channels(narrowURL)
     precondition(wide[1] > narrow[1] + 0.01, "P3 TIFF lost wide green saturation")
     precondition(wide[0] + 0.05 < narrow[0], "sRGB TIFF retained out-of-gamut P3 green")
+    let linearSpace = CGColorSpace(name: CGColorSpace.extendedLinearSRGB)!
+    let vivid = CIImage(
+      color: CIColor(red: 1.3, green: 0.1, blue: 0.05, colorSpace: linearSpace)!
+    ).cropped(to: CGRect(x: 0, y: 0, width: 1, height: 1))
+    guard let mapped = OutputGamutMap.apply(to: vivid) else {
+      preconditionFailure("sRGB gamut compression kernel unavailable")
+    }
+    func linearChannels(_ image: CIImage) -> [Float] {
+      var pixel = [Float](repeating: 0, count: 4)
+      pixel.withUnsafeMutableBytes { bytes in
+        context.render(
+          image, toBitmap: bytes.baseAddress!, rowBytes: 16,
+          bounds: CGRect(x: 0, y: 0, width: 1, height: 1), format: .RGBAf,
+          colorSpace: linearSpace)
+      }
+      return pixel
+    }
+    let compressed = linearChannels(mapped)
+    let originalVivid = linearChannels(vivid)
+    func luminance(_ channels: [Float]) -> Float {
+      0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
+    }
+    precondition(compressed.prefix(3).allSatisfy { $0 >= -0.0001 && $0 <= 1.0001 })
+    precondition(abs(luminance(compressed) - luminance(originalVivid)) < 0.0001)
+    precondition(abs(compressed[0] - 1) < 0.0001)
+    let compressedURL = directory.appendingPathComponent("compressed-srgb.tiff")
+    let unchangedP3URL = directory.appendingPathComponent("unchanged-p3.tiff")
+    try await exporter.export(
+      ExportRequest(
+        image: vivid, url: compressedURL, format: .tiff16SRGB, sourceURL: nil,
+        compressSRGBGamut: true))
+    try await exporter.export(
+      ExportRequest(
+        image: vivid, url: unchangedP3URL, format: .tiff16DisplayP3, sourceURL: nil,
+        compressSRGBGamut: true))
+    let savedCompressed = linearChannels(CIImage(contentsOf: compressedURL)!)
+    precondition(abs(savedCompressed[0] - compressed[0]) < 0.001)
+    let savedP3 = linearChannels(CIImage(contentsOf: unchangedP3URL)!)
+    precondition(savedP3[0] > savedCompressed[0] + 0.1)
     let savedSource = try Data(contentsOf: sourceURL)
     precondition(savedSource == original)
     print("Export source-protection, metadata and atomic TIFF checks passed")

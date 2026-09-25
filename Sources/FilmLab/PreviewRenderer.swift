@@ -8,10 +8,12 @@ struct PreviewRequest: @unchecked Sendable {
   let showGamutWarning: Bool
   let highPrecision: Bool
   let displayP3: Bool
+  let compressSRGBGamut: Bool
 
   init(
     image: CIImage, scale: CGFloat, sourceURL: URL?, originalImage: CIImage?,
-    showGamutWarning: Bool, highPrecision: Bool = false, displayP3: Bool = false
+    showGamutWarning: Bool, highPrecision: Bool = false, displayP3: Bool = false,
+    compressSRGBGamut: Bool = false
   ) {
     self.image = image
     self.scale = scale
@@ -20,6 +22,7 @@ struct PreviewRequest: @unchecked Sendable {
     self.showGamutWarning = showGamutWarning
     self.highPrecision = highPrecision
     self.displayP3 = displayP3
+    self.compressSRGBGamut = compressSRGBGamut
   }
 }
 
@@ -98,6 +101,13 @@ actor PreviewRenderer {
     defer { if accessing { request.sourceURL?.stopAccessingSecurityScopedResource() } }
     guard !Task.isCancelled else { return nil }
     let context = request.highPrecision ? floatContext : halfContext
+    let scopedImage: CIImage
+    if request.compressSRGBGamut {
+      guard let mapped = OutputGamutMap.apply(to: request.image) else { return nil }
+      scopedImage = mapped
+    } else {
+      scopedImage = request.image
+    }
     let displayImage: CIImage
     if request.showGamutWarning {
       guard let gamutWarningKernel,
@@ -106,7 +116,7 @@ actor PreviewRenderer {
       else { return nil }
       displayImage = highlighted
     } else {
-      displayImage = request.image
+      displayImage = request.displayP3 ? request.image : scopedImage
     }
     let canvasSpace = CGColorSpace(
       name: request.displayP3 ? CGColorSpace.displayP3 : CGColorSpace.sRGB)!
@@ -124,10 +134,14 @@ actor PreviewRenderer {
     }
     guard !Task.isCancelled, request.originalImage == nil || original != nil else { return nil }
     return PreviewResult(
-      image: image, original: original, histogram: histogram(for: request.image, context: context))
+      image: image, original: original,
+      histogram: histogram(
+        for: scopedImage, gamutSource: request.image, context: context))
   }
 
-  private func histogram(for source: CIImage, context: CIContext) -> PreviewHistogram? {
+  private func histogram(
+    for source: CIImage, gamutSource: CIImage, context: CIContext
+  ) -> PreviewHistogram? {
     let scale = min(1, 256 / max(source.extent.width, source.extent.height))
     let reduced = downsampled(source, scale: scale)
     let bounds = reduced.extent.integral
@@ -175,10 +189,11 @@ actor PreviewRenderer {
       ].max()!)
     let total = Double(width * height)
     var linearPixels = [Float](repeating: 0, count: width * height * 4)
+    let gamutReduced = downsampled(gamutSource, scale: scale)
     linearPixels.withUnsafeMutableBytes { bytes in
       if let base = bytes.baseAddress {
         context.render(
-          reduced, toBitmap: base, rowBytes: width * 4 * MemoryLayout<Float>.size,
+          gamutReduced, toBitmap: base, rowBytes: width * 4 * MemoryLayout<Float>.size,
           bounds: bounds, format: .RGBAf,
           colorSpace: CGColorSpace(name: CGColorSpace.extendedLinearSRGB)!)
       }
