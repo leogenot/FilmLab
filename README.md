@@ -30,7 +30,7 @@ Recovery copies preserve unreadable edit data for inspection. When a valid path 
 
 Save Look and Apply Look in the Settings menu transfer the grade, local areas, texture and framing through a versioned JSON file. The target photo retains its own RAW decoder mode, highlight recovery, camera white balance and non-RAW input settings. A look stores editing parameters, not a fixed image transform; the film response still changes with scene exposure. Different RAW and rendered-image input can make the same look appear different.
 
-Library and filmstrip thumbnails develop each photo with its saved grade. The open photo shows its live preview while editing. Thumbnail rendering happens asynchronously, shares duplicate requests, runs at most two edited renders at once, cancels offscreen work, and is cached for the current session.
+Library and filmstrip thumbnails develop each photo with its saved grade. For these thumbnails, RAW files decode at up to 1024 pixels on the longest side before grading; the editor and export still decode the full image. Fine grain, halation, and other pixel-scale effects may therefore look different in the thumbnail; inspect the editor at 100% for those details. The open photo shows its live preview while editing. Thumbnail rendering happens asynchronously, shares duplicate requests, runs at most two edited renders at once, cancels offscreen work, and is cached for the current session.
 
 ## Run
 

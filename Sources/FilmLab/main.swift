@@ -1954,7 +1954,8 @@ final class PhotoEditor {
       let decoded = try? await thumbnailDecoder.decode(
         from: url, isRAW: isRAW, flatRAW: loaded.value.flatRAW,
         highlightRecovery: loaded.value.rawHighlightRecovery,
-        temperature: loaded.value.rawTemperature, tint: loaded.value.rawTint)
+        temperature: loaded.value.rawTemperature, tint: loaded.value.rawTint,
+        maxDimension: 1024)
     else { return nil }
     guard !Task.isCancelled else { return nil }
     let worker = PhotoEditor()

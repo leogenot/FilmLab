@@ -27,7 +27,7 @@ actor ImageDecoder {
 
   func decode(
     from url: URL, isRAW: Bool, flatRAW: Bool, highlightRecovery: Bool,
-    temperature: Double?, tint: Double?
+    temperature: Double?, tint: Double?, maxDimension: Int? = nil
   ) throws -> DecodedPhoto {
     try Task.checkCancellation()
     if isRAW {
@@ -45,6 +45,12 @@ actor ImageDecoder {
         raw.boostAmount = 0
         raw.boostShadowAmount = 0
         raw.localToneMapAmount = 0
+      }
+      if let maxDimension, maxDimension > 0 {
+        let nativeLongestSide = max(raw.nativeSize.width, raw.nativeSize.height)
+        if nativeLongestSide.isFinite, nativeLongestSide > CGFloat(maxDimension) {
+          raw.scaleFactor = Float(CGFloat(maxDimension) / nativeLongestSide)
+        }
       }
       guard let image = raw.outputImage else { throw EditorError.unsupported }
       try Task.checkCancellation()
