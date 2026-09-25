@@ -67,6 +67,80 @@ final class BatchPasteCancellationTests: XCTestCase {
     XCTAssertFalse(FileManager.default.fileExists(atPath: location.pathURL.path))
   }
 
+  @MainActor func testSavedLookAppliesToBatchWithoutReplacingInputOrUndo() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("FilmLab-batch-look-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let target = root.appendingPathComponent("target.jpg")
+    try writeJPEG(to: target)
+    let lookURL = root.appendingPathComponent("look.json")
+    var look = PhotoEdits()
+    look.stockIndex = 2
+    look.shotExposure = 1.25
+    look.inputTone = 1.4
+    look.rawTemperature = 3_200
+    look.grainSeed = 999
+    try LookFile(settings: look).write(to: lookURL)
+    let loadedLook: PhotoEdits = try LookFile.read(from: lookURL)
+
+    let support = FileManager.default.urls(
+      for: .applicationSupportDirectory, in: .userDomainMask)[0]
+      .appendingPathComponent("FilmLab", isDirectory: true)
+    let history = support.appendingPathComponent("BatchHistory.json")
+    let previousHistory = try? Data(contentsOf: history)
+    defer {
+      if let previousHistory {
+        try? previousHistory.write(to: history, options: .atomic)
+      } else {
+        try? FileManager.default.removeItem(at: history)
+      }
+    }
+    let editsDirectory = support.appendingPathComponent("Edits", isDirectory: true)
+    let backupsDirectory = editsDirectory.appendingPathComponent(
+      "BatchBackups", isDirectory: true)
+    let previousBackups = Set(
+      (try? FileManager.default.contentsOfDirectory(
+        at: backupsDirectory, includingPropertiesForKeys: nil)) ?? [])
+    defer {
+      let current = Set(
+        (try? FileManager.default.contentsOfDirectory(
+          at: backupsDirectory, includingPropertiesForKeys: nil)) ?? [])
+      for url in current.subtracting(previousBackups) {
+        try? FileManager.default.removeItem(at: url)
+      }
+    }
+    let location = EditRecordLocator.locate(sourceURL: target, directory: editsDirectory)
+    defer {
+      try? FileManager.default.removeItem(at: location.pathURL)
+      if location.primaryURL != location.pathURL {
+        try? FileManager.default.removeItem(at: location.primaryURL)
+      }
+    }
+    var before = PhotoEdits.defaults(forRAW: false, grainSeed: 123)
+    before.inputTone = 0.8
+    try SavedEditStore.save(before, to: location.pathURL)
+    if location.primaryURL != location.pathURL {
+      try SavedEditStore.save(before, to: location.primaryURL)
+    }
+
+    let editor = PhotoEditor()
+    let outcome = await editor.pasteSettings(to: [target.path], look: loadedLook)
+    XCTAssertEqual(outcome.changedPaths, [target.path])
+    let applied = try JSONDecoder().decode(
+      PhotoEdits.self, from: Data(contentsOf: location.primaryURL))
+    XCTAssertEqual(applied.stockIndex, 2)
+    XCTAssertEqual(applied.shotExposure, 1.25)
+    XCTAssertEqual(applied.inputTone, 0.8)
+    XCTAssertNil(applied.rawTemperature)
+    XCTAssertEqual(applied.grainSeed, 123)
+
+    XCTAssertTrue(editor.undoLastBatch().contains("Restored settings on 1 photo"))
+    let restored = try JSONDecoder().decode(
+      PhotoEdits.self, from: Data(contentsOf: location.primaryURL))
+    XCTAssertEqual(restored, before)
+  }
+
   private struct PendingChange: Encodable {
     let path: String
     let location: EditRecordLocation

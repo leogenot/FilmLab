@@ -73,6 +73,8 @@ Capture-date sorting reads ImageIO EXIF original time (including its offset when
 
 Library selection mode also offers Add to Favorites, Remove from Favorites, and Remove from Catalog for all selected references. Removal asks for confirmation and leaves original files and saved edits untouched; a favorite persists while another catalog still references that photo. These operations save the library index before the UI changes.
 
+Select photos in the Library and choose **Settings → Apply Look to Selected…** to use a portable FilmLab look directly across them. It uses the same cancellable batch and Undo Last Batch path as Paste Settings. Each target keeps its RAW decoder controls, rendered-input correction, neutral-patch correction, and grain pattern; the look supplies the film, grade, local adjustments, texture, and framing.
+
 Direct and folder imports check each candidate's ImageIO image header after checking its extension. Direct import checks run outside the UI thread and can be cancelled while files are checked; mixed selections report skipped unsupported or duplicate entries. A file whose name only resembles a supported photo is skipped; this check does not fully decode image pixels, so a damaged image can still fail when opened or exported.
 
 Batch Paste rechecks each target's image header before writing its grade. If an original was replaced by an unreadable file after import, the target is reported as a failure and its saved edits are left alone. This is a header check, so damage deeper in an image can still be found only during decode or export.

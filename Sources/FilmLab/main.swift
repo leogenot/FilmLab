@@ -1171,7 +1171,7 @@ final class PhotoEditor {
   }
 
   func pasteSettings(
-    to paths: [String], workspaceOnly: Bool = false,
+    to paths: [String], look: PhotoEdits? = nil, workspaceOnly: Bool = false,
     progress: @MainActor (Int, Int) -> Void = { _, _ in }
   ) async -> BatchPasteOutcome {
     let workspace = workspaceOnly ? copiedWorkspace : nil
@@ -1179,7 +1179,7 @@ final class PhotoEditor {
       return BatchPasteOutcome(
         summary: "Copy a workspace first.", changedPaths: [], cancelled: false)
     }
-    guard let copied = workspace?.edits ?? settingsForPaste() else {
+    guard let copied = workspace?.edits ?? look ?? settingsForPaste() else {
       return BatchPasteOutcome(
         summary: "Copy settings from a FilmLab photo first.", changedPaths: [], cancelled: false)
     }
@@ -2771,19 +2771,28 @@ struct ContentView: View {
       Menu("Settings", systemImage: "square.on.square") {
         Button("Copy Settings") { editor.copySettings() }
           .keyboardShortcut("c", modifiers: [.command, .shift])
+          .disabled(editor.preview == nil)
         Button("Paste Settings") { editor.pasteSettings() }
           .keyboardShortcut("v", modifiers: [.command, .shift])
+          .disabled(editor.preview == nil)
         Divider()
         Button("Copy \(panel.rawValue) Workspace") { editor.copyWorkspace(panel) }
+          .disabled(editor.preview == nil)
         Button("Paste \(panel.rawValue) Workspace") { editor.pasteWorkspace(panel) }
           .disabled(!editor.canPasteWorkspace(panel))
         Divider()
         Button("Save Look…") { editor.saveLook() }
+          .disabled(editor.preview == nil)
         Button("Apply Look…") { editor.applyLook() }
+          .disabled(editor.preview == nil)
+        Button("Apply Look to \(selectedPhotoPaths.count) Selected…") {
+          applyLookToSelection()
+        }
+        .disabled(selectedPhotoPaths.isEmpty || applyingBatch || exportingBatch)
       }
       .accessibilityLabel("Settings")
       .help("Copy, save, or apply FilmLab edit settings")
-      .disabled(editor.preview == nil)
+      .disabled(editor.preview == nil && selectedPhotoPaths.isEmpty)
       Button("Reset Edits", systemImage: "arrow.counterclockwise") { editor.resetEdits() }
         .disabled(editor.preview == nil)
       Menu("Open", systemImage: "folder") {
@@ -3559,13 +3568,17 @@ struct ContentView: View {
       "Removed \(paths.count) photo references from this catalog. Original files and edits remain."
   }
 
-  private func applySettingsToSelection(workspaceOnly: Bool = false) {
+  private func applySettingsToSelection(
+    workspaceOnly: Bool = false, look: PhotoEdits? = nil
+  ) {
     let paths = library.selectedCatalog?.photoPaths.filter { selectedPhotoPaths.contains($0) } ?? []
     guard !paths.isEmpty, !applyingBatch else { return }
     applyingBatch = true
     batchPasteProgress = "Preparing settings…"
     batchPasteTask = Task {
-      let outcome = await editor.pasteSettings(to: paths, workspaceOnly: workspaceOnly) {
+      let outcome = await editor.pasteSettings(
+        to: paths, look: look, workspaceOnly: workspaceOnly
+      ) {
         current, total in
         batchPasteProgress = "Applying to \(current) of \(total)…"
       }
@@ -3579,6 +3592,22 @@ struct ContentView: View {
         selectionAnchor = nil
         selectingPhotos = false
       }
+    }
+  }
+
+  private func applyLookToSelection() {
+    guard !selectedPhotoPaths.isEmpty, !applyingBatch, !exportingBatch else { return }
+    let panel = NSOpenPanel()
+    panel.allowedContentTypes = [.json]
+    panel.allowsMultipleSelection = false
+    guard panel.runModal() == .OK, let url = panel.url else { return }
+    let accessing = url.startAccessingSecurityScopedResource()
+    defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+    do {
+      let look: PhotoEdits = try LookFile.read(from: url)
+      applySettingsToSelection(look: look)
+    } catch {
+      libraryNotice = "Could not apply look to selected photos: \(error.localizedDescription)"
     }
   }
 
