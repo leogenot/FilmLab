@@ -5,6 +5,12 @@
 <key>CFBundleName</key><string>FilmLab</string>
 <key>CFBundleExecutable</key><string>FilmLab</string>
 <key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleDocumentTypes</key><array><dict>
+<key>CFBundleTypeName</key><string>Photo</string>
+<key>CFBundleTypeRole</key><string>Viewer</string>
+<key>LSHandlerRank</key><string>Alternate</string>
+<key>LSItemContentTypes</key><array><string>public.image</string><string>public.camera-raw-image</string></array>
+</dict></array>
 <key>LSMinimumSystemVersion</key><string>15.0</string>
 <key>NSHighResolutionCapable</key><true/>
 </dict></plist>

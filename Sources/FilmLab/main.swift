@@ -2614,6 +2614,11 @@ struct ContentView: View {
         }
       }
     }
+    .dropDestination(for: URL.self) { urls, _ in
+      importExternalURLs(urls)
+      return true
+    }
+    .onOpenURL { importExternalURLs([$0]) }
     .toolbar {
       Button("Previous Photo", systemImage: "chevron.left") {
         if let path = adjacentPhoto(step: -1) { selectPhoto(path) }
@@ -2701,10 +2706,7 @@ struct ContentView: View {
     ) { result in
       switch result {
       case .success(let urls):
-        if updateLibrary({ $0.importPhotos(urls) }), let url = urls.first {
-          showingLibrary = false
-          editor.open(url)
-        }
+        importExternalURLs(urls)
       case .failure(let error): editor.error = error.localizedDescription
       }
     }
@@ -3067,47 +3069,85 @@ struct ContentView: View {
     let panel = NSOpenPanel()
     panel.canChooseFiles = false
     panel.canChooseDirectories = true
-    panel.allowsMultipleSelection = false
+    panel.allowsMultipleSelection = true
     panel.prompt = "Import Folder"
-    guard panel.runModal() == .OK, let folder = panel.url else { return }
+    guard panel.runModal() == .OK else { return }
+    importExternalURLs(panel.urls)
+  }
+
+  private func importExternalURLs(_ urls: [URL]) {
+    guard !importingFolder else {
+      libraryNotice = "Finish or cancel the current folder import before importing more photos."
+      return
+    }
+    let selection = PhotoImportSelection(urls: urls)
+    guard !selection.photos.isEmpty || !selection.folders.isEmpty else {
+      libraryNotice = "No supported photos or folders were selected."
+      return
+    }
     let catalogID = library.selectedCatalogID
     let catalogName = library.selectedCatalog?.name ?? "catalog"
+    if selection.folders.isEmpty {
+      guard updateLibrary({ $0.importPhotos(selection.photos, into: catalogID) }) else { return }
+      if let first = selection.photos.first {
+        showingLibrary = false
+        editor.open(first)
+      }
+      return
+    }
     showingLibrary = true
     importingFolder = true
     libraryNotice = nil
     folderImportTask = Task { @MainActor in
-      let access = folder.startAccessingSecurityScopedResource()
-      defer { if access { folder.stopAccessingSecurityScopedResource() } }
+      defer {
+        importingFolder = false
+        folderImportTask = nil
+      }
       do {
-        let photos = try await folderScanner.scan(folder)
+        var photos = selection.photos
+        var failedFolders: [String] = []
+        var linkedFolders: [URL] = []
+        for folder in selection.folders {
+          try Task.checkCancellation()
+          let access = folder.startAccessingSecurityScopedResource()
+          do {
+            photos += try await folderScanner.scan(folder)
+            linkedFolders.append(folder)
+          } catch is CancellationError {
+            if access { folder.stopAccessingSecurityScopedResource() }
+            throw CancellationError()
+          } catch {
+            failedFolders.append(folder.lastPathComponent)
+          }
+          if access { folder.stopAccessingSecurityScopedResource() }
+        }
         try Task.checkCancellation()
         guard library.catalogs.contains(where: { $0.id == catalogID }) else {
           libraryNotice = "The destination catalog was removed before import finished."
-          importingFolder = false
-          folderImportTask = nil
           return
         }
-        let previousLibrary = library
-        let added = library.importPhotos(photos, into: catalogID)
-        _ = library.trackImportedFolder(folder, in: catalogID)
-        if library != previousLibrary && !saveLibrary() {
-          library = previousLibrary
-        } else if added == 0 {
+        let previousCount =
+          library.catalogs.first(where: { $0.id == catalogID })?.photoPaths.count ?? 0
+        guard
+          updateLibrary({ library in
+            _ = library.importPhotos(photos, into: catalogID)
+            for folder in linkedFolders { _ = library.trackImportedFolder(folder, in: catalogID) }
+          })
+        else { return }
+        let currentCount =
+          library.catalogs.first(where: { $0.id == catalogID })?.photoPaths.count ?? 0
+        let added = currentCount - previousCount
+        libraryNotice =
+          "Imported \(added) photo\(added == 1 ? "" : "s") into \(catalogName). \(linkedFolders.count) folder\(linkedFolders.count == 1 ? "" : "s") linked for refresh."
+        if !failedFolders.isEmpty {
           libraryNotice =
-            photos.isEmpty
-            ? "Folder linked to \(catalogName). No supported photos found yet."
-            : "All \(photos.count) photos are already in \(catalogName). Folder linked for refresh."
-        } else {
-          libraryNotice =
-            "Imported \(added) photo\(added == 1 ? "" : "s") from \(folder.lastPathComponent) into \(catalogName)."
+            (libraryNotice ?? "") + " Could not read: \(failedFolders.joined(separator: ", "))."
         }
       } catch is CancellationError {
         libraryNotice = "Folder import cancelled."
       } catch {
         libraryNotice = "Could not import folder: \(error.localizedDescription)"
       }
-      importingFolder = false
-      folderImportTask = nil
     }
   }
 
