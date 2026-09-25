@@ -75,6 +75,29 @@ struct PhotoLibraryProbe {
     precondition(recovered.backupURL != nil)
     let backupData = try Data(contentsOf: recovered.backupURL!)
     precondition(backupData == Data("{damaged library".utf8))
+    let semanticURL = directory.appendingPathComponent("SemanticLibrary.json")
+    let sharedID = UUID()
+    let broken = PhotoLibrary(
+      catalogs: [
+        PhotoCatalog(id: sharedID, name: "Keep", photoPaths: [first.path, first.path]),
+        PhotoCatalog(id: sharedID, name: " ", photoPaths: ["/tmp/second.jpg"]),
+      ], selectedCatalogID: UUID())
+    try PhotoLibraryStore.save(broken, to: semanticURL)
+    let semanticOriginal = try Data(contentsOf: semanticURL)
+    let repaired = PhotoLibraryStore.loadSafely(from: semanticURL)
+    precondition(repaired.canSave && repaired.notice != nil && repaired.backupURL != nil)
+    precondition(repaired.value.catalogs.count == 2)
+    precondition(repaired.value.catalogs[0].photoPaths == [first.path])
+    precondition(repaired.value.catalogs[1].name == "Untitled Catalog")
+    precondition(repaired.value.catalogs[0].id != repaired.value.catalogs[1].id)
+    precondition(repaired.value.selectedCatalogID == sharedID)
+    let preservedSemantic = try Data(contentsOf: repaired.backupURL!)
+    precondition(preservedSemantic == semanticOriginal)
+    precondition(PhotoLibraryStore.load(from: semanticURL) == repaired.value)
+    let emptyURL = directory.appendingPathComponent("EmptyLibrary.json")
+    try PhotoLibraryStore.save(PhotoLibrary(catalogs: [], selectedCatalogID: UUID()), to: emptyURL)
+    let emptyRepaired = PhotoLibraryStore.loadSafely(from: emptyURL)
+    precondition(emptyRepaired.value.catalogs.count == 1 && emptyRepaired.canSave)
     print("Photo library checks passed")
   }
 }

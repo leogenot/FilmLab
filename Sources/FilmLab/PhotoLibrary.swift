@@ -19,6 +19,27 @@ struct PhotoLibrary: Codable, Equatable {
     catalogs.first { $0.id == selectedCatalogID }
   }
 
+  func repaired() -> PhotoLibrary {
+    var result = self
+    if result.catalogs.isEmpty { return .empty() }
+    var seenIDs = Set<UUID>()
+    for index in result.catalogs.indices {
+      while seenIDs.contains(result.catalogs[index].id) {
+        result.catalogs[index].id = UUID()
+      }
+      seenIDs.insert(result.catalogs[index].id)
+      if result.catalogs[index].name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        result.catalogs[index].name = "Untitled Catalog"
+      }
+      var seenPaths = Set<String>()
+      result.catalogs[index].photoPaths.removeAll { !seenPaths.insert($0).inserted }
+    }
+    if result.selectedCatalog == nil {
+      result.selectedCatalogID = result.catalogs[0].id
+    }
+    return result
+  }
+
   mutating func createCatalog(named name: String) {
     let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { return }
@@ -96,7 +117,34 @@ struct PhotoLibrary: Codable, Equatable {
 
 enum PhotoLibraryStore {
   static func loadSafely(from url: URL) -> SavedEditLoad<PhotoLibrary> {
-    SavedEditStore.load(from: url, defaultValue: .empty())
+    let loaded = SavedEditStore.load(from: url, defaultValue: PhotoLibrary.empty())
+    guard loaded.canSave, loaded.notice == nil else { return loaded }
+    let repaired = loaded.value.repaired()
+    guard repaired != loaded.value else { return loaded }
+    let backupURL = url.deletingPathExtension()
+      .appendingPathExtension("recovery-\(UUID().uuidString).json")
+    do {
+      try FileManager.default.copyItem(at: url, to: backupURL)
+    } catch {
+      return SavedEditLoad(
+        value: repaired,
+        notice:
+          "The library index needs repair, but its original could not be backed up. Saving is paused: \(error.localizedDescription)",
+        canSave: false, backupURL: nil)
+    }
+    do {
+      try save(repaired, to: url)
+      return SavedEditLoad(
+        value: repaired,
+        notice: "The library index was repaired after preserving the original.",
+        canSave: true, backupURL: backupURL)
+    } catch {
+      return SavedEditLoad(
+        value: repaired,
+        notice:
+          "The library index was loaded, but its repair could not be saved. Saving is paused: \(error.localizedDescription)",
+        canSave: false, backupURL: backupURL)
+    }
   }
 
   static func load(from url: URL) -> PhotoLibrary {
