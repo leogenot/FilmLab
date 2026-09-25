@@ -1627,6 +1627,14 @@ private enum EditorPanel: String, CaseIterable, Identifiable {
   }
 }
 
+private enum LibrarySort: String, CaseIterable, Identifiable {
+  case importOrder = "Import order"
+  case newestFirst = "Newest imported first"
+  case name = "Name"
+
+  var id: Self { self }
+}
+
 struct ContentView: View {
   @Bindable var editor: PhotoEditor
   @Binding var showingImporter: Bool
@@ -1642,6 +1650,8 @@ struct ContentView: View {
   @State private var libraryNotice: String?
   @State private var selectingPhotos = false
   @State private var selectedPhotoPaths = Set<String>()
+  @State private var librarySearch = ""
+  @State private var librarySort: LibrarySort = .importOrder
   @State private var applyingBatch = false
   @State private var panel: EditorPanel = .film
   @State private var selectedColorBand = 0
@@ -1658,6 +1668,26 @@ struct ContentView: View {
   private var libraryURL: URL { Self.libraryURL }
   private var editsDirectory: URL {
     libraryURL.deletingLastPathComponent().appendingPathComponent("Edits", isDirectory: true)
+  }
+  private var visibleLibraryPaths: [String] {
+    let paths = library.selectedCatalog?.photoPaths ?? []
+    let query = librarySearch.trimmingCharacters(in: .whitespacesAndNewlines)
+    let matching =
+      query.isEmpty
+      ? paths
+      : paths.filter {
+        URL(fileURLWithPath: $0).lastPathComponent.localizedStandardContains(query)
+      }
+    switch librarySort {
+    case .importOrder: return matching
+    case .newestFirst: return matching.reversed()
+    case .name:
+      return matching.sorted {
+        let comparison = URL(fileURLWithPath: $0).lastPathComponent.localizedStandardCompare(
+          URL(fileURLWithPath: $1).lastPathComponent)
+        return comparison == .orderedSame ? $0 < $1 : comparison == .orderedAscending
+      }
+    }
   }
   private var library: PhotoLibrary {
     get { libraryLoad.value }
@@ -2123,11 +2153,22 @@ struct ContentView: View {
           .disabled(applyingBatch)
           Button("Import Photos…", systemImage: "plus") { showingImporter = true }
         }
+        HStack(spacing: 10) {
+          TextField("Search filenames", text: $librarySearch)
+            .textFieldStyle(.roundedBorder)
+            .accessibilityLabel("Search catalog photos")
+          Picker("Sort", selection: $librarySort) {
+            ForEach(LibrarySort.allCases) { option in
+              Text(option.rawValue).tag(option)
+            }
+          }
+          .frame(width: 190)
+        }
         if selectingPhotos || editor.canUndoBatch {
           HStack(spacing: 10) {
             if selectingPhotos {
               Button("Select All") {
-                selectedPhotoPaths = Set(library.selectedCatalog?.photoPaths ?? [])
+                selectedPhotoPaths.formUnion(visibleLibraryPaths)
               }
               .disabled(applyingBatch)
               Button("Paste to \(selectedPhotoPaths.count) Photos") {
@@ -2163,10 +2204,10 @@ struct ContentView: View {
             .font(.caption)
             .foregroundStyle(.secondary)
         }
-        if let paths = library.selectedCatalog?.photoPaths, !paths.isEmpty {
+        if !visibleLibraryPaths.isEmpty {
           ScrollView {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 155), spacing: 14)], spacing: 14) {
-              ForEach(paths, id: \.self) { path in
+              ForEach(visibleLibraryPaths, id: \.self) { path in
                 VStack(alignment: .leading, spacing: 8) {
                   Button {
                     selectOrOpenPhoto(path)
@@ -2235,8 +2276,14 @@ struct ContentView: View {
           }
         } else {
           ContentUnavailableView(
-            "No photos in this catalog", systemImage: "photo.on.rectangle.angled",
-            description: Text("Import RAW or rendered photos to begin editing.")
+            librarySearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+              ? "No photos in this catalog" : "No matching photos",
+            systemImage: "photo.on.rectangle.angled",
+            description: Text(
+              librarySearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? "Import RAW or rendered photos to begin editing."
+                : "Try another filename or clear the search."
+            )
           )
           .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
