@@ -42,6 +42,38 @@ struct SavedEditStoreProbe {
     precondition(replacement.value.exposure == 0.5)
     let retainedBackup = try Data(contentsOf: backups[0])
     precondition(retainedBackup == damaged)
+
+    let primaryURL = directory.appendingPathComponent("identity.json")
+    let pathURL = directory.appendingPathComponent("path.json")
+    try SavedEditStore.save(SampleEdits(exposure: 1.75), to: pathURL)
+    let fromPath = SavedEditStore.load(
+      from: primaryURL, fallbackURL: pathURL, defaultValue: defaults)
+    precondition(fromPath.value.exposure == 1.75 && fromPath.canSave)
+    let migrated = SavedEditStore.load(from: primaryURL, defaultValue: defaults)
+    precondition(migrated.value.exposure == 1.75)
+
+    try SavedEditStore.save(SampleEdits(exposure: 2.25), to: primaryURL)
+    let primaryWins = SavedEditStore.load(
+      from: primaryURL, fallbackURL: pathURL, defaultValue: defaults)
+    precondition(primaryWins.value.exposure == 2.25)
+
+    let brokenPrimary = Data("{damaged identity record".utf8)
+    try brokenPrimary.write(to: primaryURL, options: .atomic)
+    let repaired = SavedEditStore.load(
+      from: primaryURL, fallbackURL: pathURL, defaultValue: defaults)
+    precondition(repaired.value.exposure == 1.75 && repaired.canSave)
+    precondition(repaired.notice != nil && repaired.backupURL != nil)
+    let preservedPrimary = try Data(contentsOf: repaired.backupURL!)
+    precondition(preservedPrimary == brokenPrimary)
+    let repairedPrimary = SavedEditStore.load(from: primaryURL, defaultValue: defaults)
+    precondition(repairedPrimary.value.exposure == 1.75)
+
+    try FileManager.default.removeItem(at: primaryURL)
+    try FileManager.default.createDirectory(at: primaryURL, withIntermediateDirectories: true)
+    let unreadablePrimary = SavedEditStore.load(
+      from: primaryURL, fallbackURL: pathURL, defaultValue: defaults)
+    precondition(unreadablePrimary.value.exposure == 1.75 && !unreadablePrimary.canSave)
+    try FileManager.default.removeItem(at: primaryURL)
     print("Saved edit recovery checks passed")
   }
 }

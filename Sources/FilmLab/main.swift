@@ -323,7 +323,8 @@ final class PhotoEditor {
         let editLocation = EditRecordLocator.locate(
           sourceURL: url, directory: editsDirectory)
         let loaded = SavedEditStore.load(
-          from: editLocation.primaryURL, defaultValue: PhotoEdits.defaults(forRAW: isRAW))
+          from: editLocation.primaryURL, fallbackURL: editLocation.pathURL,
+          defaultValue: PhotoEdits.defaults(forRAW: isRAW))
         let saved = loaded.value
         let decoded = try await imageDecoder.decode(
           from: url, isRAW: isRAW, flatRAW: saved.flatRAW,
@@ -1366,6 +1367,11 @@ private enum EditorPanel: String, CaseIterable, Identifiable {
 struct ContentView: View {
   @Bindable var editor: PhotoEditor
   @Binding var showingImporter: Bool
+  @State private var libraryLoad = PhotoLibraryStore.loadSafely(from: libraryURL)
+  @State private var showingLibrary = false
+  @State private var showingNewCatalog = false
+  @State private var newCatalogName = ""
+  @State private var catalogToDelete: PhotoCatalog?
   @State private var panel: EditorPanel = .film
   @State private var selectedColorBand = 0
   @State private var cropDragOrigin: FreeCrop?
@@ -1373,11 +1379,31 @@ struct ContentView: View {
   @Environment(\.displayScale) private var displayScale
   @Environment(\.scenePhase) private var scenePhase
 
+  private static var libraryURL: URL {
+    FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+      .appendingPathComponent("FilmLab/Library.json")
+  }
+
+  private var libraryURL: URL { Self.libraryURL }
+  private var library: PhotoLibrary {
+    get { libraryLoad.value }
+    nonmutating set { libraryLoad.value = newValue }
+  }
+
   var body: some View {
     HStack(spacing: 0) {
       navigationRail
-      photoCanvas
-      inspector
+      if showingLibrary {
+        libraryView
+      } else {
+        VStack(spacing: 0) {
+          HStack(spacing: 0) {
+            photoCanvas
+            inspector
+          }
+          photoStrip
+        }
+      }
     }
     .toolbar {
       Button(editor.zoom100 ? "Fit" : "100%", systemImage: "plus.magnifyingglass") {
@@ -1415,7 +1441,7 @@ struct ContentView: View {
       Button("Reset Edits", systemImage: "arrow.counterclockwise") { editor.resetEdits() }
         .disabled(editor.preview == nil)
       Menu("Open", systemImage: "folder") {
-        Button("Choose Photo…") { showingImporter = true }
+        Button("Import Photos…") { showingImporter = true }
         if !editor.recentPaths.isEmpty {
           Divider()
           ForEach(editor.recentPaths, id: \.self) { path in
@@ -1440,12 +1466,49 @@ struct ContentView: View {
     }
     .fileImporter(
       isPresented: $showingImporter, allowedContentTypes: [.image, .rawImage],
-      allowsMultipleSelection: false
+      allowsMultipleSelection: true
     ) { result in
       switch result {
-      case .success(let urls): if let url = urls.first { editor.open(url) }
+      case .success(let urls):
+        library.importPhotos(urls)
+        saveLibrary()
+        if let url = urls.first {
+          showingLibrary = false
+          editor.open(url)
+        }
       case .failure(let error): editor.error = error.localizedDescription
       }
+    }
+    .alert("New Catalog", isPresented: $showingNewCatalog) {
+      TextField("Catalog name", text: $newCatalogName)
+      Button("Create") {
+        library.createCatalog(named: newCatalogName)
+        saveLibrary()
+        showingLibrary = true
+        newCatalogName = ""
+      }
+      Button("Cancel", role: .cancel) { newCatalogName = "" }
+    } message: {
+      Text("Catalogs organize references to your photos. Original files stay in place.")
+    }
+    .alert(
+      "Remove Catalog?",
+      isPresented: Binding(
+        get: { catalogToDelete != nil },
+        set: { if !$0 { catalogToDelete = nil } })
+    ) {
+      Button("Remove Catalog", role: .destructive) {
+        if let catalogToDelete {
+          library.deleteCatalog(catalogToDelete.id)
+          saveLibrary()
+        }
+        catalogToDelete = nil
+      }
+      Button("Cancel", role: .cancel) { catalogToDelete = nil }
+    } message: {
+      Text(
+        "This removes the catalog and its photo references. Original photos and edits stay in place."
+      )
     }
     .onAppear { editor.resumeLastPhoto() }
     .onDisappear { editor.flushEdits() }
@@ -1524,9 +1587,33 @@ struct ContentView: View {
           .lineLimit(2)
       }
       VStack(spacing: 6) {
+        Button {
+          showingLibrary = true
+        } label: {
+          Label("Library", systemImage: "square.grid.2x2")
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 9)
+        .background(showingLibrary ? Color.white.opacity(0.11) : Color.clear)
+        .clipShape(RoundedRectangle(cornerRadius: 7))
+        Button {
+          showingLibrary = false
+        } label: {
+          Label("Editor", systemImage: "slider.horizontal.3")
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 9)
+        .background(!showingLibrary ? Color.white.opacity(0.11) : Color.clear)
+        .clipShape(RoundedRectangle(cornerRadius: 7))
+        Divider()
         ForEach(EditorPanel.allCases) { item in
           Button {
             panel = item
+            showingLibrary = false
           } label: {
             Label(item.rawValue, systemImage: item.symbol)
               .frame(maxWidth: .infinity, alignment: .leading)
@@ -1539,6 +1626,10 @@ struct ContentView: View {
         }
       }
       Spacer()
+      Text(library.selectedCatalog?.name ?? "")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
       Text("LOCAL EDITS")
         .font(.caption2.weight(.medium))
         .tracking(1)
@@ -1547,6 +1638,188 @@ struct ContentView: View {
     .padding(16)
     .frame(width: 160)
     .background(Color(white: 0.10))
+  }
+
+  private func saveLibrary() {
+    guard libraryLoad.canSave else {
+      editor.error = "Library saving is paused to protect its unreadable index."
+      return
+    }
+    do {
+      try PhotoLibraryStore.save(library, to: libraryURL)
+    } catch {
+      editor.error = "Could not save library: \(error.localizedDescription)"
+    }
+  }
+
+  private func selectPhoto(_ path: String) {
+    guard FileManager.default.fileExists(atPath: path) else {
+      editor.error = "Photo is missing: \(path)"
+      return
+    }
+    showingLibrary = false
+    editor.open(URL(fileURLWithPath: path))
+  }
+
+  private var libraryView: some View {
+    HStack(spacing: 0) {
+      VStack(alignment: .leading, spacing: 12) {
+        HStack {
+          Text("CATALOGS")
+            .font(.caption2.weight(.semibold))
+            .tracking(1.4)
+            .foregroundStyle(.secondary)
+          Spacer()
+          Button("New Catalog", systemImage: "plus") { showingNewCatalog = true }
+            .labelStyle(.iconOnly)
+        }
+        ForEach(library.catalogs) { catalog in
+          Button {
+            library.selectedCatalogID = catalog.id
+            saveLibrary()
+          } label: {
+            HStack {
+              Image(systemName: "folder")
+              Text(catalog.name).lineLimit(1)
+              Spacer()
+              Text("\(catalog.photoPaths.count)")
+                .foregroundStyle(.tertiary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(9)
+            .background(
+              library.selectedCatalogID == catalog.id ? Color.white.opacity(0.11) : .clear
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 7))
+          }
+          .buttonStyle(.plain)
+          .contextMenu {
+            if library.catalogs.count > 1 {
+              Button("Remove Catalog", role: .destructive) {
+                catalogToDelete = catalog
+              }
+            }
+          }
+        }
+        Spacer()
+      }
+      .padding(16)
+      .frame(width: 210)
+      .background(Color(white: 0.085))
+
+      VStack(alignment: .leading, spacing: 18) {
+        HStack {
+          VStack(alignment: .leading, spacing: 4) {
+            Text(library.selectedCatalog?.name ?? "Library")
+              .font(.title2.weight(.medium))
+            Text(
+              "\(library.selectedCatalog?.photoPaths.count ?? 0) photos · Originals stay in place"
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+          }
+          Spacer()
+          Button("Import Photos…", systemImage: "plus") { showingImporter = true }
+        }
+        if let notice = libraryLoad.notice {
+          Text(notice)
+            .font(.caption)
+            .foregroundStyle(.orange)
+        }
+        if let paths = library.selectedCatalog?.photoPaths, !paths.isEmpty {
+          ScrollView {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 155), spacing: 14)], spacing: 14) {
+              ForEach(paths, id: \.self) { path in
+                Button {
+                  selectPhoto(path)
+                } label: {
+                  VStack(alignment: .leading, spacing: 8) {
+                    PhotoThumbnail(path: path)
+                      .frame(height: 135)
+                      .frame(maxWidth: .infinity)
+                      .background(Color(white: 0.13))
+                      .clipShape(RoundedRectangle(cornerRadius: 7))
+                    Text(URL(fileURLWithPath: path).lastPathComponent)
+                      .font(.caption)
+                      .lineLimit(1)
+                      .foregroundStyle(.primary)
+                    if !FileManager.default.fileExists(atPath: path) {
+                      Text("Missing original")
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                    }
+                  }
+                }
+                .buttonStyle(.plain)
+                .contextMenu {
+                  Button("Remove from Catalog") {
+                    library.removePhoto(path)
+                    saveLibrary()
+                  }
+                }
+              }
+            }
+            .padding(.bottom, 16)
+          }
+        } else {
+          ContentUnavailableView(
+            "No photos in this catalog", systemImage: "photo.on.rectangle.angled",
+            description: Text("Import RAW or rendered photos to begin editing.")
+          )
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+      }
+      .padding(22)
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+      .background(Color(white: 0.065))
+    }
+  }
+
+  private var photoStrip: some View {
+    VStack(alignment: .leading, spacing: 7) {
+      HStack {
+        Text(library.selectedCatalog?.name.uppercased() ?? "PHOTOS")
+          .font(.caption2.weight(.semibold))
+          .tracking(1.2)
+          .foregroundStyle(.secondary)
+        Spacer()
+        Button("Import", systemImage: "plus") { showingImporter = true }
+          .labelStyle(.iconOnly)
+          .help("Import photos into this catalog")
+      }
+      ScrollView(.horizontal) {
+        HStack(spacing: 8) {
+          ForEach(library.selectedCatalog?.photoPaths ?? [], id: \.self) { path in
+            Button {
+              selectPhoto(path)
+            } label: {
+              VStack(alignment: .leading, spacing: 5) {
+                PhotoThumbnail(path: path)
+                  .frame(width: 90, height: 62)
+                  .background(Color(white: 0.14))
+                  .clipShape(RoundedRectangle(cornerRadius: 5))
+                  .overlay {
+                    RoundedRectangle(cornerRadius: 5)
+                      .strokeBorder(
+                        editor.sourceURL?.standardizedFileURL.path == path
+                          ? Color.white.opacity(0.8) : .clear, lineWidth: 1.5)
+                  }
+                Text(URL(fileURLWithPath: path).lastPathComponent)
+                  .font(.caption2)
+                  .lineLimit(1)
+                  .frame(width: 90, alignment: .leading)
+              }
+            }
+            .buttonStyle(.plain)
+            .help(path)
+          }
+        }
+      }
+    }
+    .padding(.horizontal, 14)
+    .padding(.vertical, 9)
+    .frame(height: 118)
+    .background(Color(white: 0.095))
   }
 
   private var photoCanvas: some View {
