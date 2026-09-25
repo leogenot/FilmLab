@@ -14,6 +14,16 @@ awk '
   capture && /"""#/ { exit }
   capture { print }
 ' "$project_dir/Sources/FilmLab/FilmKernels.swift" > "$metal_source"
+awk '
+  /private static let preservingMixerSource = #"""/ { capture = 1; next }
+  capture && /"""#/ { exit }
+  capture { print }
+' "$project_dir/Sources/FilmLab/FilmKernels.swift" >> "$metal_source"
+awk '
+  /private static let preservingSelectiveSource = #"""/ { capture = 1; next }
+  capture && /"""#/ { exit }
+  capture { print }
+' "$project_dir/Sources/FilmLab/FilmKernels.swift" >> "$metal_source"
 if [[ ! -s "$metal_source" ]]; then
   echo "Could not extract FilmLab Metal kernels." >&2
   exit 1

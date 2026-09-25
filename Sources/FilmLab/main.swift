@@ -75,6 +75,7 @@ struct PhotoEdits: Codable, Equatable {
   var selectiveRange = 35.0
   var selectiveShift = 0.0
   var selectiveSaturation = 0.0
+  var selectiveColorVersion = 2
   var mixer = Array(repeating: ColorMix(), count: 8)
   var mixerVersion = 2
   var channelCurves = Array(repeating: ChannelCurve(), count: 3)
@@ -128,6 +129,7 @@ struct PhotoEdits: Codable, Equatable {
     if panel == .color {
       result.colorTimingVersion = copied.colorTimingVersion
       result.mixerVersion = copied.mixerVersion
+      result.selectiveColorVersion = copied.selectiveColorVersion
     }
     return result
   }
@@ -271,6 +273,8 @@ struct PhotoEdits: Codable, Equatable {
     selectiveRange = try values.decodeIfPresent(Double.self, forKey: .selectiveRange) ?? 35
     selectiveShift = try values.decodeIfPresent(Double.self, forKey: .selectiveShift) ?? 0
     selectiveSaturation = try values.decodeIfPresent(Double.self, forKey: .selectiveSaturation) ?? 0
+    selectiveColorVersion =
+      try values.decodeIfPresent(Int.self, forKey: .selectiveColorVersion) ?? 1
     let savedMixer = try values.decodeIfPresent([ColorMix].self, forKey: .mixer) ?? []
     mixer = Array((savedMixer + Array(repeating: ColorMix(), count: 8)).prefix(8))
     mixerVersion = try values.decodeIfPresent(Int.self, forKey: .mixerVersion) ?? 1
@@ -417,6 +421,7 @@ final class PhotoEditor {
   var selectiveRange = 35.0
   var selectiveShift = 0.0
   var selectiveSaturation = 0.0
+  var selectiveColorVersion = 2
   var mixer = Array(repeating: ColorMix(), count: 8)
   var mixerVersion = 2
   var channelCurves = Array(repeating: ChannelCurve(), count: 3)
@@ -828,6 +833,7 @@ final class PhotoEditor {
     selectiveRange = saved.selectiveRange
     selectiveShift = saved.selectiveShift
     selectiveSaturation = saved.selectiveSaturation
+    selectiveColorVersion = saved.selectiveColorVersion
     mixer = saved.mixer
     mixerVersion = saved.mixerVersion
     channelCurves = saved.channelCurves
@@ -997,6 +1003,7 @@ final class PhotoEditor {
     edits.selectiveRange = selectiveRange
     edits.selectiveShift = selectiveShift
     edits.selectiveSaturation = selectiveSaturation
+    edits.selectiveColorVersion = selectiveColorVersion
     edits.mixer = mixer
     edits.mixerVersion = mixerVersion
     edits.channelCurves = channelCurves
@@ -1360,6 +1367,7 @@ final class PhotoEditor {
     selectiveRange = defaults.selectiveRange
     selectiveShift = defaults.selectiveShift
     selectiveSaturation = defaults.selectiveSaturation
+    selectiveColorVersion = defaults.selectiveColorVersion
     mixer = defaults.mixer
     mixerVersion = defaults.mixerVersion
     channelCurves = defaults.channelCurves
@@ -1785,7 +1793,8 @@ final class PhotoEditor {
     }
     let selected = SelectiveColor.apply(
       to: colored, targetHue: selectiveHue, range: selectiveRange,
-      hueShift: selectiveShift, saturation: selectiveSaturation
+      hueShift: selectiveShift, saturation: selectiveSaturation,
+      version: selectiveColorVersion
     )
     let mixed = ColorMixer.apply(to: selected, adjustments: mixer, version: mixerVersion)
     guard let channelAdjusted = ChannelCurves.apply(to: mixed, curves: channelCurves) else {
@@ -2071,6 +2080,12 @@ final class PhotoEditor {
   func useLuminancePreservingMixer() {
     guard mixerVersion < 2 else { return }
     mixerVersion = 2
+    editsChanged()
+  }
+
+  func useLuminancePreservingSelectiveColor() {
+    guard selectiveColorVersion < 2 else { return }
+    selectiveColorVersion = 2
     editsChanged()
   }
 
@@ -4191,6 +4206,15 @@ struct ContentView: View {
           control("Strength", value: $editor.highlightStrength, range: 0...1)
           Divider()
           Text("Selective color").font(.headline)
+          if editor.selectiveColorVersion < 2 {
+            Button("Use luminance-preserving selective color") {
+              editor.useLuminancePreservingSelectiveColor()
+            }
+            Text(
+              "Updates this older grade's selective color rendering. Active hue or saturation adjustments may shift; Undo restores the previous rendering."
+            )
+            .font(.caption).foregroundStyle(.secondary)
+          }
           control("Target hue", value: $editor.selectiveHue, range: 0...360)
           control("Color range", value: $editor.selectiveRange, range: 10...90)
           control("Hue shift", value: $editor.selectiveShift, range: -45...45)

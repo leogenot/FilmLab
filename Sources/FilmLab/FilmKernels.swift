@@ -11,6 +11,7 @@ enum FilmKernels {
         let required = Set([
           "filmResponse", "shapeSceneLight", "measuredNegative", "portraPositive",
           "grade", "selectiveColor", "colorMixerBand", "colorMixerBandV2", "applyGrain",
+          "preservingSelectiveColor",
           "highlightMask", "applyHalation", "applyAcutance", "renderedInputTone",
           "outputShoulder",
           "outputToneCurve", "channelToneCurves",
@@ -29,7 +30,14 @@ enum FilmKernels {
             (name, try CIColorKernel(functionName: name, fromMetalLibraryData: data))
           })
       }
-      let compiled = try CIKernel.kernels(withMetalString: source)
+      let compiled =
+        try CIKernel.kernels(withMetalString: source)
+        + CIKernel.kernels(
+          withMetalString: "#include <CoreImage/CoreImage.h>\nusing namespace metal;\n"
+            + preservingMixerSource)
+        + CIKernel.kernels(
+          withMetalString: "#include <CoreImage/CoreImage.h>\nusing namespace metal;\n"
+            + preservingSelectiveSource)
       return Dictionary(
         uniqueKeysWithValues: compiled.compactMap { kernel in
           (kernel as? CIColorKernel).map { (kernel.name, $0) }
@@ -575,57 +583,6 @@ enum FilmKernels {
                       * exp2(clamp(luminanceEV * mask, -2.0, 2.0)), pixel.a);
     }
 
-    [[stitchable]] float4 colorMixerBandV2(coreimage::sample_t pixel,
-                                           coreimage::sample_t original,
-                                           float center, float hueShift,
-                                           float saturation, float luminanceEV) {
-        float3 source = max(original.rgb, float3(0.0));
-        float maximum = max(max(source.r, source.g), source.b);
-        float minimum = min(min(source.r, source.g), source.b);
-        float chroma = maximum - minimum;
-        if (chroma < 0.000001) return pixel;
-        float hue;
-        if (maximum == source.r) hue = (source.g - source.b) / chroma;
-        else if (maximum == source.g) hue = (source.b - source.r) / chroma + 2.0;
-        else hue = (source.r - source.g) / chroma + 4.0;
-        hue = fract(hue / 6.0 + 1.0) * 360.0;
-        float distance = abs(hue - center);
-        distance = min(distance, 360.0 - distance);
-        float mask = (1.0 - smoothstep(15.0, 48.0, distance))
-                   * smoothstep(0.02, 0.12, chroma / max(maximum, 0.000001));
-        if (mask <= 0.0) return pixel;
-
-        if (abs(hueShift) < 0.000001 && abs(saturation) < 0.000001) {
-            return float4(pixel.rgb * exp2(clamp(luminanceEV * mask, -2.0, 2.0)), pixel.a);
-        }
-        if (min(min(pixel.r, pixel.g), pixel.b) < 0.0) return pixel;
-
-        float3 rgb = max(pixel.rgb, float3(0.0));
-        float originalLuma = dot(rgb, float3(0.2126, 0.7152, 0.0722));
-        float angle = hueShift * mask * 0.0174532925199433;
-        float y = dot(rgb, float3(0.299, 0.587, 0.114));
-        float i = dot(rgb, float3(0.596, -0.275, -0.321));
-        float q = dot(rgb, float3(0.212, -0.523, 0.311));
-        float cosine = cos(angle);
-        float sine = sin(angle);
-        float scale = max(0.0, 1.0 + saturation * mask);
-        float newI = (i * cosine - q * sine) * scale;
-        float newQ = (i * sine + q * cosine) * scale;
-        float3 mixed = float3(
-            y + 0.956 * newI + 0.621 * newQ,
-            y - 0.272 * newI - 0.647 * newQ,
-            y - 1.106 * newI + 1.703 * newQ
-        );
-        float mixedLuma = dot(mixed, float3(0.2126, 0.7152, 0.0722));
-        float3 centered = mixed - mixedLuma;
-        float gamutScale = 1.0;
-        if (centered.r < 0.0) gamutScale = min(gamutScale, originalLuma / -centered.r);
-        if (centered.g < 0.0) gamutScale = min(gamutScale, originalLuma / -centered.g);
-        if (centered.b < 0.0) gamutScale = min(gamutScale, originalLuma / -centered.b);
-        float3 balanced = originalLuma + centered * clamp(gamutScale, 0.0, 1.0);
-        return float4(balanced * exp2(clamp(luminanceEV * mask, -2.0, 2.0)), pixel.a);
-    }
-
     [[stitchable]] float4 selectiveColor(coreimage::sample_t pixel, float targetHue,
                                          float range, float shift, float saturation) {
                   float3 rgb = max(pixel.rgb, float3(0.0));
@@ -723,6 +680,106 @@ enum FilmKernels {
         float delta = clamp((luma - lowLuma) * amount * 0.65, -0.12, 0.12);
         float scale = max(luma + delta, 0.0) / max(luma, 0.000001);
         return float4(source * scale, pixel.a);
+    }
+    """#
+
+  private static let preservingMixerSource = #"""
+    [[stitchable]] float4 colorMixerBandV2(coreimage::sample_t pixel,
+                                           coreimage::sample_t original,
+                                           float center, float hueShift,
+                                           float saturation, float luminanceEV) {
+        float3 source = max(original.rgb, float3(0.0));
+        float maximum = max(max(source.r, source.g), source.b);
+        float minimum = min(min(source.r, source.g), source.b);
+        float chroma = maximum - minimum;
+        if (chroma < 0.000001) return pixel;
+        float hue;
+        if (maximum == source.r) hue = (source.g - source.b) / chroma;
+        else if (maximum == source.g) hue = (source.b - source.r) / chroma + 2.0;
+        else hue = (source.r - source.g) / chroma + 4.0;
+        hue = fract(hue / 6.0 + 1.0) * 360.0;
+        float distance = abs(hue - center);
+        distance = min(distance, 360.0 - distance);
+        float mask = (1.0 - smoothstep(15.0, 48.0, distance))
+                   * smoothstep(0.02, 0.12, chroma / max(maximum, 0.000001));
+        if (mask <= 0.0) return pixel;
+
+        if (abs(hueShift) < 0.000001 && abs(saturation) < 0.000001) {
+            return float4(pixel.rgb * exp2(clamp(luminanceEV * mask, -2.0, 2.0)), pixel.a);
+        }
+        if (min(min(pixel.r, pixel.g), pixel.b) < 0.0) return pixel;
+
+        float3 rgb = max(pixel.rgb, float3(0.0));
+        float originalLuma = dot(rgb, float3(0.2126, 0.7152, 0.0722));
+        float angle = hueShift * mask * 0.0174532925199433;
+        float y = dot(rgb, float3(0.299, 0.587, 0.114));
+        float i = dot(rgb, float3(0.596, -0.275, -0.321));
+        float q = dot(rgb, float3(0.212, -0.523, 0.311));
+        float cosine = cos(angle);
+        float sine = sin(angle);
+        float scale = max(0.0, 1.0 + saturation * mask);
+        float newI = (i * cosine - q * sine) * scale;
+        float newQ = (i * sine + q * cosine) * scale;
+        float3 mixed = float3(
+            y + 0.956 * newI + 0.621 * newQ,
+            y - 0.272 * newI - 0.647 * newQ,
+            y - 1.106 * newI + 1.703 * newQ
+        );
+        float mixedLuma = dot(mixed, float3(0.2126, 0.7152, 0.0722));
+        float3 centered = mixed - mixedLuma;
+        float gamutScale = 1.0;
+        if (centered.r < 0.0) gamutScale = min(gamutScale, originalLuma / -centered.r);
+        if (centered.g < 0.0) gamutScale = min(gamutScale, originalLuma / -centered.g);
+        if (centered.b < 0.0) gamutScale = min(gamutScale, originalLuma / -centered.b);
+        float3 balanced = originalLuma + centered * clamp(gamutScale, 0.0, 1.0);
+        return float4(balanced * exp2(clamp(luminanceEV * mask, -2.0, 2.0)), pixel.a);
+    }
+
+    """#
+
+  private static let preservingSelectiveSource = #"""
+    [[stitchable]] float4 preservingSelectiveColor(coreimage::sample_t pixel, float targetHue,
+                                                 float range, float shift, float saturation) {
+        float3 rgb = pixel.rgb;
+        if (!all(isfinite(rgb)) || any(rgb < float3(0.0))) return pixel;
+        float maximum = max(max(rgb.r, rgb.g), rgb.b);
+        float minimum = min(min(rgb.r, rgb.g), rgb.b);
+        float chroma = maximum - minimum;
+        if (chroma < 0.000001) return pixel;
+
+        float hue;
+        if (maximum == rgb.r) hue = (rgb.g - rgb.b) / chroma;
+        else if (maximum == rgb.g) hue = (rgb.b - rgb.r) / chroma + 2.0;
+        else hue = (rgb.r - rgb.g) / chroma + 4.0;
+        hue = fract(hue / 6.0 + 1.0);
+        float distance = abs(hue - targetHue / 360.0);
+        distance = min(distance, 1.0 - distance) * 360.0;
+        float mask = 1.0 - smoothstep(range * 0.55, range, distance);
+        mask *= smoothstep(0.02, 0.16, chroma / max(maximum, 0.000001));
+        if (mask <= 0.0) return pixel;
+
+        float angle = shift * 0.0174532925199433 * mask;
+        float y = dot(rgb, float3(0.299, 0.587, 0.114));
+        float i = dot(rgb, float3(0.596, -0.275, -0.321));
+        float q = dot(rgb, float3(0.212, -0.523, 0.311));
+        float cosine = cos(angle);
+        float sine = sin(angle);
+        float scale = max(0.0, 1.0 + saturation * mask);
+        float newI = (i * cosine - q * sine) * scale;
+        float newQ = (i * sine + q * cosine) * scale;
+        float3 mixed = float3(
+            y + 0.956 * newI + 0.621 * newQ,
+            y - 0.272 * newI - 0.647 * newQ,
+            y - 1.106 * newI + 1.703 * newQ
+        );
+        float originalLuma = dot(rgb, float3(0.2126, 0.7152, 0.0722));
+        float mixedLuma = dot(mixed, float3(0.2126, 0.7152, 0.0722));
+        float3 centered = mixed - mixedLuma;
+        float gamutScale = 1.0;
+        if (centered.r < 0.0) gamutScale = min(gamutScale, originalLuma / -centered.r);
+        if (centered.g < 0.0) gamutScale = min(gamutScale, originalLuma / -centered.g);
+        if (centered.b < 0.0) gamutScale = min(gamutScale, originalLuma / -centered.b);
+        return float4(originalLuma + centered * clamp(gamutScale, 0.0, 1.0), pixel.a);
     }
     """#
 }
