@@ -383,6 +383,10 @@ Catalogs can now be renamed. A photo's context menu or a multi-photo selection c
 
 Library and filmstrip thumbnails now decode in an actor outside the main UI thread, prefer ImageIO's embedded thumbnail where available, and retain at most 128 decoded images. The signed app showed both disposable Sony ARW and JPEG thumbnails after launch, and clicking each in the filmstrip reopened its separate 0 EV grade. This verifies the tested files and UI path; thumbnail throughput for a large library has not been measured.
 
+## Preview and export parity (2026-09-25)
+
+A controlled 64 × 64 extended-linear RGB gradient, including values above display white, now passes through the normal preview renderer at 100% and the 16-bit sRGB TIFF exporter. After decoding both outputs into display-sRGB 8-bit pixels, the maximum channel difference was zero. This verifies that the tested full-scale preview and TIFF path agree after output conversion. Fit-view downsampling, JPEG compression, display color management, and real film-stock color accuracy remain separate questions. The signed app continues to open the disposable Sony RAW and JPEG through the filmstrip with their separate grades; this probe does not assert that their differently processed inputs should render identically.
+
 In the signed app, a verification catalog imported disposable Sony JPEG and ARW copies together. The strip showed both files. Setting JPEG Shot Exposure to +1.25 EV, switching to RAW, and switching back restored their separate +1.25 and 0 EV values. Copy Settings from JPEG and Paste Settings on RAW transferred +1.25 EV and Stock Amount 0.70 while preserving the RAW decoder path. The catalog and RAW grade survived an app relaunch; selecting the empty default catalog showed its own contents. The verification catalog was removed through the app's confirmation flow without deleting the photo copies. Catalog references currently use paths; there is no portable library package yet.
 
 ## Relinking moved originals (2026-09-25)

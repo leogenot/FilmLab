@@ -42,6 +42,7 @@ DEVELOPER_DIR="$developer_dir" swiftc \
 DEVELOPER_DIR="$developer_dir" swiftc \
   "$project_dir/Sources/FilmLab/FilmKernels.swift" \
   "$project_dir/Sources/FilmLab/PreviewRenderer.swift" \
+  "$project_dir/Sources/FilmLab/ImageExporter.swift" \
   "$project_dir/Tests/PreviewRendererProbe.swift" \
   -o "$project_dir/.build/FilmLabPreviewRendererProbe"
 "$project_dir/.build/FilmLabPreviewRendererProbe"

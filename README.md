@@ -30,7 +30,7 @@ Open `Package.swift` in Xcode and run the `FilmLab` executable target. For a sig
 
 ## Next image-quality milestone
 
-1. Verify RAW/JPEG input normalization and preview/export parity with image comparisons at several exposure values and a 100% zoom view.
+1. Extend the 100% preview-versus-16-bit-TIFF parity check to Fit view, JPEG output, and RAW/JPEG image comparisons at several exposure values; refine input normalization where the differences warrant it.
 2. Refine the published-data density stage, then model film spectral sensitivity and a separately specified print/scan stage.
 3. Validate the resulting positive output against legally usable reference scans across several exposures and lighting conditions.
 4. Calibrate stock-dependent grain, halation, and edge response; evaluate them at 100% zoom.
