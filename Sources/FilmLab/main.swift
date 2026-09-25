@@ -225,10 +225,12 @@ final class PhotoEditor {
   var isRendering = false
   var isOpening = false
   var isExporting = false
+  var recentPaths: [String] = UserDefaults.standard.stringArray(forKey: "FilmLab.recentPhotos") ?? []
 
   private var source: CIImage?
   private var didAttemptResume = false
   private let lastPhotoKey = "FilmLab.lastPhotoPath"
+  private let recentPhotosKey = "FilmLab.recentPhotos"
   private let settingsPasteboardType = NSPasteboard.PasteboardType("app.filmlab.edits+json")
   private var decodedFlatRAW = false
   private var decodedHighlightRecovery = true
@@ -273,6 +275,7 @@ final class PhotoEditor {
   private let vibranceKernel = FilmKernels.kernel("vibrance")
 
   func open(_ url: URL) {
+    didAttemptResume = true
     openTask?.cancel()
     openVersion += 1
     let version = openVersion
@@ -321,6 +324,7 @@ final class PhotoEditor {
         editRecoveryURL = loaded.backupURL
         editSavingBlocked = !loaded.canSave
         UserDefaults.standard.set(url.standardizedFileURL.path, forKey: lastPhotoKey)
+        rememberRecentPhoto(url)
         sourceIsRAW = isRAW
         decodedFlatRAW = saved.flatRAW
         decodedHighlightRecovery = saved.rawHighlightRecovery
@@ -364,6 +368,20 @@ final class PhotoEditor {
       FileManager.default.fileExists(atPath: path)
     else { return }
     open(URL(fileURLWithPath: path))
+  }
+
+  private func rememberRecentPhoto(_ url: URL) {
+    let path = url.standardizedFileURL.path
+    recentPaths.removeAll { $0 == path || !FileManager.default.fileExists(atPath: $0) }
+    recentPaths.insert(path, at: 0)
+    recentPaths = Array(recentPaths.prefix(10))
+    UserDefaults.standard.set(recentPaths, forKey: recentPhotosKey)
+  }
+
+  func clearRecentPhotos() {
+    recentPaths = []
+    UserDefaults.standard.removeObject(forKey: recentPhotosKey)
+    UserDefaults.standard.removeObject(forKey: lastPhotoKey)
   }
 
   func flushEdits() {
@@ -1239,7 +1257,21 @@ struct ContentView: View {
       .disabled(editor.preview == nil)
       Button("Reset Edits", systemImage: "arrow.counterclockwise") { editor.resetEdits() }
         .disabled(editor.preview == nil)
-      Button("Open…", systemImage: "folder") { showingImporter = true }
+      Menu("Open", systemImage: "folder") {
+        Button("Choose Photo…") { showingImporter = true }
+          .keyboardShortcut("o", modifiers: .command)
+        if !editor.recentPaths.isEmpty {
+          Divider()
+          ForEach(editor.recentPaths, id: \.self) { path in
+            Button(URL(fileURLWithPath: path).lastPathComponent) {
+              editor.open(URL(fileURLWithPath: path))
+            }
+            .help(path)
+          }
+          Divider()
+          Button("Clear Recent Photos") { editor.clearRecentPhotos() }
+        }
+      }
       Menu("Export…", systemImage: "square.and.arrow.up") {
         Button("JPEG (sRGB)…") { editor.exportJPEG() }
         Button("16-bit TIFF (Display P3)…") { editor.exportTIFF() }
