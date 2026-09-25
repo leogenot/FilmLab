@@ -15,6 +15,7 @@ enum FilmKernels {
           "outputShoulder",
           "outputToneCurve",
           "vibrance",
+          "outputGamutWarning",
         ])
         guard required.isSubset(of: Set(names)) else {
           throw KernelLoadError.incompleteLibrary
@@ -62,6 +63,17 @@ enum FilmKernels {
         float rolledPeak = 1.0 - 0.25 * exp(-(peak - 0.75) / 0.25);
         float scale = mix(1.0, rolledPeak / peak, clamp(amount, 0.0, 1.0));
         return float4(pixel.rgb * scale, pixel.a);
+    }
+    [[stitchable]] float4 outputGamutWarning(coreimage::sample_t pixel) {
+        float3 rgb = pixel.rgb;
+        if (!all(isfinite(rgb))) return float4(1.0, 0.0, 1.0, pixel.a);
+        if (any(rgb < float3(-0.0001))) {
+            return float4(mix(clamp(rgb, 0.0, 1.0), float3(0.05, 0.25, 1.0), 0.8), pixel.a);
+        }
+        if (any(rgb > float3(1.0001))) {
+            return float4(mix(clamp(rgb, 0.0, 1.0), float3(1.0, 0.12, 0.05), 0.8), pixel.a);
+        }
+        return pixel;
     }
     [[stitchable]] float4 vibrance(coreimage::sample_t pixel, float amount) {
         float3 rgb = pixel.rgb;

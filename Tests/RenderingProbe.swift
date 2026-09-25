@@ -24,6 +24,7 @@ struct RenderingProbe {
     let outputShoulder = FilmKernels.kernel("outputShoulder")!
     let outputToneCurve = FilmKernels.kernel("outputToneCurve")!
     let vibrance = FilmKernels.kernel("vibrance")!
+    let gamutWarning = FilmKernels.kernel("outputGamutWarning")!
 
     func patch(_ value: Double) -> CIImage {
       CIImage(color: CIColor(red: value, green: value, blue: value, colorSpace: space)!)
@@ -40,6 +41,20 @@ struct RenderingProbe {
       }
       return Array(rgba.prefix(3))
     }
+
+    func warned(_ red: Double, _ green: Double, _ blue: Double) -> [Float] {
+      let input = CIImage(
+        color: CIColor(red: red, green: green, blue: blue, colorSpace: space)!
+      ).cropped(to: CGRect(x: 0, y: 0, width: 1, height: 1))
+      return channels(gamutWarning.apply(extent: input.extent, arguments: [input])!)
+    }
+    let withinGamut = warned(0.2, 0.3, 0.4)
+    precondition(abs(withinGamut[0] - 0.2) < 0.001)
+    precondition(abs(withinGamut[1] - 0.3) < 0.001)
+    let aboveGamut = warned(1.25, 0.3, 0.4)
+    precondition(aboveGamut[0] > 0.9 && aboveGamut[1] < 0.3)
+    let belowGamut = warned(-0.1, 0.3, 0.4)
+    precondition(belowGamut[2] > 0.8 && belowGamut[0] < 0.1)
 
     func rendered(_ stock: Double, _ exposure: Double) -> [Float] {
       let source = patch(0.18)

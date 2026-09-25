@@ -5,6 +5,7 @@ struct PreviewRequest: @unchecked Sendable {
   let scale: CGFloat
   let sourceURL: URL?
   let originalImage: CIImage?
+  let showGamutWarning: Bool
 }
 
 struct PreviewResult: @unchecked Sendable {
@@ -21,6 +22,7 @@ struct PreviewHistogram: Sendable {
 }
 
 actor PreviewRenderer {
+  private let gamutWarningKernel = FilmKernels.kernel("outputGamutWarning")
   private let context = CIContext(options: [
     .useSoftwareRenderer: false,
     .workingColorSpace: CGColorSpace(name: CGColorSpace.extendedLinearSRGB)!,
@@ -31,7 +33,17 @@ actor PreviewRenderer {
     let accessing = request.sourceURL?.startAccessingSecurityScopedResource() ?? false
     defer { if accessing { request.sourceURL?.stopAccessingSecurityScopedResource() } }
     guard !Task.isCancelled else { return nil }
-    guard let image = renderImage(request.image, scale: request.scale) else { return nil }
+    let displayImage: CIImage
+    if request.showGamutWarning {
+      guard let gamutWarningKernel,
+        let highlighted = gamutWarningKernel.apply(
+          extent: request.image.extent, arguments: [request.image])
+      else { return nil }
+      displayImage = highlighted
+    } else {
+      displayImage = request.image
+    }
+    guard let image = renderImage(displayImage, scale: request.scale) else { return nil }
     let original = request.originalImage.flatMap { renderImage($0, scale: request.scale) }
     guard !Task.isCancelled, request.originalImage == nil || original != nil else { return nil }
     return PreviewResult(image: image, original: original, histogram: histogram(for: request.image))

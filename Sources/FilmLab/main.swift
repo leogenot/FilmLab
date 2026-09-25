@@ -227,6 +227,7 @@ final class PhotoEditor {
   var editRecoveryNotice: String?
   var editRecoveryURL: URL?
   var showOriginal = false
+  var showGamutWarning = false
   var showLocalMask = false
   var zoom100 = false
   var isRendering = false
@@ -802,6 +803,11 @@ final class PhotoEditor {
     renderPreview()
   }
 
+  func setGamutWarning(_ visible: Bool) {
+    showGamutWarning = visible
+    renderPreview()
+  }
+
   func addLocalArea() {
     guard radialLights.count < 8 else { return }
     radialLights.append(RadialAdjustment())
@@ -1131,7 +1137,8 @@ final class PhotoEditor {
     let scale = zoom100 ? 1 : min(1, 1800 / max(image.extent.width, image.extent.height))
     let request = PreviewRequest(
       image: image, scale: scale, sourceURL: scopedURL,
-      originalImage: compareEnabled ? source.map { framedImage($0) } : nil
+      originalImage: compareEnabled ? source.map { framedImage($0) } : nil,
+      showGamutWarning: showGamutWarning && !showOriginal && !showLocalMask && !showCropBounds
     )
     previewTask = Task {
       do { try await Task.sleep(for: .milliseconds(60)) } catch { return }
@@ -1623,6 +1630,20 @@ struct ContentView: View {
             outsideSRGBFraction: histogram.outsideSRGBFraction
           )
         }
+        if editor.preview != nil {
+          Toggle(
+            "Show sRGB gamut warning",
+            isOn: Binding(
+              get: { editor.showGamutWarning },
+              set: { editor.setGamutWarning($0) }
+            )
+          )
+          .font(.caption)
+          Text(
+            "Red: above sRGB. Blue: below zero. Preview only; Display P3 TIFF may retain some flagged color."
+          )
+          .font(.caption2).foregroundStyle(.secondary)
+        }
         switch panel {
         case .film:
           Picker("Stock", selection: $editor.stockIndex) {
@@ -1707,12 +1728,16 @@ struct ContentView: View {
           control("Shadow point", value: $editor.curveShadow, range: -0.14...0.14)
           control("Midtone point", value: $editor.curveMidtone, range: -0.14...0.14)
           control("Highlight point", value: $editor.curveHighlight, range: -0.14...0.14)
-          Text("These points reshape output brightness after film processing while scaling RGB together.")
-            .font(.caption).foregroundStyle(.secondary)
+          Text(
+            "These points reshape output brightness after film processing while scaling RGB together."
+          )
+          .font(.caption).foregroundStyle(.secondary)
           Divider()
           control("Output shoulder", value: $editor.outputShoulder, range: 0...1)
-          Text("Rolls bright output toward white while preserving linear RGB ratios. The film and paper models still respond before this finishing control.")
-            .font(.caption).foregroundStyle(.secondary)
+          Text(
+            "Rolls bright output toward white while preserving linear RGB ratios. The film and paper models still respond before this finishing control."
+          )
+          .font(.caption).foregroundStyle(.secondary)
         case .color:
           Text("Master color").font(.headline)
           control("Vibrance", value: $editor.vibrance, range: -1...1)
@@ -1868,8 +1893,10 @@ struct ContentView: View {
           control("Grain size", value: $editor.grainSize, range: 0...2)
           control("Halation", value: $editor.halation, range: 0...1)
           control("Edge detail", value: $editor.acutance, range: 0...1)
-          Text("Grain size 0 keeps the earlier fine noise; 1 adds roughly 2–3 source-pixel structure. Inspect texture and edge detail at 100% zoom.")
-            .font(.caption).foregroundStyle(.secondary)
+          Text(
+            "Grain size 0 keeps the earlier fine noise; 1 adds roughly 2–3 source-pixel structure. Inspect texture and edge detail at 100% zoom."
+          )
+          .font(.caption).foregroundStyle(.secondary)
         }
         if let error = editor.error {
           Divider()

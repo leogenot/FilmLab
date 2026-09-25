@@ -14,10 +14,23 @@ struct PreviewRendererProbe {
         size: CGSize(width: 2, height: 1), format: .RGBAf,
         colorSpace: CGColorSpace(name: CGColorSpace.extendedLinearSRGB)!)
     }
-    let result = await PreviewRenderer().render(
-      PreviewRequest(image: image, scale: 1, sourceURL: nil, originalImage: nil))
+    let renderer = PreviewRenderer()
+    let result = await renderer.render(
+      PreviewRequest(
+        image: image, scale: 1, sourceURL: nil, originalImage: nil,
+        showGamutWarning: false))
     precondition(result?.image.width == 2)
     precondition(result?.histogram?.outsideSRGBFraction == 0.5)
-    print("Extended-linear output gamut diagnostic passed")
+    let warning = await renderer.render(
+      PreviewRequest(
+        image: image, scale: 1, sourceURL: nil, originalImage: nil,
+        showGamutWarning: true))
+    precondition(warning?.histogram?.outsideSRGBFraction == 0.5)
+    guard let plainImage = result?.image, let warningImage = warning?.image,
+      let plainData = plainImage.dataProvider?.data as Data?,
+      let warningData = warningImage.dataProvider?.data as Data?
+    else { preconditionFailure("Gamut warning preview is unreadable") }
+    precondition(plainData != warningData, "Gamut warning did not change the preview")
+    print("Extended-linear output gamut diagnostic and preview warning passed")
   }
 }
