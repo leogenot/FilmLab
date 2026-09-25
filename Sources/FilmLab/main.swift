@@ -44,6 +44,7 @@ private struct PhotoEdits: Codable, Equatable {
   var development = 0.0
   var grain = 0.0
   var halation = 0.0
+  var acutance = 0.0
   var shadowHue = 210.0
   var shadowStrength = 0.0
   var midHue = 30.0
@@ -111,6 +112,7 @@ private struct PhotoEdits: Codable, Equatable {
     development = try values.decodeIfPresent(Double.self, forKey: .development) ?? 0
     grain = try values.decodeIfPresent(Double.self, forKey: .grain) ?? 0
     halation = try values.decodeIfPresent(Double.self, forKey: .halation) ?? 0
+    acutance = try values.decodeIfPresent(Double.self, forKey: .acutance) ?? 0
     shadowHue = try values.decodeIfPresent(Double.self, forKey: .shadowHue) ?? 210
     shadowStrength = try values.decodeIfPresent(Double.self, forKey: .shadowStrength) ?? 0
     midHue = try values.decodeIfPresent(Double.self, forKey: .midHue) ?? 30
@@ -168,6 +170,7 @@ final class PhotoEditor {
   var development = 0.0
   var grain = 0.0
   var halation = 0.0
+  var acutance = 0.0
   var shadowHue = 210.0
   var shadowStrength = 0.0
   var midHue = 30.0
@@ -366,6 +369,7 @@ final class PhotoEditor {
     development = saved.development
     grain = saved.grain
     halation = saved.halation
+    acutance = saved.acutance
     shadowHue = saved.shadowHue
     shadowStrength = saved.shadowStrength
     midHue = saved.midHue
@@ -493,6 +497,7 @@ final class PhotoEditor {
     edits.development = development
     edits.grain = grain
     edits.halation = halation
+    edits.acutance = acutance
     edits.shadowHue = shadowHue
     edits.shadowStrength = shadowStrength
     edits.midHue = midHue
@@ -656,6 +661,7 @@ final class PhotoEditor {
     development = defaults.development
     grain = defaults.grain
     halation = defaults.halation
+    acutance = defaults.acutance
     shadowHue = defaults.shadowHue
     shadowStrength = defaults.shadowStrength
     midHue = defaults.midHue
@@ -966,7 +972,7 @@ final class PhotoEditor {
     )
     let mixed = ColorMixer.apply(to: selected, adjustments: mixer)
     return framedImage(
-      FilmEffects.apply(to: mixed, grain: grain, halation: halation),
+      FilmEffects.apply(to: mixed, grain: grain, halation: halation, acutance: acutance),
       aspectOverride: previewUncropped ? 0 : nil)
   }
 
@@ -1182,6 +1188,7 @@ struct ContentView: View {
     .onChange(of: editor.development) { editor.editsChanged() }
     .onChange(of: editor.grain) { editor.editsChanged() }
     .onChange(of: editor.halation) { editor.editsChanged() }
+    .onChange(of: editor.acutance) { editor.editsChanged() }
     .onChange(of: editor.shadowHue) { editor.editsChanged() }
     .onChange(of: editor.shadowStrength) { editor.editsChanged() }
     .onChange(of: editor.midHue) { editor.editsChanged() }
@@ -1684,7 +1691,8 @@ struct ContentView: View {
         case .texture:
           control("Grain", value: $editor.grain, range: 0...1)
           control("Halation", value: $editor.halation, range: 0...1)
-          Text("Inspect texture at 100% zoom.")
+          control("Edge detail", value: $editor.acutance, range: 0...1)
+          Text("Inspect texture and edge detail at 100% zoom.")
             .font(.caption).foregroundStyle(.secondary)
         }
         if let error = editor.error {

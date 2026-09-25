@@ -11,7 +11,7 @@ enum FilmKernels {
         let required = Set([
           "filmResponse", "shapeSceneLight", "measuredNegative", "portraPositive",
           "grade", "selectiveColor", "colorMixerBand", "applyGrain",
-          "highlightMask", "applyHalation",
+          "highlightMask", "applyHalation", "applyAcutance",
         ])
         guard required.isSubset(of: Set(names)) else {
           throw KernelLoadError.incompleteLibrary
@@ -422,5 +422,16 @@ enum FilmKernels {
                   float spill = max(blurred.r - mask.r, 0.0) * amount * 0.24;
                   return float4(pixel.rgb + float3(spill, spill * 0.30, spill * 0.12), pixel.a);
               }
+
+    [[stitchable]] float4 applyAcutance(coreimage::sample_t pixel,
+                                       coreimage::sample_t blurred, float amount) {
+        float3 source = max(pixel.rgb, float3(0.0));
+        float3 lowPass = max(blurred.rgb, float3(0.0));
+        float luma = dot(source, float3(0.2126, 0.7152, 0.0722));
+        float lowLuma = dot(lowPass, float3(0.2126, 0.7152, 0.0722));
+        float delta = clamp((luma - lowLuma) * amount * 0.65, -0.12, 0.12);
+        float scale = max(luma + delta, 0.0) / max(luma, 0.000001);
+        return float4(source * scale, pixel.a);
+    }
     """#
 }

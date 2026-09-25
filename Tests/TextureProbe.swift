@@ -30,5 +30,25 @@ struct TextureProbe {
     let difference = zip(first, full).map { abs($0 - $1) }.max()!
     precondition(difference < 0.002, "Preview and export grain disagree")
     print("Deterministic grain checks passed; maximum working-format difference \(difference)")
+
+    let dark = CIImage(color: CIColor(red: 0.12, green: 0.12, blue: 0.12, colorSpace: space)!)
+      .cropped(to: CGRect(x: 0, y: 0, width: 32, height: 64))
+    let light = CIImage(color: CIColor(red: 0.7, green: 0.7, blue: 0.7, colorSpace: space)!)
+      .cropped(to: CGRect(x: 32, y: 0, width: 32, height: 64))
+    let edge = dark.composited(over: light)
+    let detailed = FilmEffects.apply(to: edge, grain: 0, halation: 0, acutance: 1)
+    let detailedPreview = pixels(detailed, context: preview)
+    let detailedExport = pixels(detailed, context: export)
+    func level(_ values: [Float], x: Int, y: Int = 32) -> Float {
+      values[(y * 64 + x) * 4]
+    }
+    precondition(level(detailedExport, x: 31) < 0.12, "Acutance did not darken the near edge")
+    precondition(level(detailedExport, x: 32) > 0.7, "Acutance did not brighten the near edge")
+    precondition(abs(level(detailedExport, x: 8) - 0.12) < 0.001, "Acutance changed a flat shadow")
+    precondition(
+      abs(level(detailedExport, x: 55) - 0.7) < 0.001, "Acutance changed a flat highlight")
+    let edgeDifference = zip(detailedPreview, detailedExport).map { abs($0 - $1) }.max()!
+    precondition(edgeDifference < 0.002, "Preview and export acutance disagree")
+    print("Edge-detail checks passed; maximum working-format difference \(edgeDifference)")
   }
 }

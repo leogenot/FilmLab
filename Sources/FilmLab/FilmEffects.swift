@@ -9,8 +9,21 @@ enum FilmEffects {
 
   private static let halationKernel = FilmKernels.kernel("applyHalation")
 
-  static func apply(to image: CIImage, grain: Double, halation: Double) -> CIImage {
+  private static let acutanceKernel = FilmKernels.kernel("applyAcutance")
+
+  static func apply(to image: CIImage, grain: Double, halation: Double, acutance: Double = 0)
+    -> CIImage
+  {
     var result = image
+    if acutance > 0, let acutanceKernel {
+      let blurred = result.applyingFilter(
+        "CIGaussianBlur", parameters: [kCIInputRadiusKey: 1.5]
+      ).cropped(to: image.extent)
+      result =
+        acutanceKernel.apply(
+          extent: image.extent, arguments: [result, blurred, acutance]
+        ) ?? result
+    }
     if halation > 0,
       let highlightKernel,
       let halationKernel,
