@@ -90,6 +90,19 @@ private struct PhotoEdits: Codable, Equatable {
     return edits
   }
 
+  static func transferring(_ copied: PhotoEdits, onto destination: PhotoEdits) -> PhotoEdits {
+    var result = copied
+    result.flatRAW = destination.flatRAW
+    result.rawHighlightRecovery = destination.rawHighlightRecovery
+    result.rawTemperature = destination.rawTemperature
+    result.rawTint = destination.rawTint
+    result.inputWarmth = destination.inputWarmth
+    result.inputTint = destination.inputTint
+    result.inputTone = destination.inputTone
+    result.inputNeutralBalance = destination.inputNeutralBalance
+    return result
+  }
+
   init(from decoder: Decoder) throws {
     let values = try decoder.container(keyedBy: CodingKeys.self)
     exposure = try values.decodeIfPresent(Double.self, forKey: .exposure) ?? 0
@@ -160,6 +173,31 @@ private struct PhotoEdits: Codable, Equatable {
       try values.decodeIfPresent(Bool.self, forKey: .rawHighlightRecovery) ?? true
     rawTemperature = try values.decodeIfPresent(Double.self, forKey: .rawTemperature)
     rawTint = try values.decodeIfPresent(Double.self, forKey: .rawTint)
+  }
+}
+
+private struct BatchSettingsChange {
+  let path: String
+  let location: EditRecordLocation
+  let before: PhotoEdits
+  let after: PhotoEdits
+}
+
+private struct BatchSettingsBackup: Codable {
+  let sourcePath: String
+  let previous: PhotoEdits
+}
+
+private struct BatchSettingsResult {
+  let applied: Int
+  let skipped: Int
+  let failures: [String]
+
+  var summary: String {
+    var parts = ["Applied settings to \(applied) photo\(applied == 1 ? "" : "s")."]
+    if skipped > 0 { parts.append("Skipped \(skipped) unchanged or active photos.") }
+    if !failures.isEmpty { parts.append("Could not update: \(failures.joined(separator: ", ")).") }
+    return parts.joined(separator: " ")
   }
 }
 
@@ -260,6 +298,8 @@ final class PhotoEditor {
   private var cameraRawTint = 0.0
   private var sourceIsRAW = false
   private var editSavingBlocked = false
+  private var lastBatchChanges: [BatchSettingsChange] = []
+  var canUndoBatch: Bool { !lastBatchChanges.isEmpty }
   var isRAWSource: Bool { sourceURL != nil && sourceIsRAW }
   var canExport: Bool {
     preview != nil && !isOpening && rawDecodeTask == nil && !isExporting
@@ -675,6 +715,130 @@ final class PhotoEditor {
     applyTransferredSettings(copied)
   }
 
+  func pasteSettings(to paths: [String]) async -> String {
+    guard let data = NSPasteboard.general.data(forType: settingsPasteboardType),
+      let copied = try? JSONDecoder().decode(PhotoEdits.self, from: data)
+    else { return "Copy settings from a FilmLab photo first." }
+    guard !paths.isEmpty else { return "Select photos in the catalog first." }
+    let decoder = ImageDecoder()
+    var changes: [BatchSettingsChange] = []
+    var skipped = 0
+    var failures: [String] = []
+    for path in paths {
+      if sourceURL?.standardizedFileURL.path == path {
+        skipped += 1
+        continue
+      }
+      guard FileManager.default.fileExists(atPath: path) else {
+        failures.append(URL(fileURLWithPath: path).lastPathComponent)
+        continue
+      }
+      let url = URL(fileURLWithPath: path)
+      let access = url.startAccessingSecurityScopedResource()
+      let isRAW = await decoder.isRAWFile(url)
+      let location = EditRecordLocator.locate(sourceURL: url, directory: editsDirectory)
+      let loaded = SavedEditStore.load(
+        from: location.primaryURL, fallbackURL: location.pathURL,
+        defaultValue: PhotoEdits.defaults(forRAW: isRAW))
+      guard loaded.canSave, loaded.notice == nil else {
+        if access { url.stopAccessingSecurityScopedResource() }
+        failures.append(url.lastPathComponent)
+        continue
+      }
+      let updated = PhotoEdits.transferring(copied, onto: loaded.value)
+      if updated == loaded.value {
+        skipped += 1
+      } else {
+        do {
+          let backupURL = editsDirectory.appendingPathComponent("BatchBackups", isDirectory: true)
+            .appendingPathComponent("\(UUID().uuidString).json")
+          try SavedEditStore.save(
+            BatchSettingsBackup(sourcePath: path, previous: loaded.value), to: backupURL)
+          try SavedEditStore.save(updated, to: location.pathURL)
+          if location.primaryURL != location.pathURL {
+            try SavedEditStore.save(updated, to: location.primaryURL)
+          }
+          changes.append(
+            BatchSettingsChange(
+              path: path, location: location, before: loaded.value, after: updated))
+        } catch {
+          try? SavedEditStore.save(loaded.value, to: location.pathURL)
+          if location.primaryURL != location.pathURL {
+            try? SavedEditStore.save(loaded.value, to: location.primaryURL)
+          }
+          failures.append(url.lastPathComponent)
+        }
+      }
+      if access { url.stopAccessingSecurityScopedResource() }
+      await Task.yield()
+    }
+    if !changes.isEmpty { lastBatchChanges = changes }
+    return BatchSettingsResult(
+      applied: changes.count, skipped: skipped, failures: failures
+    ).summary
+  }
+
+  func undoLastBatch() -> String {
+    guard !lastBatchChanges.isEmpty else { return "No batch edit to undo." }
+    var restored = 0
+    var failures: [String] = []
+    var remaining: [BatchSettingsChange] = []
+    for change in lastBatchChanges {
+      let url = URL(fileURLWithPath: change.path)
+      guard FileManager.default.fileExists(atPath: change.path) else {
+        failures.append(url.lastPathComponent)
+        remaining.append(change)
+        continue
+      }
+      let currentLocation = EditRecordLocator.locate(sourceURL: url, directory: editsDirectory)
+      guard currentLocation.primaryURL == change.location.primaryURL else {
+        failures.append(url.lastPathComponent)
+        remaining.append(change)
+        continue
+      }
+      let current: PhotoEdits
+      if sourceURL?.standardizedFileURL.path == change.path {
+        current = currentEdits()
+      } else {
+        let loaded = SavedEditStore.load(
+          from: change.location.primaryURL, fallbackURL: change.location.pathURL,
+          defaultValue: change.after)
+        guard loaded.canSave else {
+          failures.append(url.lastPathComponent)
+          remaining.append(change)
+          continue
+        }
+        current = loaded.value
+      }
+      guard current == change.after else {
+        failures.append(url.lastPathComponent)
+        remaining.append(change)
+        continue
+      }
+      do {
+        try SavedEditStore.save(change.before, to: change.location.pathURL)
+        if change.location.primaryURL != change.location.pathURL {
+          try SavedEditStore.save(change.before, to: change.location.primaryURL)
+        }
+        if sourceURL?.standardizedFileURL.path == change.path {
+          restoreEdits(change.before)
+          editsChanged()
+          flushEdits()
+        }
+        restored += 1
+      } catch {
+        failures.append(url.lastPathComponent)
+        remaining.append(change)
+      }
+    }
+    lastBatchChanges = remaining
+    var message = "Restored settings on \(restored) photo\(restored == 1 ? "" : "s")."
+    if !failures.isEmpty {
+      message += " Could not restore: \(failures.joined(separator: ", "))."
+    }
+    return message
+  }
+
   func saveLook() {
     guard sourceURL != nil else { return }
     let panel = NSSavePanel()
@@ -716,16 +880,7 @@ final class PhotoEditor {
   }
 
   private func applyTransferredSettings(_ transferred: PhotoEdits) {
-    var copied = transferred
-    let current = currentEdits()
-    copied.flatRAW = current.flatRAW
-    copied.rawHighlightRecovery = current.rawHighlightRecovery
-    copied.rawTemperature = current.rawTemperature
-    copied.rawTint = current.rawTint
-    copied.inputWarmth = current.inputWarmth
-    copied.inputTint = current.inputTint
-    copied.inputTone = current.inputTone
-    copied.inputNeutralBalance = current.inputNeutralBalance
+    let copied = PhotoEdits.transferring(transferred, onto: currentEdits())
     restoreEdits(copied)
     showCropBounds = false
     showLocalMask = false
@@ -1375,6 +1530,9 @@ struct ContentView: View {
   @State private var pathToRelink: String?
   @State private var showingRelinkImporter = false
   @State private var libraryNotice: String?
+  @State private var selectingPhotos = false
+  @State private var selectedPhotoPaths = Set<String>()
+  @State private var applyingBatch = false
   @State private var panel: EditorPanel = .film
   @State private var selectedColorBand = 0
   @State private var cropDragOrigin: FreeCrop?
@@ -1540,6 +1698,11 @@ struct ContentView: View {
       }
       if panel != .framing && editor.showCropBounds { editor.setCropBoundsPreview(false) }
     }
+    .onChange(of: library.selectedCatalogID) {
+      selectedPhotoPaths.removeAll()
+      selectingPhotos = false
+      libraryNotice = nil
+    }
     .onChange(of: editor.paintingLocalArea) {
       if !editor.paintingLocalArea { paintDragPoints.removeAll() }
     }
@@ -1683,6 +1846,27 @@ struct ContentView: View {
     editor.open(URL(fileURLWithPath: path))
   }
 
+  private func selectOrOpenPhoto(_ path: String) {
+    if selectingPhotos {
+      if !selectedPhotoPaths.insert(path).inserted {
+        selectedPhotoPaths.remove(path)
+      }
+    } else {
+      selectPhoto(path)
+    }
+  }
+
+  private func applySettingsToSelection() {
+    let paths = library.selectedCatalog?.photoPaths.filter { selectedPhotoPaths.contains($0) } ?? []
+    applyingBatch = true
+    Task {
+      libraryNotice = await editor.pasteSettings(to: paths)
+      applyingBatch = false
+      selectedPhotoPaths.removeAll()
+      selectingPhotos = false
+    }
+  }
+
   private func relinkPhoto(from oldPath: String, to url: URL) {
     guard FileManager.default.fileExists(atPath: url.path) else {
       libraryNotice = "The selected original is unavailable."
@@ -1769,8 +1953,35 @@ struct ContentView: View {
             .foregroundStyle(.secondary)
           }
           Spacer()
+          Button(selectingPhotos ? "Done" : "Select Photos") {
+            selectingPhotos.toggle()
+            if !selectingPhotos { selectedPhotoPaths.removeAll() }
+          }
+          .disabled(applyingBatch)
           Button("Import Photos…", systemImage: "plus") { showingImporter = true }
         }
+        if selectingPhotos || editor.canUndoBatch {
+          HStack(spacing: 10) {
+            if selectingPhotos {
+              Button("Select All") {
+                selectedPhotoPaths = Set(library.selectedCatalog?.photoPaths ?? [])
+              }
+              .disabled(applyingBatch)
+              Button("Paste to \(selectedPhotoPaths.count) Photos") {
+                applySettingsToSelection()
+              }
+              .disabled(selectedPhotoPaths.isEmpty || applyingBatch)
+            }
+            Spacer()
+            if editor.canUndoBatch {
+              Button("Undo Last Batch", systemImage: "arrow.uturn.backward") {
+                libraryNotice = editor.undoLastBatch()
+              }
+              .disabled(applyingBatch)
+            }
+          }
+        }
+        if applyingBatch { ProgressView("Applying copied settings…") }
         if let notice = libraryLoad.notice {
           Text(notice)
             .font(.caption)
@@ -1787,7 +1998,7 @@ struct ContentView: View {
               ForEach(paths, id: \.self) { path in
                 VStack(alignment: .leading, spacing: 8) {
                   Button {
-                    selectPhoto(path)
+                    selectOrOpenPhoto(path)
                   } label: {
                     VStack(alignment: .leading, spacing: 8) {
                       PhotoThumbnail(path: path)
@@ -1795,6 +2006,13 @@ struct ContentView: View {
                         .frame(maxWidth: .infinity)
                         .background(Color(white: 0.13))
                         .clipShape(RoundedRectangle(cornerRadius: 7))
+                        .overlay {
+                          RoundedRectangle(cornerRadius: 7)
+                            .strokeBorder(
+                              selectedPhotoPaths.contains(path)
+                                ? Color.white.opacity(0.85) : .clear,
+                              lineWidth: 2)
+                        }
                       Text(URL(fileURLWithPath: path).lastPathComponent)
                         .font(.caption)
                         .lineLimit(1)
@@ -1804,9 +2022,19 @@ struct ContentView: View {
                           .font(.caption2)
                           .foregroundStyle(.orange)
                       }
+                      if selectingPhotos {
+                        Label(
+                          selectedPhotoPaths.contains(path) ? "Selected" : "Select",
+                          systemImage: selectedPhotoPaths.contains(path)
+                            ? "checkmark.circle.fill" : "circle"
+                        )
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                      }
                     }
                   }
                   .buttonStyle(.plain)
+                  .disabled(applyingBatch)
                   .contextMenu {
                     if !FileManager.default.fileExists(atPath: path) {
                       Button("Locate Original…") {
