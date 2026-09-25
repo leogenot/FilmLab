@@ -9,12 +9,19 @@ import UniformTypeIdentifiers
 @main
 struct FilmLabApp: App {
   @State private var editor = PhotoEditor()
+  @State private var showingImporter = false
 
   var body: some Scene {
     WindowGroup("FilmLab") {
-      ContentView(editor: editor)
+      ContentView(editor: editor, showingImporter: $showingImporter)
         .frame(minWidth: 960, minHeight: 600)
         .preferredColorScheme(.dark)
+    }
+    .commands {
+      CommandGroup(replacing: .newItem) {
+        Button("Open Photo…") { showingImporter = true }
+          .keyboardShortcut("o", modifiers: .command)
+      }
     }
   }
 }
@@ -225,7 +232,9 @@ final class PhotoEditor {
   var isRendering = false
   var isOpening = false
   var isExporting = false
-  var recentPaths: [String] = UserDefaults.standard.stringArray(forKey: "FilmLab.recentPhotos") ?? []
+  var recentPaths: [String] =
+    (UserDefaults.standard.stringArray(forKey: "FilmLab.recentPhotos") ?? [])
+    .filter { FileManager.default.fileExists(atPath: $0) }
 
   private var source: CIImage?
   private var didAttemptResume = false
@@ -1208,7 +1217,7 @@ private enum EditorPanel: String, CaseIterable, Identifiable {
 
 struct ContentView: View {
   @Bindable var editor: PhotoEditor
-  @State private var showingImporter = false
+  @Binding var showingImporter: Bool
   @State private var panel: EditorPanel = .film
   @State private var selectedColorBand = 0
   @State private var cropDragOrigin: FreeCrop?
@@ -1259,7 +1268,6 @@ struct ContentView: View {
         .disabled(editor.preview == nil)
       Menu("Open", systemImage: "folder") {
         Button("Choose Photo…") { showingImporter = true }
-          .keyboardShortcut("o", modifiers: .command)
         if !editor.recentPaths.isEmpty {
           Divider()
           ForEach(editor.recentPaths, id: \.self) { path in
@@ -1272,10 +1280,13 @@ struct ContentView: View {
           Button("Clear Recent Photos") { editor.clearRecentPhotos() }
         }
       }
+      .accessibilityLabel("Open photos")
+      .help("Choose a photo or reopen a recent photo")
       Menu("Export…", systemImage: "square.and.arrow.up") {
         Button("JPEG (sRGB)…") { editor.exportJPEG() }
         Button("16-bit TIFF (Display P3)…") { editor.exportTIFF() }
       }
+      .accessibilityLabel("Export photo")
       .disabled(!editor.canExport)
     }
     .fileImporter(
