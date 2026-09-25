@@ -108,67 +108,70 @@ private struct PhotoEdits: Codable, Equatable {
   }
 
   func resetting(_ panel: EditorPanel, isRAW: Bool) -> PhotoEdits {
-    let defaults = PhotoEdits.defaults(forRAW: isRAW)
+    replacing(panel, with: PhotoEdits.defaults(forRAW: isRAW))
+  }
+
+  func replacing(_ panel: EditorPanel, with source: PhotoEdits) -> PhotoEdits {
     var result = self
     switch panel {
     case .film:
-      result.stockIndex = defaults.stockIndex
-      result.enduraPaperTone = defaults.enduraPaperTone
-      result.premierPaperTone = defaults.premierPaperTone
-      result.paperStrength = defaults.paperStrength
-      result.paperExposure = defaults.paperExposure
-      result.shotExposure = defaults.shotExposure
-      result.development = defaults.development
-      result.filmAmount = defaults.filmAmount
+      result.stockIndex = source.stockIndex
+      result.enduraPaperTone = source.enduraPaperTone
+      result.premierPaperTone = source.premierPaperTone
+      result.paperStrength = source.paperStrength
+      result.paperExposure = source.paperExposure
+      result.shotExposure = source.shotExposure
+      result.development = source.development
+      result.filmAmount = source.filmAmount
     case .develop:
-      result.inputNeutralBalance = defaults.inputNeutralBalance
-      result.flatRAW = defaults.flatRAW
-      result.rawHighlightRecovery = defaults.rawHighlightRecovery
-      result.rawTemperature = nil
-      result.rawTint = nil
-      result.inputTone = defaults.inputTone
-      result.inputWarmth = defaults.inputWarmth
-      result.inputTint = defaults.inputTint
-      result.shadowLight = defaults.shadowLight
-      result.highlightLight = defaults.highlightLight
-      result.filmLightWarmth = defaults.filmLightWarmth
-      result.filmLightTint = defaults.filmLightTint
-      result.exposure = defaults.exposure
-      result.contrast = defaults.contrast
-      result.saturation = defaults.saturation
-      result.warmth = defaults.warmth
-      result.tint = defaults.tint
-      result.curveShadow = defaults.curveShadow
-      result.curveMidtone = defaults.curveMidtone
-      result.curveHighlight = defaults.curveHighlight
-      result.outputShoulder = defaults.outputShoulder
+      result.inputNeutralBalance = source.inputNeutralBalance
+      result.flatRAW = source.flatRAW
+      result.rawHighlightRecovery = source.rawHighlightRecovery
+      result.rawTemperature = source.rawTemperature
+      result.rawTint = source.rawTint
+      result.inputTone = source.inputTone
+      result.inputWarmth = source.inputWarmth
+      result.inputTint = source.inputTint
+      result.shadowLight = source.shadowLight
+      result.highlightLight = source.highlightLight
+      result.filmLightWarmth = source.filmLightWarmth
+      result.filmLightTint = source.filmLightTint
+      result.exposure = source.exposure
+      result.contrast = source.contrast
+      result.saturation = source.saturation
+      result.warmth = source.warmth
+      result.tint = source.tint
+      result.curveShadow = source.curveShadow
+      result.curveMidtone = source.curveMidtone
+      result.curveHighlight = source.curveHighlight
+      result.outputShoulder = source.outputShoulder
     case .color:
-      result.vibrance = defaults.vibrance
-      result.shadowHue = defaults.shadowHue
-      result.shadowStrength = defaults.shadowStrength
-      result.midHue = defaults.midHue
-      result.midStrength = defaults.midStrength
-      result.highlightHue = defaults.highlightHue
-      result.highlightStrength = defaults.highlightStrength
-      result.selectiveHue = defaults.selectiveHue
-      result.selectiveRange = defaults.selectiveRange
-      result.selectiveShift = defaults.selectiveShift
-      result.selectiveSaturation = defaults.selectiveSaturation
-      result.mixer = defaults.mixer
+      result.vibrance = source.vibrance
+      result.shadowHue = source.shadowHue
+      result.shadowStrength = source.shadowStrength
+      result.midHue = source.midHue
+      result.midStrength = source.midStrength
+      result.highlightHue = source.highlightHue
+      result.highlightStrength = source.highlightStrength
+      result.selectiveHue = source.selectiveHue
+      result.selectiveRange = source.selectiveRange
+      result.selectiveShift = source.selectiveShift
+      result.selectiveSaturation = source.selectiveSaturation
+      result.mixer = source.mixer
     case .local:
-      result.radialLights = defaults.radialLights
+      result.radialLights = source.radialLights
     case .texture:
-      result.grain = defaults.grain
-      result.grainSize = defaults.grainSize
-      result.halation = defaults.halation
-      result.acutance = defaults.acutance
+      result.grain = source.grain
+      result.grainSize = source.grainSize
+      result.halation = source.halation
+      result.acutance = source.acutance
     case .framing:
-      result.frameRotation = defaults.frameRotation
-      result.frameStraighten = defaults.frameStraighten
-      result.frameAspect = defaults.frameAspect
-      result.frameOffsetX = defaults.frameOffsetX
-      result.frameOffsetY = defaults.frameOffsetY
-      result.frameFreeCrop = defaults.frameFreeCrop
+      result.frameRotation = source.frameRotation
+      result.frameStraighten = source.frameStraighten
+      result.frameAspect = source.frameAspect
+      result.frameOffsetX = source.frameOffsetX
+      result.frameOffsetY = source.frameOffsetY
+      result.frameFreeCrop = source.frameFreeCrop
     }
     return result
   }
@@ -401,6 +404,7 @@ final class PhotoEditor {
   private let recentPhotosKey = "FilmLab.recentPhotos"
   private let settingsPasteboardType = NSPasteboard.PasteboardType("app.filmlab.edits+json")
   private var copiedSettings: PhotoEdits?
+  private var copiedWorkspace: (panel: EditorPanel, edits: PhotoEdits)?
   private var decodedFlatRAW = false
   private var decodedHighlightRecovery = true
   private var decodedRawTemperature = 6500.0
@@ -868,6 +872,36 @@ final class PhotoEditor {
       return
     }
     applyTransferredSettings(copied)
+  }
+
+  fileprivate func copyWorkspace(_ panel: EditorPanel) {
+    guard sourceURL != nil else { return }
+    copiedWorkspace = (panel, currentEdits())
+  }
+
+  fileprivate func canPasteWorkspace(_ panel: EditorPanel) -> Bool {
+    sourceURL != nil && copiedWorkspace?.panel == panel
+  }
+
+  fileprivate func pasteWorkspace(_ panel: EditorPanel) {
+    guard canPasteWorkspace(panel), let copied = copiedWorkspace?.edits else { return }
+    historyTask?.cancel()
+    historyOpen = false
+    let current = currentEdits()
+    let transferred = PhotoEdits.transferring(copied, onto: current)
+    var result = current.replacing(panel, with: transferred)
+    if panel == .color { result.colorTimingVersion = copied.colorTimingVersion }
+    guard result != current else { return }
+    restoreEdits(result)
+    if panel == .local {
+      selectedLocalIndex = 0
+      showLocalMask = false
+      placingLocalArea = false
+      paintingLocalArea = false
+      erasingLocalArea = false
+    }
+    if panel == .framing { showCropBounds = false }
+    editsChanged()
   }
 
   private func settingsForPaste() -> PhotoEdits? {
@@ -1925,6 +1959,10 @@ struct ContentView: View {
           .keyboardShortcut("c", modifiers: [.command, .shift])
         Button("Paste Settings") { editor.pasteSettings() }
           .keyboardShortcut("v", modifiers: [.command, .shift])
+        Divider()
+        Button("Copy \(panel.rawValue) Workspace") { editor.copyWorkspace(panel) }
+        Button("Paste \(panel.rawValue) Workspace") { editor.pasteWorkspace(panel) }
+          .disabled(!editor.canPasteWorkspace(panel))
         Divider()
         Button("Save Look…") { editor.saveLook() }
         Button("Apply Look…") { editor.applyLook() }
