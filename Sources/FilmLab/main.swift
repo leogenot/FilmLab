@@ -1702,8 +1702,14 @@ struct ContentView: View {
         if let histogram = editor.histogram {
           OutputHistogram(
             bins: histogram.bins,
+            redBins: histogram.redBins,
+            greenBins: histogram.greenBins,
+            blueBins: histogram.blueBins,
             blackFraction: histogram.blackFraction,
             whiteFraction: histogram.whiteFraction,
+            redNearWhiteFraction: histogram.redNearWhiteFraction,
+            greenNearWhiteFraction: histogram.greenNearWhiteFraction,
+            blueNearWhiteFraction: histogram.blueNearWhiteFraction,
             outsideSRGBFraction: histogram.outsideSRGBFraction
           )
         }

@@ -354,3 +354,9 @@ The export probe checked each TIFF's embedded color space, 16-bit depth, dimensi
 ## Live point inspection (2026-09-25)
 
 The selected point now remains marked in Fit view and is sampled again after the preview renders a changed edit. Opening another photo clears the selection; switching the inspector off clears it too. In the signed app, a point on the disposable JPEG kept input luminance at 0.0254 while Shot Exposure changed developed luminance from 0.0721 to 0.0216. A point on the disposable RAW kept input luminance at 0.0182 while Shot Exposure changed developed luminance from 0.0134 to 0.0367. Undo restored each earlier output readout and saved exposure. These checks show that a grade changes the developed value at a stable point; they do not establish film-stock accuracy.
+
+## RGB output histogram (2026-09-25)
+
+The output histogram now overlays red, green and blue channel curves on a dim luminance fill. The curves share one height scale. Separate percentages show pixels with each sRGB output channel at or above 251/255 in a downsampled preview. The existing outside-sRGB percentage still samples the developed image before output conversion. Near-white output channels reveal which color is approaching the display ceiling, but do not prove sensor clipping or missing detail in a JPEG.
+
+The synthetic preview probe produced a near-white red channel in one of two pixels while green and blue stayed below that threshold; it also verified that the gamut warning did not alter the diagnostic. In the signed app, the disposable Sony JPEG reported R 34.8%, G 32.9%, B 27.9% at its saved +1.44 EV Shot Exposure. Lowering exposure to -1.05 EV moved all three below the sampled near-white threshold, and Undo restored them. The signed app also displayed the RGB curves on the Sony RAW and updated their shape as exposure changed; its saved grade was restored afterward.

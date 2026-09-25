@@ -16,8 +16,14 @@ struct PreviewResult: @unchecked Sendable {
 
 struct PreviewHistogram: Sendable {
   let bins: [Double]
+  let redBins: [Double]
+  let greenBins: [Double]
+  let blueBins: [Double]
   let blackFraction: Double
   let whiteFraction: Double
+  let redNearWhiteFraction: Double
+  let greenNearWhiteFraction: Double
+  let blueNearWhiteFraction: Double
   let outsideSRGBFraction: Double
 }
 
@@ -65,17 +71,36 @@ actor PreviewRenderer {
       }
     }
     var counts = [Int](repeating: 0, count: 64)
+    var redCounts = [Int](repeating: 0, count: 64)
+    var greenCounts = [Int](repeating: 0, count: 64)
+    var blueCounts = [Int](repeating: 0, count: 64)
     var black = 0
     var white = 0
+    var redNearWhite = 0
+    var greenNearWhite = 0
+    var blueNearWhite = 0
     for offset in stride(from: 0, to: pixels.count, by: 4) {
+      let red = pixels[offset]
+      let green = pixels[offset + 1]
+      let blue = pixels[offset + 2]
       let luminance =
-        0.2126 * Double(pixels[offset]) + 0.7152 * Double(pixels[offset + 1])
-        + 0.0722 * Double(pixels[offset + 2])
+        0.2126 * Double(red) + 0.7152 * Double(green)
+        + 0.0722 * Double(blue)
       counts[min(63, Int(luminance / 4))] += 1
+      redCounts[min(63, Int(red) / 4)] += 1
+      greenCounts[min(63, Int(green) / 4)] += 1
+      blueCounts[min(63, Int(blue) / 4)] += 1
       if luminance <= 4 { black += 1 }
       if luminance >= 251 { white += 1 }
+      if red >= 251 { redNearWhite += 1 }
+      if green >= 251 { greenNearWhite += 1 }
+      if blue >= 251 { blueNearWhite += 1 }
     }
-    let peak = max(1, counts.max() ?? 1)
+    let peak = Double(
+      [
+        1, counts.max() ?? 0, redCounts.max() ?? 0,
+        greenCounts.max() ?? 0, blueCounts.max() ?? 0,
+      ].max()!)
     let total = Double(width * height)
     var linearPixels = [Float](repeating: 0, count: width * height * 4)
     linearPixels.withUnsafeMutableBytes { bytes in
@@ -94,9 +119,15 @@ actor PreviewRenderer {
       }
     }
     return PreviewHistogram(
-      bins: counts.map { Double($0) / Double(peak) },
+      bins: counts.map { Double($0) / peak },
+      redBins: redCounts.map { Double($0) / peak },
+      greenBins: greenCounts.map { Double($0) / peak },
+      blueBins: blueCounts.map { Double($0) / peak },
       blackFraction: Double(black) / total,
       whiteFraction: Double(white) / total,
+      redNearWhiteFraction: Double(redNearWhite) / total,
+      greenNearWhiteFraction: Double(greenNearWhite) / total,
+      blueNearWhiteFraction: Double(blueNearWhite) / total,
       outsideSRGBFraction: Double(outside) / total
     )
   }

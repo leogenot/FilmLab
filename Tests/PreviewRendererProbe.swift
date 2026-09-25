@@ -21,6 +21,12 @@ struct PreviewRendererProbe {
         showGamutWarning: false))
     precondition(result?.image.width == 2)
     precondition(result?.histogram?.outsideSRGBFraction == 0.5)
+    precondition(result?.histogram?.redNearWhiteFraction == 0.5)
+    precondition(result?.histogram?.greenNearWhiteFraction == 0)
+    precondition(result?.histogram?.blueNearWhiteFraction == 0)
+    precondition(result?.histogram?.redBins.count == 64)
+    precondition(result?.histogram?.greenBins.count == 64)
+    precondition(result?.histogram?.blueBins.count == 64)
     let warning = await renderer.render(
       PreviewRequest(
         image: image, scale: 1, sourceURL: nil, originalImage: nil,
@@ -31,6 +37,6 @@ struct PreviewRendererProbe {
       let warningData = warningImage.dataProvider?.data as Data?
     else { preconditionFailure("Gamut warning preview is unreadable") }
     precondition(plainData != warningData, "Gamut warning did not change the preview")
-    print("Extended-linear output gamut diagnostic and preview warning passed")
+    print("RGB output histogram, extended-linear gamut diagnostic, and preview warning passed")
   }
 }
