@@ -18,6 +18,7 @@ enum FilmKernels {
           "outputGamutWarning",
           "localLuminanceMask",
           "localHueMask",
+          "localSaturation",
         ])
         guard required.isSubset(of: Set(names)) else {
           throw KernelLoadError.incompleteLibrary
@@ -90,6 +91,19 @@ enum FilmKernels {
             scale = min(scale, luminance / max(luminance - floor, 0.000001));
         }
         return float4(luminance + (rgb - luminance) * scale, pixel.a);
+    }
+    [[stitchable]] float4 localSaturation(coreimage::sample_t pixel, float amount) {
+        float3 rgb = pixel.rgb;
+        if (!all(isfinite(rgb)) || any(rgb < float3(0.0))) return pixel;
+        float luminance = dot(rgb, float3(0.2126, 0.7152, 0.0722));
+        float3 chroma = rgb - luminance;
+        float scale = max(0.0, 1.0 + clamp(amount, -1.0, 1.0));
+        if (scale > 1.0) {
+            if (chroma.r < 0.0) scale = min(scale, luminance / -chroma.r);
+            if (chroma.g < 0.0) scale = min(scale, luminance / -chroma.g);
+            if (chroma.b < 0.0) scale = min(scale, luminance / -chroma.b);
+        }
+        return float4(max(luminance + chroma * scale, float3(0.0)), pixel.a);
     }
     [[stitchable]] float4 localLuminanceMask(coreimage::sample_t pixel,
                                             float center, float width, float feather) {

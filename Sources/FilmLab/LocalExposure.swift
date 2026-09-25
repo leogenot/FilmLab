@@ -210,9 +210,10 @@ enum LocalExposure {
       adjusted = balanced
     }
     if abs(saturation) > 0.001 {
-      adjusted = adjusted.applyingFilter(
-        "CIColorControls",
-        parameters: [kCIInputSaturationKey: 1 + min(max(saturation, -1), 1)])
+      guard let kernel = FilmKernels.kernel("localSaturation"),
+        let colored = kernel.apply(extent: image.extent, arguments: [adjusted, saturation])
+      else { return image }
+      adjusted = colored
     }
     return adjusted.applyingFilter(
       "CIBlendWithMask",

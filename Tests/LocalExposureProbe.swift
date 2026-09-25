@@ -126,6 +126,33 @@ struct LocalExposureProbe {
           < 0.002,
         "Local desaturation changed a color outside its hue mask")
     }
+    let saturatedSource = CIImage(
+      color: CIColor(red: 1, green: 0.05, blue: 0.05, colorSpace: space)!
+    ).cropped(to: source.extent)
+    let moreSaturated = LocalExposure.apply(
+      to: saturatedSource, ev: 0, saturation: 1,
+      centerX: 0.5, centerY: 0.5, radius: 0.25, feather: 0.5)
+    let originalLuma =
+      0.2126 * channel(saturatedSource, 50, 50, 0)
+      + 0.7152 * channel(saturatedSource, 50, 50, 1)
+      + 0.0722 * channel(saturatedSource, 50, 50, 2)
+    let expandedLuma =
+      0.2126 * channel(moreSaturated, 50, 50, 0)
+      + 0.7152 * channel(moreSaturated, 50, 50, 1)
+      + 0.0722 * channel(moreSaturated, 50, 50, 2)
+    precondition(
+      channel(moreSaturated, 50, 50, 0) > 1,
+      "Local saturation lost extended-linear highlight values")
+    precondition(
+      (0..<3).allSatisfy { channel(moreSaturated, 50, 50, $0) >= -0.0001 },
+      "Local saturation generated negative scene channels")
+    precondition(abs(expandedLuma - originalLuma) < 0.001, "Local saturation moved luminance")
+    for component in 0..<3 {
+      precondition(
+        abs(channel(moreSaturated, 0, 0, component) - channel(saturatedSource, 0, 0, component))
+          < 0.002,
+        "Local saturation changed an unselected corner")
+    }
     let combinedMask = LocalExposure.mask(
       for: colorSource, centerX: 0.5, centerY: 0.5, radius: 1,
       feather: 0.01, toneRangeEnabled: true, toneCenter: 2,
