@@ -2085,12 +2085,12 @@ struct ContentView: View {
   private func control(
     _ title: String, value: Binding<Double>, range: ClosedRange<Double>, fractionDigits: Int = 2
   ) -> some View {
-    VStack(alignment: .leading) {
+    return VStack(alignment: .leading) {
       HStack {
         Text(title)
         Spacer()
-        Text(value.wrappedValue.formatted(.number.precision(.fractionLength(fractionDigits))))
-          .monospacedDigit()
+        NumericControlField(
+          title: title, value: value, range: range, fractionDigits: fractionDigits)
       }
       .font(.subheadline)
       Slider(value: value, in: range)
