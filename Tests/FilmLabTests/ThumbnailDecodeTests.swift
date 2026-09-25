@@ -29,6 +29,9 @@ final class ThumbnailDecodeTests: XCTestCase {
       accuracy: 0.01)
     XCTAssertEqual(full.cameraTemperature, thumbnail.cameraTemperature)
     XCTAssertEqual(full.cameraTint, thumbnail.cameraTint)
+    XCTAssertEqual(full.sourceFileInfo, thumbnail.sourceFileInfo)
+    XCTAssertNotNil(full.sourceFileInfo.reportedBitDepth)
+    XCTAssertNil(full.sourceFileInfo.embeddedProfileName)
   }
 
   func testRenderedThumbnailUsesReducedDecoderOutput() async throws {
@@ -50,6 +53,9 @@ final class ThumbnailDecodeTests: XCTestCase {
     XCTAssertGreaterThan(thumbnailLongest, 512)
     XCTAssertEqual(full.sourceLongestSide, fullLongest, accuracy: 1)
     XCTAssertEqual(thumbnail.sourceLongestSide, fullLongest, accuracy: 1)
+    XCTAssertEqual(full.sourceFileInfo, thumbnail.sourceFileInfo)
+    XCTAssertEqual(full.sourceFileInfo.reportedBitDepth, 8)
+    XCTAssertNotNil(full.sourceFileInfo.embeddedProfileName)
     XCTAssertEqual(
       full.image.extent.width / full.image.extent.height,
       thumbnail.image.extent.width / thumbnail.image.extent.height,

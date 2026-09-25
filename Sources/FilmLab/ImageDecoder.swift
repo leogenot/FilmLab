@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 
 struct DecodedPhoto: @unchecked Sendable {
   let image: CIImage
+  let sourceFileInfo: SourceFileInfo
   let cameraTemperature: Double?
   let cameraTint: Double?
   let highlightRecoverySupported: Bool
@@ -14,6 +15,28 @@ struct DecodedPhoto: @unchecked Sendable {
   let jpegChannelNearWhiteFraction: Double?
   let inputExposureRange: InputExposureRange?
   let sourceLongestSide: CGFloat
+}
+
+struct SourceFileInfo: Sendable, Equatable {
+  let reportedBitDepth: Int?
+  let embeddedProfileName: String?
+
+  static func read(from url: URL, isRAW: Bool) -> Self {
+    let source = CGImageSourceCreateWithURL(
+      url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary)
+    let properties = source.flatMap {
+      CGImageSourceCopyPropertiesAtIndex($0, 0, nil) as? [CFString: Any]
+    }
+    return Self(properties: properties, isRAW: isRAW)
+  }
+
+  init(properties: [CFString: Any]?, isRAW: Bool) {
+    let depth = (properties?[kCGImagePropertyDepth] as? NSNumber)?.intValue
+    let profile = (properties?[kCGImagePropertyProfileName] as? String)?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    reportedBitDepth = depth.flatMap { $0 > 0 ? $0 : nil }
+    embeddedProfileName = isRAW || profile?.isEmpty != false ? nil : profile
+  }
 }
 
 actor ImageDecoder {
@@ -70,7 +93,8 @@ actor ImageDecoder {
       guard let image = raw.outputImage else { throw EditorError.unsupported }
       try Task.checkCancellation()
       return DecodedPhoto(
-        image: image, cameraTemperature: cameraTemperature, cameraTint: cameraTint,
+        image: image, sourceFileInfo: SourceFileInfo.read(from: url, isRAW: true),
+        cameraTemperature: cameraTemperature, cameraTint: cameraTint,
         highlightRecoverySupported: highlightRecoverySupported,
         decoderSharpeningSupported: raw.isSharpnessSupported,
         luminanceNoiseReductionSupported: raw.isLuminanceNoiseReductionSupported,
@@ -116,7 +140,8 @@ actor ImageDecoder {
       includeDiagnostics && isJPEG
       ? jpegChannelNearWhiteFraction(in: image) : nil
     return DecodedPhoto(
-      image: image, cameraTemperature: nil, cameraTint: nil,
+      image: image, sourceFileInfo: SourceFileInfo(properties: properties, isRAW: false),
+      cameraTemperature: nil, cameraTint: nil,
       highlightRecoverySupported: false,
       decoderSharpeningSupported: false,
       luminanceNoiseReductionSupported: false,

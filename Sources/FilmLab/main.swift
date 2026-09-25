@@ -401,6 +401,7 @@ final class PhotoEditor {
   var isBuildingExposureStudy = false
   var jpegChannelNearWhiteFraction: Double?
   var inputExposureRange: InputExposureRange?
+  var sourceFileInfo: SourceFileInfo?
   var compareEnabled = false
   var compareFraction = 0.5
   var exposure = 0.0
@@ -691,6 +692,7 @@ final class PhotoEditor {
         sourceEditLocation = editLocation
         jpegChannelNearWhiteFraction = decoded.jpegChannelNearWhiteFraction
         inputExposureRange = decoded.inputExposureRange
+        sourceFileInfo = decoded.sourceFileInfo
         editRecoveryNotice = notices.isEmpty ? nil : notices.joined(separator: " ")
         editRecoveryURL = loaded.backupURL
         editSavingBlocked = !loaded.canSave
@@ -791,6 +793,7 @@ final class PhotoEditor {
     histogram = nil
     jpegChannelNearWhiteFraction = nil
     inputExposureRange = nil
+    sourceFileInfo = nil
     pixelReadout = nil
     selectedPixel = nil
     editRecoveryNotice = nil
@@ -965,6 +968,7 @@ final class PhotoEditor {
         renderVersion += 1
         source = decoded.image
         inputExposureRange = decoded.inputExposureRange
+        sourceFileInfo = decoded.sourceFileInfo
         decodedFlatRAW = requestedFlatRAW
         decodedHighlightRecovery = requestedHighlightRecovery
         decodedRawDecoderSharpening = requestedDecoderSharpening
@@ -4723,6 +4727,31 @@ struct ContentView: View {
           )
           .font(.caption).foregroundStyle(.secondary)
         case .develop:
+          if let info = editor.sourceFileInfo {
+            DisclosureGroup("Source file") {
+              VStack(alignment: .leading, spacing: 6) {
+                Text(
+                  "File-reported channel depth: \(info.reportedBitDepth.map { "\($0) bits" } ?? "not reported")"
+                )
+                .font(.caption.monospacedDigit())
+                if editor.isRAWSource {
+                  Text(
+                    "RAW container metadata can describe an embedded preview rather than sensor precision. FilmLab uses the RAW decoder's output for editing."
+                  )
+                  .font(.caption).foregroundStyle(.secondary)
+                } else {
+                  Text("Embedded color profile: \(info.embeddedProfileName ?? "not reported")")
+                    .font(.caption)
+                  Text(
+                    "FilmLab converts the decoded image into its extended-linear working space; that does not add detail absent from the file."
+                  )
+                  .font(.caption).foregroundStyle(.secondary)
+                }
+              }
+              .padding(.top, 6)
+            }
+            Divider()
+          }
           if let range = editor.inputExposureRange {
             Text("Decoded input light").font(.headline)
             Text(
