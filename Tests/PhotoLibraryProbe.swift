@@ -17,6 +17,8 @@ struct PhotoLibraryProbe {
     let first = URL(fileURLWithPath: "/tmp/a.ARW")
     library.importPhotos([first, first, URL(fileURLWithPath: "/tmp/b.jpg")])
     precondition(library.selectedCatalog?.photoPaths.count == 2)
+    library.toggleFavorite(first.path)
+    precondition(library.favoritePaths == [first.path])
     library.createCatalog(named: "  Portraits  ")
     precondition(library.selectedCatalog?.name == "Portraits")
     precondition(library.selectedCatalog?.photoPaths.isEmpty == true)
@@ -36,8 +38,15 @@ struct PhotoLibraryProbe {
     try PhotoLibraryStore.save(library, to: url)
     var reopened = PhotoLibraryStore.load(from: url)
     precondition(reopened == library)
+    let savedJSON = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as! [String: Any]
+    var legacyJSON = savedJSON
+    legacyJSON.removeValue(forKey: "favoritePaths")
+    let legacyLibrary = try JSONDecoder().decode(
+      PhotoLibrary.self, from: JSONSerialization.data(withJSONObject: legacyJSON))
+    precondition(legacyLibrary.favoritePaths.isEmpty)
     reopened.removePhoto(first.standardizedFileURL.path)
     precondition(reopened.selectedCatalog?.photoPaths.isEmpty == true)
+    precondition(reopened.favoritePaths.contains(first.path))
     reopened.selectedCatalogID = firstID
     precondition(reopened.selectedCatalog?.photoPaths.count == 2)
     reopened.deleteCatalog(library.selectedCatalogID)
@@ -63,10 +72,15 @@ struct PhotoLibraryProbe {
       from: oldOriginal, to: newOriginal, directory: edits, as: SampleGrade.self)
     precondition(repeated == .existing)
     reopened.importPhotos([oldOriginal, newOriginal])
+    reopened.toggleFavorite(oldOriginal.standardizedFileURL.path)
     reopened.relinkPhoto(from: oldOriginal.standardizedFileURL.path, to: newOriginal)
     let paths = reopened.selectedCatalog?.photoPaths ?? []
     precondition(!paths.contains(oldOriginal.standardizedFileURL.path))
     precondition(paths.filter { $0 == newOriginal.standardizedFileURL.path }.count == 1)
+    precondition(reopened.favoritePaths.contains(newOriginal.standardizedFileURL.path))
+    precondition(!reopened.favoritePaths.contains(oldOriginal.standardizedFileURL.path))
+    reopened.removePhoto(newOriginal.standardizedFileURL.path)
+    precondition(!reopened.favoritePaths.contains(newOriginal.standardizedFileURL.path))
     precondition(FileManager.default.fileExists(atPath: url.path))
     try Data("{damaged library".utf8).write(to: url)
     let recovered = PhotoLibraryStore.loadSafely(from: url)

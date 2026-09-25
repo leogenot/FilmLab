@@ -1652,6 +1652,7 @@ struct ContentView: View {
   @State private var selectedPhotoPaths = Set<String>()
   @State private var librarySearch = ""
   @State private var librarySort: LibrarySort = .importOrder
+  @State private var showFavoritesOnly = false
   @State private var applyingBatch = false
   @State private var panel: EditorPanel = .film
   @State private var selectedColorBand = 0
@@ -1678,11 +1679,14 @@ struct ContentView: View {
       : paths.filter {
         URL(fileURLWithPath: $0).lastPathComponent.localizedStandardContains(query)
       }
+    let filtered =
+      showFavoritesOnly
+      ? matching.filter { library.favoritePaths.contains($0) } : matching
     switch librarySort {
-    case .importOrder: return matching
-    case .newestFirst: return matching.reversed()
+    case .importOrder: return filtered
+    case .newestFirst: return filtered.reversed()
     case .name:
-      return matching.sorted {
+      return filtered.sorted {
         let comparison = URL(fileURLWithPath: $0).lastPathComponent.localizedStandardCompare(
           URL(fileURLWithPath: $1).lastPathComponent)
         return comparison == .orderedSame ? $0 < $1 : comparison == .orderedAscending
@@ -2163,6 +2167,9 @@ struct ContentView: View {
             }
           }
           .frame(width: 190)
+          Toggle("Favorites", isOn: $showFavoritesOnly)
+            .toggleStyle(.button)
+            .accessibilityLabel("Show favorites only")
         }
         if selectingPhotos || editor.canUndoBatch {
           HStack(spacing: 10) {
@@ -2248,6 +2255,12 @@ struct ContentView: View {
                   .buttonStyle(.plain)
                   .disabled(applyingBatch)
                   .contextMenu {
+                    Button(
+                      library.favoritePaths.contains(path) ? "Remove Favorite" : "Add Favorite"
+                    ) {
+                      library.toggleFavorite(path)
+                      saveLibrary()
+                    }
                     if library.catalogs.count > 1 {
                       catalogTransferMenu(for: [path])
                     }
@@ -2262,6 +2275,19 @@ struct ContentView: View {
                       saveLibrary()
                     }
                   }
+                  Button {
+                    library.toggleFavorite(path)
+                    saveLibrary()
+                  } label: {
+                    Label(
+                      library.favoritePaths.contains(path) ? "Remove Favorite" : "Add Favorite",
+                      systemImage: library.favoritePaths.contains(path) ? "star.fill" : "star"
+                    )
+                    .font(.caption)
+                  }
+                  .buttonStyle(.plain)
+                  .foregroundStyle(library.favoritePaths.contains(path) ? .yellow : .secondary)
+                  .disabled(applyingBatch)
                   if !FileManager.default.fileExists(atPath: path) {
                     Button("Locate Original…") {
                       pathToRelink = path
@@ -2277,12 +2303,14 @@ struct ContentView: View {
         } else {
           ContentUnavailableView(
             librarySearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+              && !showFavoritesOnly
               ? "No photos in this catalog" : "No matching photos",
             systemImage: "photo.on.rectangle.angled",
             description: Text(
               librarySearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && !showFavoritesOnly
                 ? "Import RAW or rendered photos to begin editing."
-                : "Try another filename or clear the search."
+                : "Try another filename or turn off the Favorites filter."
             )
           )
           .frame(maxWidth: .infinity, maxHeight: .infinity)

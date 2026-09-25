@@ -9,6 +9,20 @@ struct PhotoCatalog: Codable, Identifiable, Equatable {
 struct PhotoLibrary: Codable, Equatable {
   var catalogs: [PhotoCatalog]
   var selectedCatalogID: UUID
+  var favoritePaths: Set<String>
+
+  init(catalogs: [PhotoCatalog], selectedCatalogID: UUID, favoritePaths: Set<String> = []) {
+    self.catalogs = catalogs
+    self.selectedCatalogID = selectedCatalogID
+    self.favoritePaths = favoritePaths
+  }
+
+  init(from decoder: Decoder) throws {
+    let values = try decoder.container(keyedBy: CodingKeys.self)
+    catalogs = try values.decode([PhotoCatalog].self, forKey: .catalogs)
+    selectedCatalogID = try values.decode(UUID.self, forKey: .selectedCatalogID)
+    favoritePaths = try values.decodeIfPresent(Set<String>.self, forKey: .favoritePaths) ?? []
+  }
 
   static func empty() -> PhotoLibrary {
     let catalog = PhotoCatalog(id: UUID(), name: "My Photos", photoPaths: [])
@@ -37,7 +51,18 @@ struct PhotoLibrary: Codable, Equatable {
     if result.selectedCatalog == nil {
       result.selectedCatalogID = result.catalogs[0].id
     }
+    result.pruneOrphanedFavorites()
     return result
+  }
+
+  mutating func toggleFavorite(_ path: String) {
+    guard catalogs.contains(where: { $0.photoPaths.contains(path) }) else { return }
+    if !favoritePaths.insert(path).inserted { favoritePaths.remove(path) }
+  }
+
+  private mutating func pruneOrphanedFavorites() {
+    let available = Set(catalogs.flatMap(\.photoPaths))
+    favoritePaths.formIntersection(available)
   }
 
   mutating func createCatalog(named name: String) {
@@ -74,6 +99,7 @@ struct PhotoLibrary: Codable, Equatable {
     }
     if removeFromSource {
       catalogs[sourceIndex].photoPaths.removeAll { selectedPaths.contains($0) }
+      pruneOrphanedFavorites()
       return selectedPaths.count
     }
     return transferred
@@ -92,10 +118,12 @@ struct PhotoLibrary: Codable, Equatable {
   mutating func removePhoto(_ path: String) {
     guard let index = catalogs.firstIndex(where: { $0.id == selectedCatalogID }) else { return }
     catalogs[index].photoPaths.removeAll { $0 == path }
+    pruneOrphanedFavorites()
   }
 
   mutating func relinkPhoto(from oldPath: String, to url: URL) {
     let newPath = url.standardizedFileURL.path
+    if favoritePaths.remove(oldPath) != nil { favoritePaths.insert(newPath) }
     for index in catalogs.indices {
       guard catalogs[index].photoPaths.contains(oldPath) else { continue }
       catalogs[index].photoPaths = catalogs[index].photoPaths.map {
@@ -104,6 +132,7 @@ struct PhotoLibrary: Codable, Equatable {
       var seen = Set<String>()
       catalogs[index].photoPaths.removeAll { !seen.insert($0).inserted }
     }
+    pruneOrphanedFavorites()
   }
 
   mutating func deleteCatalog(_ id: UUID) {
@@ -112,6 +141,7 @@ struct PhotoLibrary: Codable, Equatable {
     if selectedCatalogID == id, let first = catalogs.first {
       selectedCatalogID = first.id
     }
+    pruneOrphanedFavorites()
   }
 }
 
