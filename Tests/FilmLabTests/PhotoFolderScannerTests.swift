@@ -97,4 +97,36 @@ final class PhotoFolderScannerTests: XCTestCase {
     XCTAssertTrue(library.favoritePaths.contains(replacement.path))
     XCTAssertFalse(library.favoritePaths.contains(oldPortrait.path))
   }
+
+  func testMovedSharedFolderRelinksEveryCatalogOnce() {
+    var library = PhotoLibrary.empty()
+    let firstID = library.selectedCatalogID
+    let oldFolder = URL(fileURLWithPath: "/tmp/FilmLab-shared-old")
+    let newFolder = URL(fileURLWithPath: "/tmp/FilmLab-shared-new")
+    let shared = oldFolder.appendingPathComponent("one.ARW")
+    let other = oldFolder.appendingPathComponent("two.jpg")
+    let movedShared = newFolder.appendingPathComponent("one.ARW")
+    let movedOther = newFolder.appendingPathComponent("two.jpg")
+    library.importPhotos([shared])
+    library.trackImportedFolder(oldFolder, in: firstID)
+    library.createCatalog(named: "Second")
+    let secondID = library.selectedCatalogID
+    library.importPhotos([shared, other])
+    library.trackImportedFolder(oldFolder, in: secondID)
+    library.selectedCatalogID = firstID
+
+    let candidates = library.movedFolderCandidates(
+      from: oldFolder.path, to: newFolder,
+      scannedPhotos: [movedShared, movedOther], in: firstID)
+    XCTAssertEqual(Set(candidates.map(\.0)), [shared.path, other.path])
+    XCTAssertEqual(candidates.count, 2)
+    for (old, replacement) in candidates {
+      library.relinkPhoto(from: old, to: replacement)
+    }
+    XCTAssertTrue(library.relinkImportedFolder(oldFolder.path, to: newFolder, in: firstID))
+    XCTAssertEqual(library.catalogs[0].importedFolderPaths, [newFolder.path])
+    XCTAssertEqual(library.catalogs[1].importedFolderPaths, [newFolder.path])
+    XCTAssertEqual(library.catalogs[0].photoPaths, [movedShared.path])
+    XCTAssertEqual(library.catalogs[1].photoPaths, [movedShared.path, movedOther.path])
+  }
 }

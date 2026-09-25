@@ -245,7 +245,9 @@ struct PhotoLibrary: Codable, Equatable, Sendable {
     else { return [] }
     let oldPrefix = URL(fileURLWithPath: oldPath).standardizedFileURL.path + "/"
     let scanned = Set(scannedPhotos.map { $0.standardizedFileURL.path })
-    return catalog.photoPaths.compactMap { path in
+    var seen = Set<String>()
+    return catalogs.flatMap(\.photoPaths).compactMap { path in
+      guard seen.insert(path).inserted else { return nil }
       guard path.hasPrefix(oldPrefix) else { return nil }
       let relativePath = String(path.dropFirst(oldPrefix.count))
       let replacement = newFolder.standardizedFileURL.appendingPathComponent(relativePath)
@@ -258,15 +260,22 @@ struct PhotoLibrary: Codable, Equatable, Sendable {
   mutating func relinkImportedFolder(_ oldPath: String, to newFolder: URL, in catalogID: UUID)
     -> Bool
   {
-    guard let index = catalogs.firstIndex(where: { $0.id == catalogID }),
-      let oldIndex = catalogs[index].importedFolderPaths.firstIndex(of: oldPath)
+    guard
+      catalogs.contains(where: {
+        $0.id == catalogID && $0.importedFolderPaths.contains(oldPath)
+      })
     else { return false }
     let newPath = newFolder.standardizedFileURL.path
     guard newPath != oldPath else { return false }
-    if catalogs[index].importedFolderPaths.contains(newPath) {
-      catalogs[index].importedFolderPaths.remove(at: oldIndex)
-    } else {
-      catalogs[index].importedFolderPaths[oldIndex] = newPath
+    for index in catalogs.indices {
+      guard let oldIndex = catalogs[index].importedFolderPaths.firstIndex(of: oldPath) else {
+        continue
+      }
+      if catalogs[index].importedFolderPaths.contains(newPath) {
+        catalogs[index].importedFolderPaths.remove(at: oldIndex)
+      } else {
+        catalogs[index].importedFolderPaths[oldIndex] = newPath
+      }
     }
     folderBookmarks.removeValue(forKey: oldPath)
     if let bookmark = try? newFolder.bookmarkData(

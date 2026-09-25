@@ -3343,9 +3343,11 @@ struct ContentView: View {
           from: oldPath, to: folder, scannedPhotos: photos, in: catalogID)
         let previousLibrary = library
         let oldPrefix = URL(fileURLWithPath: oldPath).standardizedFileURL.path + "/"
-        let referencedCount =
-          previousLibrary.catalogs.first(where: { $0.id == catalogID })?
-          .photoPaths.filter { $0.hasPrefix(oldPrefix) }.count ?? 0
+        let referencedCount = Set(
+          previousLibrary.catalogs.flatMap(\.photoPaths).filter {
+            $0.hasPrefix(oldPrefix)
+          }
+        ).count
         var relinked = [(String, URL)]()
         var unavailableEdits = 0
         var failures = [String]()
