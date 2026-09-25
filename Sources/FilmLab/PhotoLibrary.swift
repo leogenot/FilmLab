@@ -147,6 +147,32 @@ struct PhotoLibrary: Codable, Equatable {
     pruneOrphanedFavorites()
   }
 
+  func movedFolderRelinkCandidates(from oldPath: String, to selectedURL: URL) -> [(String, URL)] {
+    let selected = (oldPath, selectedURL)
+    let oldURL = URL(fileURLWithPath: oldPath).standardizedFileURL
+    let newURL = selectedURL.standardizedFileURL
+    let oldDirectory = oldURL.deletingLastPathComponent()
+    let newDirectory = newURL.deletingLastPathComponent()
+    guard oldURL.lastPathComponent == newURL.lastPathComponent,
+      oldDirectory != newDirectory
+    else { return [selected] }
+    let paths = Set(catalogs.flatMap(\.photoPaths))
+    let siblings = paths.sorted().compactMap { path -> (String, URL)? in
+      guard path != oldPath else { return nil }
+      let oldSibling = URL(fileURLWithPath: path).standardizedFileURL
+      guard oldSibling.deletingLastPathComponent() == oldDirectory,
+        !FileManager.default.fileExists(atPath: path)
+      else { return nil }
+      let newSibling = newDirectory.appendingPathComponent(oldSibling.lastPathComponent)
+      var isDirectory: ObjCBool = false
+      guard FileManager.default.fileExists(atPath: newSibling.path, isDirectory: &isDirectory),
+        !isDirectory.boolValue
+      else { return nil }
+      return (path, newSibling)
+    }
+    return [selected] + siblings
+  }
+
   mutating func deleteCatalog(_ id: UUID) {
     guard catalogs.count > 1 else { return }
     catalogs.removeAll { $0.id == id }

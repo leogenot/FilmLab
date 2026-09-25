@@ -2577,31 +2577,64 @@ struct ContentView: View {
   }
 
   private func relinkPhoto(from oldPath: String, to url: URL) {
-    guard FileManager.default.fileExists(atPath: url.path) else {
+    var isDirectory: ObjCBool = false
+    guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
+      !isDirectory.boolValue
+    else {
       libraryNotice = "The selected original is unavailable."
       return
     }
     let access = url.startAccessingSecurityScopedResource()
     defer { if access { url.stopAccessingSecurityScopedResource() } }
-    do {
-      let result = try PhotoEditRelinker.transferSavedEdits(
-        from: URL(fileURLWithPath: oldPath), to: url, directory: editsDirectory,
-        as: PhotoEdits.self)
-      let previousLibrary = library
-      library.relinkPhoto(from: oldPath, to: url)
-      guard saveLibrary() else {
-        library = previousLibrary
-        return
+    let candidates = library.movedFolderRelinkCandidates(from: oldPath, to: url)
+    let previousLibrary = library
+    var relinked = [(String, URL)]()
+    var missingEdits = 0
+    var failures = [String]()
+    for (previousPath, replacementURL) in candidates {
+      do {
+        let result = try PhotoEditRelinker.transferSavedEdits(
+          from: URL(fileURLWithPath: previousPath), to: replacementURL,
+          directory: editsDirectory, as: PhotoEdits.self)
+        if result == .unavailable { missingEdits += 1 }
+        library.relinkPhoto(from: previousPath, to: replacementURL)
+        relinked.append((previousPath, replacementURL))
+      } catch {
+        if previousPath == oldPath {
+          library = previousLibrary
+          libraryNotice = "Could not relink the selected original: \(error.localizedDescription)"
+          return
+        }
+        failures.append(URL(fileURLWithPath: previousPath).lastPathComponent)
       }
-      switch result {
-      case .transferred: libraryNotice = "Original relinked with its saved edits."
-      case .existing: libraryNotice = "Original relinked. Its existing saved edits were kept."
-      case .unavailable:
-        libraryNotice = "Original relinked. No valid saved edits were found at the old path."
-      }
-    } catch {
-      libraryNotice = "Could not relink original: \(error.localizedDescription)"
     }
+    guard !relinked.isEmpty else {
+      library = previousLibrary
+      libraryNotice = "Could not relink the selected original. Its saved edits were left untouched."
+      return
+    }
+    guard saveLibrary() else {
+      library = previousLibrary
+      return
+    }
+    selectedPhotoPaths.subtract(relinked.map(\.0))
+    if let selectionAnchor, relinked.contains(where: { $0.0 == selectionAnchor }) {
+      self.selectionAnchor = nil
+    }
+    if let openPath = editor.sourceURL?.standardizedFileURL.path,
+      let replacement = relinked.first(where: { $0.0 == openPath })?.1
+    {
+      editor.open(replacement)
+    }
+    let count = relinked.count
+    var notice = "Relinked \(count) original\(count == 1 ? "" : "s")."
+    if missingEdits > 0 {
+      notice += " \(missingEdits) had no valid saved edit backup."
+    }
+    if !failures.isEmpty {
+      notice += " Could not relink: \(failures.joined(separator: ", "))."
+    }
+    libraryNotice = notice
   }
 
   private var libraryView: some View {

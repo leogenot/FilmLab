@@ -86,6 +86,47 @@ struct PhotoLibraryProbe {
     precondition(!reopened.favoritePaths.contains(oldOriginal.standardizedFileURL.path))
     reopened.removePhoto(newOriginal.standardizedFileURL.path)
     precondition(!reopened.favoritePaths.contains(newOriginal.standardizedFileURL.path))
+    let oldFolder = directory.appendingPathComponent("old-folder")
+    let newFolder = directory.appendingPathComponent("new-folder")
+    try FileManager.default.createDirectory(at: oldFolder, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: newFolder, withIntermediateDirectories: true)
+    let oldRAW = oldFolder.appendingPathComponent("scene.ARW")
+    let oldJPEG = oldFolder.appendingPathComponent("scene.jpg")
+    let newRAW = newFolder.appendingPathComponent("scene.ARW")
+    let newJPEG = newFolder.appendingPathComponent("scene.jpg")
+    try Data("raw".utf8).write(to: oldRAW)
+    try Data("jpeg".utf8).write(to: oldJPEG)
+    var movedLibrary = PhotoLibrary.empty()
+    movedLibrary.importPhotos([oldRAW, oldJPEG])
+    movedLibrary.toggleFavorite(oldRAW.path)
+    for (oldURL, grade) in [(oldRAW, 0.6), (oldJPEG, -0.4)] {
+      let location = EditRecordLocator.locate(sourceURL: oldURL, directory: edits)
+      try SavedEditStore.save(SampleGrade(exposure: grade), to: location.pathURL)
+    }
+    try FileManager.default.copyItem(at: oldRAW, to: newRAW)
+    try FileManager.default.copyItem(at: oldJPEG, to: newJPEG)
+    try FileManager.default.removeItem(at: oldFolder)
+    let candidates = movedLibrary.movedFolderRelinkCandidates(from: oldRAW.path, to: newRAW)
+    precondition(candidates.count == 2)
+    precondition(candidates[0].0 == oldRAW.path && candidates[0].1 == newRAW)
+    precondition(candidates[1].0 == oldJPEG.path && candidates[1].1 == newJPEG)
+    for (oldPath, newURL) in candidates {
+      let outcome = try PhotoEditRelinker.transferSavedEdits(
+        from: URL(fileURLWithPath: oldPath), to: newURL, directory: edits,
+        as: SampleGrade.self)
+      precondition(outcome == .transferred)
+      movedLibrary.relinkPhoto(from: oldPath, to: newURL)
+    }
+    precondition(movedLibrary.selectedCatalog?.photoPaths == [newRAW.path, newJPEG.path])
+    precondition(movedLibrary.favoritePaths == [newRAW.path])
+    for (newURL, grade) in [(newRAW, 0.6), (newJPEG, -0.4)] {
+      let location = EditRecordLocator.locate(sourceURL: newURL, directory: edits)
+      let saved = try JSONDecoder().decode(
+        SampleGrade.self, from: Data(contentsOf: location.primaryURL))
+      precondition(saved.exposure == grade)
+    }
+    precondition(
+      movedLibrary.movedFolderRelinkCandidates(from: oldRAW.path, to: newJPEG).count == 1)
     precondition(FileManager.default.fileExists(atPath: url.path))
     try Data("{damaged library".utf8).write(to: url)
     let recovered = PhotoLibraryStore.loadSafely(from: url)
