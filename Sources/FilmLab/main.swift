@@ -1892,6 +1892,7 @@ struct ContentView: View {
   @State private var libraryNotice: String?
   @State private var selectingPhotos = false
   @State private var selectedPhotoPaths = Set<String>()
+  @State private var selectionAnchor: String?
   @State private var librarySearch = ""
   @State private var librarySort: LibrarySort = .importOrder
   @State private var showFavoritesOnly = false
@@ -2119,6 +2120,7 @@ struct ContentView: View {
     }
     .onChange(of: library.selectedCatalogID) {
       selectedPhotoPaths.removeAll()
+      selectionAnchor = nil
       selectingPhotos = false
       libraryNotice = nil
     }
@@ -2285,13 +2287,26 @@ struct ContentView: View {
   }
 
   private func selectOrOpenPhoto(_ path: String) {
-    if selectingPhotos {
+    if NSApp.currentEvent?.modifierFlags.contains(.shift) == true {
+      selectRange(through: path)
+    } else if selectingPhotos {
       if !selectedPhotoPaths.insert(path).inserted {
         selectedPhotoPaths.remove(path)
       }
+      selectionAnchor = path
     } else {
+      selectionAnchor = path
       selectPhoto(path)
     }
+  }
+
+  private func selectRange(through path: String) {
+    let range = LibrarySelection.range(
+      in: visibleLibraryPaths, from: selectionAnchor, through: path)
+    guard !range.isEmpty else { return }
+    selectedPhotoPaths.formUnion(range)
+    selectingPhotos = true
+    selectionAnchor = path
   }
 
   private func applySettingsToSelection(workspaceOnly: Bool = false) {
@@ -2301,6 +2316,7 @@ struct ContentView: View {
       libraryNotice = await editor.pasteSettings(to: paths, workspaceOnly: workspaceOnly)
       applyingBatch = false
       selectedPhotoPaths.removeAll()
+      selectionAnchor = nil
       selectingPhotos = false
     }
   }
@@ -2449,7 +2465,10 @@ struct ContentView: View {
           Spacer()
           Button(selectingPhotos ? "Done" : "Select Photos") {
             selectingPhotos.toggle()
-            if !selectingPhotos { selectedPhotoPaths.removeAll() }
+            if !selectingPhotos {
+              selectedPhotoPaths.removeAll()
+              selectionAnchor = nil
+            }
           }
           .disabled(applyingBatch || exportingBatch)
           Button("Import Photos…", systemImage: "plus") { showingImporter = true }
@@ -2468,11 +2487,14 @@ struct ContentView: View {
             .toggleStyle(.button)
             .accessibilityLabel("Show favorites only")
         }
+        Text("Shift-click a photo to select a range in the visible order.")
+          .font(.caption2).foregroundStyle(.secondary)
         if selectingPhotos || editor.canUndoBatch {
           HStack(spacing: 10) {
             if selectingPhotos {
               Button("Select All") {
                 selectedPhotoPaths.formUnion(visibleLibraryPaths)
+                selectionAnchor = nil
               }
               .disabled(applyingBatch || exportingBatch)
               Button("Paste to \(selectedPhotoPaths.count) Photos") {
@@ -2575,6 +2597,13 @@ struct ContentView: View {
                   .buttonStyle(.plain)
                   .disabled(applyingBatch || exportingBatch)
                   .contextMenu {
+                    if let selectionAnchor, selectionAnchor != path,
+                      visibleLibraryPaths.contains(selectionAnchor)
+                    {
+                      Button("Select Range Through This Photo") {
+                        selectRange(through: path)
+                      }
+                    }
                     Button(
                       library.favoritePaths.contains(path) ? "Remove Favorite" : "Add Favorite"
                     ) {

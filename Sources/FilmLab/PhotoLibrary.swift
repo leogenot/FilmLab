@@ -6,6 +6,18 @@ struct PhotoCatalog: Codable, Identifiable, Equatable {
   var photoPaths: [String]
 }
 
+enum LibrarySelection {
+  static func range(in visiblePaths: [String], from anchor: String?, through target: String)
+    -> Set<String>
+  {
+    guard let end = visiblePaths.firstIndex(of: target) else { return [] }
+    guard let anchor, let start = visiblePaths.firstIndex(of: anchor) else {
+      return [target]
+    }
+    return Set(visiblePaths[min(start, end)...max(start, end)])
+  }
+}
+
 struct PhotoLibrary: Codable, Equatable {
   var catalogs: [PhotoCatalog]
   var selectedCatalogID: UUID

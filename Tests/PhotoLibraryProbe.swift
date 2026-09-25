@@ -7,6 +7,11 @@ private struct SampleGrade: Codable, Equatable {
 @main
 struct PhotoLibraryProbe {
   static func main() throws {
+    let visible = ["a", "b", "c", "d"]
+    precondition(LibrarySelection.range(in: visible, from: "a", through: "c") == ["a", "b", "c"])
+    precondition(LibrarySelection.range(in: visible, from: "d", through: "b") == ["b", "c", "d"])
+    precondition(LibrarySelection.range(in: visible, from: "hidden", through: "c") == ["c"])
+    precondition(LibrarySelection.range(in: visible, from: "b", through: "hidden").isEmpty)
     let directory = FileManager.default.temporaryDirectory
       .appendingPathComponent("FilmLab-library-probe-\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(at: directory) }
