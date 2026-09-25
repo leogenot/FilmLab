@@ -47,7 +47,7 @@ final class EditorParityTests: XCTestCase {
         !editor.isOpening && editor.sourceURL == input && editor.preview != nil
       }
       XCTAssertNil(editor.error)
-      editor.highPrecisionPreview = true
+      editor.highPrecisionPreview = false
       if kind == "JPEG" {
         editor.inputTone = 1.15
         editor.inputWarmth = 0.1
@@ -137,10 +137,12 @@ final class EditorParityTests: XCTestCase {
           Double(exported.extent.width / exported.extent.height), accuracy: 0.005)
         let difference = compare(preview: previewImage, export: exported)
         print(
-          "Full graph \(kind) \(scenario): mean \(difference.mean), max \(difference.maximum) / 255"
+          "Full graph \(kind) \(scenario): mean \(difference.mean), max \(difference.maximum) / 255 at \(difference.location), pixels >20: \(difference.over20)"
         )
         XCTAssertLessThan(
-          difference.mean, 2.5, "\(kind) \(scenario) preview/export color drift")
+          difference.mean, 0.5, "\(kind) \(scenario) preview/export color drift")
+        XCTAssertLessThan(
+          difference.maximum, 32, "\(kind) \(scenario) localized preview/export drift")
       }
       let savedData = try Data(contentsOf: location.primaryURL)
       let saved = try XCTUnwrap(
@@ -168,7 +170,7 @@ final class EditorParityTests: XCTestCase {
   }
 
   private func compare(preview: CGImage, export: CIImage) -> (
-    mean: Double, maximum: Int
+    mean: Double, maximum: Int, location: CGPoint, over20: Int
   ) {
     let width = preview.width
     let height = preview.height
@@ -178,7 +180,9 @@ final class EditorParityTests: XCTestCase {
     ])
     let bounds = CGRect(x: 0, y: 0, width: width, height: height)
     let scale = min(1, 1800 / max(export.extent.width, export.extent.height))
-    let reduced = export.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+    let reduced = export.applyingFilter(
+      "CILanczosScaleTransform",
+      parameters: [kCIInputScaleKey: scale, kCIInputAspectRatioKey: 1])
     let space = CGColorSpace(name: CGColorSpace.sRGB)!
     func pixels(_ image: CIImage) -> [UInt8] {
       var result = [UInt8](repeating: 0, count: width * height * 4)
@@ -193,14 +197,23 @@ final class EditorParityTests: XCTestCase {
     let exportPixels = pixels(reduced)
     var total = 0
     var maximum = 0
-    for offset in stride(from: 0, to: previewPixels.count, by: 4) {
+    var location = CGPoint.zero
+    var over20 = 0
+    for pixelIndex in 0..<(width * height) {
+      let offset = pixelIndex * 4
+      var pixelMaximum = 0
       for channel in 0..<3 {
         let difference = abs(
           Int(previewPixels[offset + channel]) - Int(exportPixels[offset + channel]))
         total += difference
         maximum = max(maximum, difference)
+        pixelMaximum = max(pixelMaximum, difference)
+        if difference == maximum {
+          location = CGPoint(x: pixelIndex % width, y: pixelIndex / width)
+        }
       }
+      if pixelMaximum > 20 { over20 += 1 }
     }
-    return (Double(total) / Double(width * height * 3), maximum)
+    return (Double(total) / Double(width * height * 3), maximum, location, over20)
   }
 }

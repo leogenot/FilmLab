@@ -75,7 +75,9 @@ struct OutputParityProbe {
           try await exporter.export(
             ExportRequest(image: developed, url: outputURL, format: format, sourceURL: url))
           guard let exported = CIImage(contentsOf: outputURL) else { throw ProbeError.unreadable }
-          let reduced = exported.transformed(by: CGAffineTransform(scaleX: 0.5, y: 0.5))
+          let reduced = exported.applyingFilter(
+            "CILanczosScaleTransform",
+            parameters: [kCIInputScaleKey: 0.5, kCIInputAspectRatioKey: 1])
           let exportedPixels = pixels(reduced)
           var absoluteSum = 0
           var maximum = 0

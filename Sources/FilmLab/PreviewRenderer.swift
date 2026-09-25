@@ -119,7 +119,7 @@ actor PreviewRenderer {
 
   private func histogram(for source: CIImage, context: CIContext) -> PreviewHistogram? {
     let scale = min(1, 256 / max(source.extent.width, source.extent.height))
-    let reduced = source.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+    let reduced = downsampled(source, scale: scale)
     let bounds = reduced.extent.integral
     let width = Int(bounds.width)
     let height = Int(bounds.height)
@@ -202,10 +202,17 @@ actor PreviewRenderer {
   }
 
   private func renderImage(_ source: CIImage, scale: CGFloat, context: CIContext) -> CGImage? {
-    let reduced = source.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+    let reduced = downsampled(source, scale: scale)
     guard !Task.isCancelled else { return nil }
     return context.createCGImage(
       reduced, from: reduced.extent, format: .RGBA8,
       colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
+  }
+
+  private func downsampled(_ source: CIImage, scale: CGFloat) -> CIImage {
+    guard scale < 1 else { return source }
+    return source.applyingFilter(
+      "CILanczosScaleTransform",
+      parameters: [kCIInputScaleKey: scale, kCIInputAspectRatioKey: 1])
   }
 }
