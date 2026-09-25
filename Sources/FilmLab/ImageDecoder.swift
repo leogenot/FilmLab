@@ -8,6 +8,7 @@ struct DecodedPhoto: @unchecked Sendable {
   let cameraTemperature: Double?
   let cameraTint: Double?
   let highlightRecoverySupported: Bool
+  let decoderSharpeningSupported: Bool
   let jpegChannelNearWhiteFraction: Double?
   let inputExposureRange: InputExposureRange?
 }
@@ -28,6 +29,7 @@ actor ImageDecoder {
 
   func decode(
     from url: URL, isRAW: Bool, flatRAW: Bool, highlightRecovery: Bool,
+    decoderSharpening: Bool = true,
     temperature: Double?, tint: Double?, maxDimension: Int? = nil,
     includeDiagnostics: Bool = false
   ) throws -> DecodedPhoto {
@@ -43,6 +45,7 @@ actor ImageDecoder {
       }
       if let temperature { raw.neutralTemperature = Float(temperature) }
       if let tint { raw.neutralTint = Float(tint) }
+      if !decoderSharpening && raw.isSharpnessSupported { raw.sharpnessAmount = 0 }
       if flatRAW {
         raw.boostAmount = 0
         raw.boostShadowAmount = 0
@@ -59,6 +62,7 @@ actor ImageDecoder {
       return DecodedPhoto(
         image: image, cameraTemperature: cameraTemperature, cameraTint: cameraTint,
         highlightRecoverySupported: highlightRecoverySupported,
+        decoderSharpeningSupported: raw.isSharpnessSupported,
         jpegChannelNearWhiteFraction: nil,
         inputExposureRange: includeDiagnostics ? inputExposureRange(in: image) : nil)
     }
@@ -76,6 +80,7 @@ actor ImageDecoder {
     return DecodedPhoto(
       image: image, cameraTemperature: nil, cameraTint: nil,
       highlightRecoverySupported: false,
+      decoderSharpeningSupported: false,
       jpegChannelNearWhiteFraction: nearWhiteFraction,
       inputExposureRange: includeDiagnostics ? inputExposureRange(in: image) : nil)
   }
