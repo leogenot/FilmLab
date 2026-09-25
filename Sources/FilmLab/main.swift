@@ -221,6 +221,9 @@ final class PhotoEditor {
   private var sourceIsRAW = false
   private var editSavingBlocked = false
   var isRAWSource: Bool { sourceURL != nil && sourceIsRAW }
+  var canExport: Bool {
+    preview != nil && !isOpening && rawDecodeTask == nil && !isExporting
+  }
   private var scopedURL: URL?
   private var saveTask: Task<Void, Never>?
   private var historyTask: Task<Void, Never>?
@@ -281,6 +284,7 @@ final class PhotoEditor {
           image.extent.width > 0, image.extent.height > 0
         else { throw EditorError.unsupported }
         rawDecodeTask?.cancel()
+        rawDecodeTask = nil
         rawDecodeVersion += 1
         saveTask?.cancel()
         if sourceURL != nil { saveEdits() }
@@ -1049,6 +1053,7 @@ final class PhotoEditor {
   }
 
   func exportJPEG() {
+    guard canExport else { return }
     guard let image = developedImage() else { return }
     let panel = NSSavePanel()
     panel.allowedContentTypes = [.jpeg]
@@ -1059,6 +1064,7 @@ final class PhotoEditor {
   }
 
   func exportTIFF() {
+    guard canExport else { return }
     guard let image = developedImage() else { return }
     let panel = NSSavePanel()
     panel.allowedContentTypes = [.tiff]
@@ -1165,7 +1171,7 @@ struct ContentView: View {
         Button("JPEG (sRGB)…") { editor.exportJPEG() }
         Button("16-bit TIFF (Display P3)…") { editor.exportTIFF() }
       }
-      .disabled(editor.preview == nil || editor.isExporting)
+      .disabled(!editor.canExport)
     }
     .fileImporter(
       isPresented: $showingImporter, allowedContentTypes: [.image, .rawImage],
