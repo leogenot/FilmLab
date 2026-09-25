@@ -77,8 +77,25 @@ actor ImageDecoder {
         jpegChannelNearWhiteFraction: nil,
         inputExposureRange: includeDiagnostics ? inputExposureRange(in: image) : nil)
     }
-    guard let image = CIImage(contentsOf: url, options: [.applyOrientationProperty: true]) else {
-      throw EditorError.unsupported
+    let image: CIImage
+    if let maxDimension, maxDimension > 0,
+      let source = CGImageSourceCreateWithURL(
+        url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
+      let thumbnail = CGImageSourceCreateThumbnailAtIndex(
+        source, 0,
+        [
+          kCGImageSourceCreateThumbnailFromImageAlways: true,
+          kCGImageSourceCreateThumbnailWithTransform: true,
+          kCGImageSourceThumbnailMaxPixelSize: maxDimension,
+        ] as CFDictionary)
+    {
+      image = CIImage(cgImage: thumbnail)
+    } else {
+      guard
+        let fullImage = CIImage(
+          contentsOf: url, options: [.applyOrientationProperty: true])
+      else { throw EditorError.unsupported }
+      image = fullImage
     }
     try Task.checkCancellation()
     let isJPEG =
