@@ -1801,11 +1801,9 @@ final class PhotoEditor {
     localToneVersion += 1
     let version = localToneVersion
     let areaIndex = selectedLocalIndex
-    let request = PixelSampleRequest(
-      input: input, output: input, inputLocation: location,
-      displayX: displayX, displayY: displayY, sourceURL: scopedURL)
+    let request = LocalRangeRequest(image: input, location: location, sourceURL: scopedURL)
     localToneTask = Task {
-      let sampled = await pixelSampler.sampleInput(request)
+      let sampled = await pixelSampler.sampleLocalRange(request)
       guard !Task.isCancelled, version == localToneVersion, self.sourceURL == sourceURL,
         selectedLocalIndex == areaIndex
       else { return }
@@ -1814,7 +1812,7 @@ final class PhotoEditor {
         localToneNotice = "Could not read that pixel. Try another detailed area."
         return
       }
-      radialLights[areaIndex].toneCenter = min(max(sampled.stopsFromMiddleGray, -6), 6)
+      radialLights[areaIndex].toneCenter = min(max(sampled.toneStops, -6), 6)
       radialLights[areaIndex].toneRangeEnabled = true
       localToneNotice = nil
       editsChanged()
@@ -1835,11 +1833,9 @@ final class PhotoEditor {
     localHueVersion += 1
     let version = localHueVersion
     let areaIndex = selectedLocalIndex
-    let request = PixelSampleRequest(
-      input: input, output: input, inputLocation: location,
-      displayX: displayX, displayY: displayY, sourceURL: scopedURL)
+    let request = LocalRangeRequest(image: input, location: location, sourceURL: scopedURL)
     localHueTask = Task {
-      let sampled = await pixelSampler.sampleInput(request)
+      let sampled = await pixelSampler.sampleLocalRange(request)
       guard !Task.isCancelled, version == localHueVersion, self.sourceURL == sourceURL,
         selectedLocalIndex == areaIndex
       else { return }
