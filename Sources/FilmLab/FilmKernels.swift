@@ -11,6 +11,7 @@ enum FilmKernels {
         let required = Set([
           "filmResponse", "shapeSceneLight", "measuredNegative", "portraPositive",
           "grade", "selectiveColor", "colorMixerBand", "colorMixerBandV2", "applyGrain",
+          "applyNegativeGrain",
           "preservingSelectiveColor",
           "highlightMask", "applyHalation", "applyAcutance", "renderedInputTone",
           "outputShoulder",
@@ -628,6 +629,43 @@ enum FilmKernels {
                   hash ^= hash >> 16;
                   return float(hash & 0x00ffffffu) / 16777216.0 - 0.5;
               }
+    // Density-domain texture is deliberately provisional: the Kodak curves do not
+    // specify grain size or variance. The same spatial noise is used by preview/export.
+    [[stitchable]] float4 applyNegativeGrain(coreimage::sample_t negative,
+                                            float amount, float size, float seed,
+                                            coreimage::destination destination) {
+        float2 coord = destination.coord();
+        uint photoSeed = uint(seed);
+        float fine = grainHash(int2(floor(coord)), 0xcb1ab31fu ^ photoSeed);
+        float noise = fine;
+        if (size > 0.001) {
+            float2 lattice = coord / (2.5 * size);
+            int2 cell = int2(floor(lattice));
+            float2 fraction = fract(lattice);
+            float2 blend = fraction * fraction * (3.0 - 2.0 * fraction);
+            float4 weights = float4(
+                (1.0 - blend.x) * (1.0 - blend.y),
+                blend.x * (1.0 - blend.y),
+                (1.0 - blend.x) * blend.y,
+                blend.x * blend.y);
+            float4 samples = float4(
+                grainHash(cell, 0x61c88647u ^ photoSeed),
+                grainHash(cell + int2(1, 0), 0x61c88647u ^ photoSeed),
+                grainHash(cell + int2(0, 1), 0x61c88647u ^ photoSeed),
+                grainHash(cell + int2(1, 1), 0x61c88647u ^ photoSeed));
+            float coarse = dot(weights, samples)
+                / sqrt(max(dot(weights, weights), 0.000001));
+            noise = (coarse * 0.9 + fine * 0.1) / sqrt(0.82);
+        }
+        // Shared spatial structure with restrained independent dye variation.
+        float3 dyeNoise = float3(
+            grainHash(int2(floor(coord)), 0x9e3779b9u ^ photoSeed),
+            grainHash(int2(floor(coord)), 0x7f4a7c15u ^ photoSeed),
+            grainHash(int2(floor(coord)), 0x94d049bbu ^ photoSeed));
+        float3 variation = (float3(noise) * 0.85 + dyeNoise * 0.15)
+            * clamp(amount, 0.0, 1.0) * 0.12;
+        return float4(max(negative.rgb + variation, float3(0.0)), negative.a);
+    }
     [[stitchable]] float4 applyGrain(coreimage::sample_t pixel,
                                     float amount, float size, float seed,
                                     coreimage::destination destination) {

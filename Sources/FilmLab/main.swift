@@ -61,6 +61,7 @@ struct PhotoEdits: Codable, Equatable {
   var development = 0.0
   var grain = 0.0
   var grainSize = 1.0
+  var grainVersion = 2
   var grainSeed = 0.0
   var halation = 0.0
   var acutance = 0.0
@@ -195,6 +196,7 @@ struct PhotoEdits: Codable, Equatable {
     case .texture:
       result.grain = source.grain
       result.grainSize = source.grainSize
+      result.grainVersion = source.grainVersion
       result.halation = source.halation
       result.acutance = source.acutance
     case .framing:
@@ -259,6 +261,7 @@ struct PhotoEdits: Codable, Equatable {
     development = try values.decodeIfPresent(Double.self, forKey: .development) ?? 0
     grain = try values.decodeIfPresent(Double.self, forKey: .grain) ?? 0
     grainSize = try values.decodeIfPresent(Double.self, forKey: .grainSize) ?? 0
+    grainVersion = try values.decodeIfPresent(Int.self, forKey: .grainVersion) ?? 1
     grainSeed = try values.decodeIfPresent(Double.self, forKey: .grainSeed) ?? 0
     halation = try values.decodeIfPresent(Double.self, forKey: .halation) ?? 0
     acutance = try values.decodeIfPresent(Double.self, forKey: .acutance) ?? 0
@@ -407,6 +410,7 @@ final class PhotoEditor {
   var development = 0.0
   var grain = 0.0
   var grainSize = 1.0
+  var grainVersion = 2
   var grainSeed = 0.0
   var halation = 0.0
   var acutance = 0.0
@@ -554,6 +558,7 @@ final class PhotoEditor {
   // This is a provisional response model, not a measured emulsion profile.
   private let filmKernel = FilmKernels.kernel("filmResponse")
   private let sceneLightKernel = FilmKernels.kernel("shapeSceneLight")
+  private let negativeGrainKernel = FilmKernels.kernel("applyNegativeGrain")
   private let measuredNegativeKernel = FilmKernels.kernel("measuredNegative")
   private let portraPositiveKernel = FilmKernels.kernel("portraPositive")
   private let renderedInputToneKernel = FilmKernels.kernel("renderedInputTone")
@@ -819,6 +824,7 @@ final class PhotoEditor {
     development = saved.development
     grain = saved.grain
     grainSize = saved.grainSize
+    grainVersion = saved.grainVersion
     grainSeed = saved.grainSeed
     halation = saved.halation
     acutance = saved.acutance
@@ -989,6 +995,7 @@ final class PhotoEditor {
     edits.development = development
     edits.grain = grain
     edits.grainSize = grainSize
+    edits.grainVersion = grainVersion
     edits.grainSeed = grainSeed
     edits.halation = halation
     edits.acutance = acutance
@@ -1353,6 +1360,7 @@ final class PhotoEditor {
     development = defaults.development
     grain = defaults.grain
     grainSize = defaults.grainSize
+    grainVersion = defaults.grainVersion
     grainSeed = sourceURL.map { EditRecordLocator.grainSeed(for: $0) } ?? 0
     halation = defaults.halation
     acutance = defaults.acutance
@@ -1724,11 +1732,28 @@ final class PhotoEditor {
         let portraPositiveKernel,
         let negative = measuredNegativeKernel.apply(
           extent: image.extent, arguments: [image, shotExposure, development, Double(stockIndex)]
-        ),
+        )
+      else {
+        error = "The measured film density study could not be loaded."
+        return nil
+      }
+      var texturedNegative = negative
+      if grainVersion >= 2 && grain > 0 {
+        guard let negativeGrainKernel,
+          let textured = negativeGrainKernel.apply(
+            extent: negative.extent, arguments: [negative, grain, grainSize, grainSeed]
+          )
+        else {
+          error = "The film-density grain stage could not be loaded."
+          return nil
+        }
+        texturedNegative = textured
+      }
+      guard
         let positive = portraPositiveKernel.apply(
           extent: image.extent,
           arguments: [
-            negative, image, shotExposure, filmAmount,
+            texturedNegative, image, shotExposure, filmAmount,
             (stockIndex == 1 && enduraPaperTone) || (stockIndex == 2 && premierPaperTone)
               ? paperStrength : 0.0, paperExposure,
             Double(stockIndex),
@@ -1802,7 +1827,9 @@ final class PhotoEditor {
       return nil
     }
     var finished = FilmEffects.apply(
-      to: channelAdjusted, grain: grain, grainSize: grainSize, grainSeed: grainSeed,
+      to: channelAdjusted,
+      grain: stockIndex > 0 && grainVersion >= 2 ? 0 : grain,
+      grainSize: grainSize, grainSeed: grainSeed,
       halation: halation,
       acutance: acutance)
     if outputShoulder > 0.001 {
@@ -2068,6 +2095,12 @@ final class PhotoEditor {
     setPickingNeutralArea(false)
     inputNeutralBalance = InputNeutralBalance()
     neutralNotice = nil
+    editsChanged()
+  }
+
+  func useFilmDensityGrain() {
+    guard grainVersion < 2 else { return }
+    grainVersion = 2
     editsChanged()
   }
 
@@ -4379,6 +4412,16 @@ struct ContentView: View {
         case .texture:
           control("Grain", value: $editor.grain, range: 0...1)
           control("Grain size", value: $editor.grainSize, range: 0...2)
+          if editor.grainVersion == 1 && editor.stockIndex > 0 {
+            Button("Use film-density grain") { editor.useFilmDensityGrain() }
+            Text(
+              "This changes the rendering of this saved grade. Undo restores the earlier output grain."
+            )
+            .font(.caption).foregroundStyle(.secondary)
+          } else if editor.stockIndex > 0 {
+            Text("Grain forms in the negative density before the print or scan response.")
+              .font(.caption).foregroundStyle(.secondary)
+          }
           if editor.grainSeed == 0 {
             Button("Use unique grain pattern") { editor.usePhotoGrainPattern() }
             Text(

@@ -63,6 +63,46 @@ struct TextureProbe {
       "Deterministic grain checks passed; adjacent correlations \(neighbor), \(secondNeighbor), legacy \(oldNeighbor); maximum working-format difference \(difference)"
     )
 
+    let negativeKernel = FilmKernels.kernel("measuredNegative")!
+    let negativeGrain = FilmKernels.kernel("applyNegativeGrain")!
+    let positiveKernel = FilmKernels.kernel("portraPositive")!
+    func developed(_ stock: Double, _ exposure: Double, _ grain: Double) -> CIImage {
+      let negative = negativeKernel.apply(
+        extent: source.extent, arguments: [source, exposure, 0.0, stock])!
+      let textured = negativeGrain.apply(
+        extent: source.extent, arguments: [negative, grain, 1.0, 17.0])!
+      return positiveKernel.apply(
+        extent: source.extent,
+        arguments: [textured, source, exposure, 1.0, 0.0, 0.0, stock])!
+    }
+    func grainSpread(_ stock: Double, _ exposure: Double) -> Double {
+      let baseline = pixels(developed(stock, exposure, 0), context: export)
+      let grained = pixels(developed(stock, exposure, 0.75), context: export)
+      let delta = stride(from: 0, to: grained.count, by: 4).map {
+        Double(grained[$0] - baseline[$0])
+      }
+      return sqrt(delta.map { $0 * $0 }.reduce(0, +) / Double(delta.count))
+    }
+    for stock in [1.0, 2.0] {
+      let midtone = developed(stock, 0, 0.75)
+      let baseline = pixels(developed(stock, 0, 0), context: export)
+      let rendered = pixels(midtone, context: export)
+      let previewPixels = pixels(midtone, context: preview)
+      precondition(rendered == pixels(developed(stock, 0, 0.75), context: export))
+      precondition(
+        zip(rendered, previewPixels).map { abs($0 - $1) }.max()! < 0.002,
+        "Density-stage grain differs between preview and export")
+      precondition(
+        zip(rendered, baseline).map { abs($0 - $1) }.max()! > 0.005,
+        "Density-stage grain is not visible")
+      let darkSpread = grainSpread(stock, -2)
+      let lightSpread = grainSpread(stock, 2)
+      precondition(
+        abs(darkSpread - lightSpread) > 0.001,
+        "Density-stage grain did not react to stock exposure")
+      print("Density grain stock \(stock): -2 EV \(darkSpread), +2 EV \(lightSpread)")
+    }
+
     let dark = CIImage(color: CIColor(red: 0.12, green: 0.12, blue: 0.12, colorSpace: space)!)
       .cropped(to: CGRect(x: 0, y: 0, width: 32, height: 64))
     let light = CIImage(color: CIColor(red: 0.7, green: 0.7, blue: 0.7, colorSpace: space)!)
