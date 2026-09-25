@@ -3306,14 +3306,20 @@ struct ContentView: View {
     }
   }
 
-  private func locateImportedFolder(_ oldPath: String) {
+  private func locateImportedFolder(_ oldPath: String, suggestedFolder: URL? = nil) {
     guard !importingFolder else { return }
-    let panel = NSOpenPanel()
-    panel.canChooseFiles = false
-    panel.canChooseDirectories = true
-    panel.allowsMultipleSelection = false
-    panel.prompt = "Locate Folder"
-    guard panel.runModal() == .OK, let folder = panel.url else { return }
+    let folder: URL
+    if let suggestedFolder {
+      folder = suggestedFolder
+    } else {
+      let panel = NSOpenPanel()
+      panel.canChooseFiles = false
+      panel.canChooseDirectories = true
+      panel.allowsMultipleSelection = false
+      panel.prompt = "Locate Folder"
+      guard panel.runModal() == .OK, let selected = panel.url else { return }
+      folder = selected
+    }
     let catalogID = library.selectedCatalogID
     importingFolder = true
     libraryNotice = nil
@@ -3805,8 +3811,17 @@ struct ContentView: View {
             Text("Linked folder missing: \(URL(fileURLWithPath: path).lastPathComponent)")
               .lineLimit(1)
             Spacer()
-            Button("Locate Folder…") { locateImportedFolder(path) }
+            if let resolved = library.resolvedMissingFolder(at: path) {
+              Button("Reconnect Folder") {
+                locateImportedFolder(path, suggestedFolder: resolved)
+              }
               .disabled(importingFolder)
+              Button("Locate Elsewhere…") { locateImportedFolder(path) }
+                .disabled(importingFolder)
+            } else {
+              Button("Locate Folder…") { locateImportedFolder(path) }
+                .disabled(importingFolder)
+            }
           }
           .font(.caption)
           .foregroundStyle(.orange)

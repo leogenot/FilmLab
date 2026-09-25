@@ -50,15 +50,17 @@ struct PhotoLibrary: Codable, Equatable, Sendable {
   var selectedCatalogID: UUID
   var favoritePaths: Set<String>
   var photoBookmarks: [String: Data]
+  var folderBookmarks: [String: Data]
 
   init(
     catalogs: [PhotoCatalog], selectedCatalogID: UUID, favoritePaths: Set<String> = [],
-    photoBookmarks: [String: Data] = [:]
+    photoBookmarks: [String: Data] = [:], folderBookmarks: [String: Data] = [:]
   ) {
     self.catalogs = catalogs
     self.selectedCatalogID = selectedCatalogID
     self.favoritePaths = favoritePaths
     self.photoBookmarks = photoBookmarks
+    self.folderBookmarks = folderBookmarks
   }
 
   init(from decoder: Decoder) throws {
@@ -67,6 +69,8 @@ struct PhotoLibrary: Codable, Equatable, Sendable {
     selectedCatalogID = try values.decode(UUID.self, forKey: .selectedCatalogID)
     favoritePaths = try values.decodeIfPresent(Set<String>.self, forKey: .favoritePaths) ?? []
     photoBookmarks = try values.decodeIfPresent([String: Data].self, forKey: .photoBookmarks) ?? [:]
+    folderBookmarks =
+      try values.decodeIfPresent([String: Data].self, forKey: .folderBookmarks) ?? [:]
   }
 
   static func empty() -> PhotoLibrary {
@@ -123,6 +127,8 @@ struct PhotoLibrary: Codable, Equatable, Sendable {
     let available = Set(catalogs.flatMap(\.photoPaths))
     favoritePaths.formIntersection(available)
     photoBookmarks = photoBookmarks.filter { available.contains($0.key) }
+    let linkedFolders = Set(catalogs.flatMap(\.importedFolderPaths))
+    folderBookmarks = folderBookmarks.filter { linkedFolders.contains($0.key) }
   }
 
   mutating func createCatalog(named name: String) {
@@ -192,6 +198,12 @@ struct PhotoLibrary: Codable, Equatable, Sendable {
   mutating func trackImportedFolder(_ url: URL, in catalogID: UUID) -> Bool {
     guard let index = catalogs.firstIndex(where: { $0.id == catalogID }) else { return false }
     let path = url.standardizedFileURL.path
+    if folderBookmarks[path] == nil,
+      let bookmark = try? url.bookmarkData(
+        options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
+    {
+      folderBookmarks[path] = bookmark
+    }
     guard !catalogs[index].importedFolderPaths.contains(path) else { return false }
     catalogs[index].importedFolderPaths.append(path)
     return true
@@ -203,7 +215,26 @@ struct PhotoLibrary: Codable, Equatable, Sendable {
       catalogs[index].importedFolderPaths.contains(path)
     else { return false }
     catalogs[index].importedFolderPaths.removeAll { $0 == path }
+    pruneOrphanedFavorites()
     return true
+  }
+
+  func resolvedMissingFolder(at path: String) -> URL? {
+    guard !FileManager.default.fileExists(atPath: path), let bookmark = folderBookmarks[path] else {
+      return nil
+    }
+    var stale = false
+    guard
+      let resolved = try? URL(
+        resolvingBookmarkData: bookmark, options: [], relativeTo: nil,
+        bookmarkDataIsStale: &stale),
+      resolved.standardizedFileURL.path != path
+    else { return nil }
+    var isDirectory: ObjCBool = false
+    guard FileManager.default.fileExists(atPath: resolved.path, isDirectory: &isDirectory),
+      isDirectory.boolValue
+    else { return nil }
+    return resolved
   }
 
   func movedFolderCandidates(
@@ -237,6 +268,13 @@ struct PhotoLibrary: Codable, Equatable, Sendable {
     } else {
       catalogs[index].importedFolderPaths[oldIndex] = newPath
     }
+    folderBookmarks.removeValue(forKey: oldPath)
+    if let bookmark = try? newFolder.bookmarkData(
+      options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
+    {
+      folderBookmarks[newPath] = bookmark
+    }
+    pruneOrphanedFavorites()
     return true
   }
 

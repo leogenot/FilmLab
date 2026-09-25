@@ -182,6 +182,46 @@ final class PhotoLibraryPersistenceTests: XCTestCase {
     XCTAssertTrue(reopened.photoBookmarks.isEmpty)
   }
 
+  func testLinkedFolderBookmarkSurvivesReloadAndResolvesMove() throws {
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("FilmLab-folder-bookmark-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let original = directory.appendingPathComponent("Original", isDirectory: true)
+    let moved = directory.appendingPathComponent("Moved", isDirectory: true)
+    try FileManager.default.createDirectory(at: original, withIntermediateDirectories: true)
+    let index = directory.appendingPathComponent("Library.json")
+    var library = PhotoLibrary.empty()
+    XCTAssertTrue(library.trackImportedFolder(original, in: library.selectedCatalogID))
+    XCTAssertNotNil(library.folderBookmarks[original.path])
+    try PhotoLibraryStore.save(library, to: index)
+    try FileManager.default.moveItem(at: original, to: moved)
+
+    var reopened = PhotoLibraryStore.load(from: index)
+    let resolved = try XCTUnwrap(reopened.resolvedMissingFolder(at: original.path))
+    XCTAssertEqual(resolved.resolvingSymlinksInPath().path, moved.resolvingSymlinksInPath().path)
+    XCTAssertTrue(
+      reopened.relinkImportedFolder(original.path, to: resolved, in: reopened.selectedCatalogID))
+    XCTAssertEqual(reopened.selectedCatalog?.importedFolderPaths, [moved.path])
+    XCTAssertNil(reopened.folderBookmarks[original.path])
+    XCTAssertNotNil(reopened.folderBookmarks[moved.path])
+    try PhotoLibraryStore.save(reopened, to: index)
+    XCTAssertEqual(PhotoLibraryStore.load(from: index), reopened)
+    XCTAssertTrue(reopened.untrackImportedFolder(moved.path, in: reopened.selectedCatalogID))
+    XCTAssertTrue(reopened.folderBookmarks.isEmpty)
+  }
+
+  func testLegacyLibraryWithoutFolderBookmarksStillDecodes() throws {
+    let library = PhotoLibrary.empty()
+    let data = try JSONEncoder().encode(library)
+    var object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    object.removeValue(forKey: "folderBookmarks")
+    let legacyData = try JSONSerialization.data(withJSONObject: object)
+    let decoded = try JSONDecoder().decode(PhotoLibrary.self, from: legacyData)
+    XCTAssertEqual(decoded.catalogs, library.catalogs)
+    XCTAssertTrue(decoded.folderBookmarks.isEmpty)
+  }
+
   func testReimportBackfillsBookmarkWithoutDuplicatingPhoto() throws {
     let directory = FileManager.default.temporaryDirectory
       .appendingPathComponent("FilmLab-library-backfill-\(UUID().uuidString)")
