@@ -1372,6 +1372,9 @@ struct ContentView: View {
   @State private var showingNewCatalog = false
   @State private var newCatalogName = ""
   @State private var catalogToDelete: PhotoCatalog?
+  @State private var pathToRelink: String?
+  @State private var showingRelinkImporter = false
+  @State private var libraryNotice: String?
   @State private var panel: EditorPanel = .film
   @State private var selectedColorBand = 0
   @State private var cropDragOrigin: FreeCrop?
@@ -1385,6 +1388,9 @@ struct ContentView: View {
   }
 
   private var libraryURL: URL { Self.libraryURL }
+  private var editsDirectory: URL {
+    libraryURL.deletingLastPathComponent().appendingPathComponent("Edits", isDirectory: true)
+  }
   private var library: PhotoLibrary {
     get { libraryLoad.value }
     nonmutating set { libraryLoad.value = newValue }
@@ -1476,6 +1482,19 @@ struct ContentView: View {
           showingLibrary = false
           editor.open(url)
         }
+      case .failure(let error): editor.error = error.localizedDescription
+      }
+    }
+    .fileImporter(
+      isPresented: $showingRelinkImporter,
+      allowedContentTypes: [.image, .rawImage], allowsMultipleSelection: false
+    ) { result in
+      let oldPath = pathToRelink
+      pathToRelink = nil
+      guard let oldPath else { return }
+      switch result {
+      case .success(let urls):
+        if let url = urls.first { relinkPhoto(from: oldPath, to: url) }
       case .failure(let error): editor.error = error.localizedDescription
       }
     }
@@ -1640,25 +1659,56 @@ struct ContentView: View {
     .background(Color(white: 0.10))
   }
 
-  private func saveLibrary() {
+  @discardableResult
+  private func saveLibrary() -> Bool {
     guard libraryLoad.canSave else {
-      editor.error = "Library saving is paused to protect its unreadable index."
-      return
+      libraryNotice = "Library saving is paused to protect its unreadable index."
+      return false
     }
     do {
       try PhotoLibraryStore.save(library, to: libraryURL)
+      return true
     } catch {
-      editor.error = "Could not save library: \(error.localizedDescription)"
+      libraryNotice = "Could not save library: \(error.localizedDescription)"
+      return false
     }
   }
 
   private func selectPhoto(_ path: String) {
     guard FileManager.default.fileExists(atPath: path) else {
-      editor.error = "Photo is missing: \(path)"
+      libraryNotice = "Photo is missing: \(path)"
       return
     }
     showingLibrary = false
     editor.open(URL(fileURLWithPath: path))
+  }
+
+  private func relinkPhoto(from oldPath: String, to url: URL) {
+    guard FileManager.default.fileExists(atPath: url.path) else {
+      libraryNotice = "The selected original is unavailable."
+      return
+    }
+    let access = url.startAccessingSecurityScopedResource()
+    defer { if access { url.stopAccessingSecurityScopedResource() } }
+    do {
+      let result = try PhotoEditRelinker.transferSavedEdits(
+        from: URL(fileURLWithPath: oldPath), to: url, directory: editsDirectory,
+        as: PhotoEdits.self)
+      let previousLibrary = library
+      library.relinkPhoto(from: oldPath, to: url)
+      guard saveLibrary() else {
+        library = previousLibrary
+        return
+      }
+      switch result {
+      case .transferred: libraryNotice = "Original relinked with its saved edits."
+      case .existing: libraryNotice = "Original relinked. Its existing saved edits were kept."
+      case .unavailable:
+        libraryNotice = "Original relinked. No valid saved edits were found at the old path."
+      }
+    } catch {
+      libraryNotice = "Could not relink original: \(error.localizedDescription)"
+    }
   }
 
   private var libraryView: some View {
@@ -1726,35 +1776,55 @@ struct ContentView: View {
             .font(.caption)
             .foregroundStyle(.orange)
         }
+        if let libraryNotice {
+          Text(libraryNotice)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
         if let paths = library.selectedCatalog?.photoPaths, !paths.isEmpty {
           ScrollView {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 155), spacing: 14)], spacing: 14) {
               ForEach(paths, id: \.self) { path in
-                Button {
-                  selectPhoto(path)
-                } label: {
-                  VStack(alignment: .leading, spacing: 8) {
-                    PhotoThumbnail(path: path)
-                      .frame(height: 135)
-                      .frame(maxWidth: .infinity)
-                      .background(Color(white: 0.13))
-                      .clipShape(RoundedRectangle(cornerRadius: 7))
-                    Text(URL(fileURLWithPath: path).lastPathComponent)
-                      .font(.caption)
-                      .lineLimit(1)
-                      .foregroundStyle(.primary)
-                    if !FileManager.default.fileExists(atPath: path) {
-                      Text("Missing original")
-                        .font(.caption2)
-                        .foregroundStyle(.orange)
+                VStack(alignment: .leading, spacing: 8) {
+                  Button {
+                    selectPhoto(path)
+                  } label: {
+                    VStack(alignment: .leading, spacing: 8) {
+                      PhotoThumbnail(path: path)
+                        .frame(height: 135)
+                        .frame(maxWidth: .infinity)
+                        .background(Color(white: 0.13))
+                        .clipShape(RoundedRectangle(cornerRadius: 7))
+                      Text(URL(fileURLWithPath: path).lastPathComponent)
+                        .font(.caption)
+                        .lineLimit(1)
+                        .foregroundStyle(.primary)
+                      if !FileManager.default.fileExists(atPath: path) {
+                        Text("Missing original")
+                          .font(.caption2)
+                          .foregroundStyle(.orange)
+                      }
                     }
                   }
-                }
-                .buttonStyle(.plain)
-                .contextMenu {
-                  Button("Remove from Catalog") {
-                    library.removePhoto(path)
-                    saveLibrary()
+                  .buttonStyle(.plain)
+                  .contextMenu {
+                    if !FileManager.default.fileExists(atPath: path) {
+                      Button("Locate Original…") {
+                        pathToRelink = path
+                        showingRelinkImporter = true
+                      }
+                    }
+                    Button("Remove from Catalog") {
+                      library.removePhoto(path)
+                      saveLibrary()
+                    }
+                  }
+                  if !FileManager.default.fileExists(atPath: path) {
+                    Button("Locate Original…") {
+                      pathToRelink = path
+                      showingRelinkImporter = true
+                    }
+                    .font(.caption)
                   }
                 }
               }

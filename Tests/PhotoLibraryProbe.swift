@@ -1,5 +1,9 @@
 import Foundation
 
+private struct SampleGrade: Codable, Equatable {
+  var exposure: Double
+}
+
 @main
 struct PhotoLibraryProbe {
   static func main() throws {
@@ -29,6 +33,28 @@ struct PhotoLibraryProbe {
     precondition(reopened.selectedCatalogID == firstID)
     reopened.deleteCatalog(firstID)
     precondition(reopened.catalogs.count == 1)
+    let oldOriginal = directory.appendingPathComponent("old.jpg")
+    let newOriginal = directory.appendingPathComponent("new.jpg")
+    let edits = directory.appendingPathComponent("Edits")
+    try Data("photo".utf8).write(to: oldOriginal)
+    let oldLocation = EditRecordLocator.locate(sourceURL: oldOriginal, directory: edits)
+    try SavedEditStore.save(SampleGrade(exposure: 1.25), to: oldLocation.pathURL)
+    try FileManager.default.moveItem(at: oldOriginal, to: newOriginal)
+    let transfer = try PhotoEditRelinker.transferSavedEdits(
+      from: oldOriginal, to: newOriginal, directory: edits, as: SampleGrade.self)
+    precondition(transfer == .transferred)
+    let newLocation = EditRecordLocator.locate(sourceURL: newOriginal, directory: edits)
+    let transferred = try JSONDecoder().decode(
+      SampleGrade.self, from: Data(contentsOf: newLocation.primaryURL))
+    precondition(transferred == SampleGrade(exposure: 1.25))
+    let repeated = try PhotoEditRelinker.transferSavedEdits(
+      from: oldOriginal, to: newOriginal, directory: edits, as: SampleGrade.self)
+    precondition(repeated == .existing)
+    reopened.importPhotos([oldOriginal, newOriginal])
+    reopened.relinkPhoto(from: oldOriginal.standardizedFileURL.path, to: newOriginal)
+    let paths = reopened.selectedCatalog?.photoPaths ?? []
+    precondition(!paths.contains(oldOriginal.standardizedFileURL.path))
+    precondition(paths.filter { $0 == newOriginal.standardizedFileURL.path }.count == 1)
     precondition(FileManager.default.fileExists(atPath: url.path))
     try Data("{damaged library".utf8).write(to: url)
     let recovered = PhotoLibraryStore.loadSafely(from: url)

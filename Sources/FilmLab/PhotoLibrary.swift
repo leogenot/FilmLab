@@ -42,6 +42,18 @@ struct PhotoLibrary: Codable, Equatable {
     catalogs[index].photoPaths.removeAll { $0 == path }
   }
 
+  mutating func relinkPhoto(from oldPath: String, to url: URL) {
+    let newPath = url.standardizedFileURL.path
+    for index in catalogs.indices {
+      guard catalogs[index].photoPaths.contains(oldPath) else { continue }
+      catalogs[index].photoPaths = catalogs[index].photoPaths.map {
+        $0 == oldPath ? newPath : $0
+      }
+      var seen = Set<String>()
+      catalogs[index].photoPaths.removeAll { !seen.insert($0).inserted }
+    }
+  }
+
   mutating func deleteCatalog(_ id: UUID) {
     guard catalogs.count > 1 else { return }
     catalogs.removeAll { $0.id == id }
