@@ -24,6 +24,7 @@ private struct PhotoEdits: Codable, Equatable {
   var contrast = 1.0
   var saturation = 1.0
   var warmth = 0.0
+  var outputShoulder = 0.0
   var inputWarmth = 0.0
   var inputTint = 0.0
   var inputTone = 1.0
@@ -84,6 +85,7 @@ private struct PhotoEdits: Codable, Equatable {
     contrast = try values.decodeIfPresent(Double.self, forKey: .contrast) ?? 1
     saturation = try values.decodeIfPresent(Double.self, forKey: .saturation) ?? 1
     warmth = try values.decodeIfPresent(Double.self, forKey: .warmth) ?? 0
+    outputShoulder = try values.decodeIfPresent(Double.self, forKey: .outputShoulder) ?? 0
     inputWarmth = try values.decodeIfPresent(Double.self, forKey: .inputWarmth) ?? 0
     inputTint = try values.decodeIfPresent(Double.self, forKey: .inputTint) ?? 0
     inputTone = try values.decodeIfPresent(Double.self, forKey: .inputTone) ?? 1
@@ -156,6 +158,7 @@ final class PhotoEditor {
   var contrast = 1.0
   var saturation = 1.0
   var warmth = 0.0
+  var outputShoulder = 0.0
   var inputWarmth = 0.0
   var inputTint = 0.0
   var inputTone = 1.0
@@ -253,6 +256,7 @@ final class PhotoEditor {
   private let measuredNegativeKernel = FilmKernels.kernel("measuredNegative")
   private let portraPositiveKernel = FilmKernels.kernel("portraPositive")
   private let renderedInputToneKernel = FilmKernels.kernel("renderedInputTone")
+  private let outputShoulderKernel = FilmKernels.kernel("outputShoulder")
 
   func open(_ url: URL) {
     openTask?.cancel()
@@ -366,6 +370,7 @@ final class PhotoEditor {
     contrast = saved.contrast
     saturation = saved.saturation
     warmth = saved.warmth
+    outputShoulder = saved.outputShoulder
     inputWarmth = saved.inputWarmth
     inputTint = saved.inputTint
     inputTone = saved.inputTone
@@ -497,6 +502,7 @@ final class PhotoEditor {
     edits.contrast = contrast
     edits.saturation = saturation
     edits.warmth = warmth
+    edits.outputShoulder = outputShoulder
     edits.inputWarmth = inputWarmth
     edits.inputTint = inputTint
     edits.inputTone = inputTone
@@ -664,6 +670,7 @@ final class PhotoEditor {
     contrast = defaults.contrast
     saturation = defaults.saturation
     warmth = defaults.warmth
+    outputShoulder = defaults.outputShoulder
     inputWarmth = defaults.inputWarmth
     inputTint = defaults.inputTint
     inputTone = defaults.inputTone
@@ -1003,11 +1010,20 @@ final class PhotoEditor {
       hueShift: selectiveShift, saturation: selectiveSaturation
     )
     let mixed = ColorMixer.apply(to: selected, adjustments: mixer)
-    return framedImage(
-      FilmEffects.apply(
-        to: mixed, grain: grain, grainSize: grainSize, halation: halation,
-        acutance: acutance),
-      aspectOverride: previewUncropped ? 0 : nil)
+    var finished = FilmEffects.apply(
+      to: mixed, grain: grain, grainSize: grainSize, halation: halation,
+      acutance: acutance)
+    if outputShoulder > 0.001 {
+      guard let outputShoulderKernel,
+        let rolled = outputShoulderKernel.apply(
+          extent: finished.extent, arguments: [finished, outputShoulder])
+      else {
+        error = "The output shoulder could not be loaded."
+        return nil
+      }
+      finished = rolled
+    }
+    return framedImage(finished, aspectOverride: previewUncropped ? 0 : nil)
   }
 
   private func framedImage(_ image: CIImage, aspectOverride: Int? = nil) -> CIImage {
@@ -1210,6 +1226,7 @@ struct ContentView: View {
     .onChange(of: editor.contrast) { editor.editsChanged() }
     .onChange(of: editor.saturation) { editor.editsChanged() }
     .onChange(of: editor.warmth) { editor.editsChanged() }
+    .onChange(of: editor.outputShoulder) { editor.editsChanged() }
     .onChange(of: editor.inputWarmth) { editor.editsChanged() }
     .onChange(of: editor.inputTint) { editor.editsChanged() }
     .onChange(of: editor.inputTone) { editor.editsChanged() }
@@ -1589,6 +1606,9 @@ struct ContentView: View {
           control("Contrast", value: $editor.contrast, range: 0.5...1.5)
           control("Saturation", value: $editor.saturation, range: 0...1.5)
           control("Warmth", value: $editor.warmth, range: -1...1)
+          control("Output shoulder", value: $editor.outputShoulder, range: 0...1)
+          Text("Rolls bright output toward white while preserving linear RGB ratios. The film and paper models still respond before this finishing control.")
+            .font(.caption).foregroundStyle(.secondary)
         case .color:
           Text("Color mixer").font(.headline)
           Picker("Color family", selection: $selectedColorBand) {

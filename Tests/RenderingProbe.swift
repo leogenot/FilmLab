@@ -9,6 +9,10 @@ struct RenderingProbe {
       .workingColorSpace: space,
       .workingFormat: CIFormat.RGBAf,
     ])
+    let previewContext = CIContext(options: [
+      .workingColorSpace: space,
+      .workingFormat: CIFormat.RGBAh,
+    ])
     let densityContext = CIContext(options: [
       .workingColorSpace: NSNull(),
       .workingFormat: CIFormat.RGBAf,
@@ -17,6 +21,7 @@ struct RenderingProbe {
     let positive = FilmKernels.kernel("portraPositive")!
     let sceneLight = FilmKernels.kernel("shapeSceneLight")!
     let renderedInputTone = FilmKernels.kernel("renderedInputTone")!
+    let outputShoulder = FilmKernels.kernel("outputShoulder")!
 
     func patch(_ value: Double) -> CIImage {
       CIImage(color: CIColor(red: value, green: value, blue: value, colorSpace: space)!)
@@ -62,6 +67,33 @@ struct RenderingProbe {
       renderedInputTone.apply(extent: coloredInput.extent, arguments: [coloredInput, 0.5])!)
     precondition(abs(tonedColor[0] / tonedColor[1] - 2) < 0.002, "Input tone shifted hue")
     precondition(abs(tonedColor[1] / tonedColor[2] - 2) < 0.002, "Input tone shifted hue")
+
+    func shoulder(_ red: Double, _ green: Double, _ blue: Double, _ amount: Double) -> [Float] {
+      let source = CIImage(
+        color: CIColor(red: red, green: green, blue: blue, colorSpace: space)!
+      ).cropped(to: CGRect(x: 0, y: 0, width: 1, height: 1))
+      return channels(outputShoulder.apply(extent: source.extent, arguments: [source, amount])!)
+    }
+    precondition(abs(shoulder(0.5, 0.4, 0.3, 1)[0] - 0.5) < 0.001)
+    precondition(abs(shoulder(2, 1, 0.5, 0)[0] - 2) < 0.001)
+    let rolledColor = shoulder(2, 1, 0.5, 1)
+    precondition(rolledColor[0] < 1 && rolledColor[0] > 0.95)
+    precondition(abs(rolledColor[0] / rolledColor[1] - 2) < 0.002)
+    precondition(abs(rolledColor[1] / rolledColor[2] - 2) < 0.002)
+    precondition(shoulder(1, 0.5, 0.25, 1)[0] < rolledColor[0])
+    let shoulderSource = CIImage(
+      color: CIColor(red: 2, green: 1, blue: 0.5, colorSpace: space)!
+    ).cropped(to: CGRect(x: 0, y: 0, width: 1, height: 1))
+    let shoulderImage = outputShoulder.apply(
+      extent: shoulderSource.extent, arguments: [shoulderSource, 1.0])!
+    var previewRGBA = [Float](repeating: 0, count: 4)
+    previewRGBA.withUnsafeMutableBytes { bytes in
+      previewContext.render(
+        shoulderImage, toBitmap: bytes.baseAddress!, rowBytes: 16,
+        bounds: CGRect(x: 0, y: 0, width: 1, height: 1),
+        format: .RGBAf, colorSpace: space)
+    }
+    precondition(zip(previewRGBA.prefix(3), rolledColor).allSatisfy { abs($0 - $1) < 0.002 })
 
     for stock in [1.0, 2.0] {
       let under = rendered(stock, -2)

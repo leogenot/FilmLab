@@ -12,6 +12,7 @@ enum FilmKernels {
           "filmResponse", "shapeSceneLight", "measuredNegative", "portraPositive",
           "grade", "selectiveColor", "colorMixerBand", "applyGrain",
           "highlightMask", "applyHalation", "applyAcutance", "renderedInputTone",
+          "outputShoulder",
         ])
         guard required.isSubset(of: Set(names)) else {
           throw KernelLoadError.incompleteLibrary
@@ -52,6 +53,13 @@ enum FilmKernels {
         float relative = clamp(luminance / 0.18, 0.000001, 1000000.0);
         float target = 0.18 * pow(relative, slope);
         return float4(rgb * (target / luminance), pixel.a);
+    }
+    [[stitchable]] float4 outputShoulder(coreimage::sample_t pixel, float amount) {
+        float peak = max(pixel.r, max(pixel.g, pixel.b));
+        if (peak <= 0.75 || amount <= 0.0) return pixel;
+        float rolledPeak = 1.0 - 0.25 * exp(-(peak - 0.75) / 0.25);
+        float scale = mix(1.0, rolledPeak / peak, clamp(amount, 0.0, 1.0));
+        return float4(pixel.rgb * scale, pixel.a);
     }
               inline float response(float light, float ev, float dev, float toe, float shoulder) {
                   float stops = log2(max(light, 0.000001) / 0.18) + ev;
