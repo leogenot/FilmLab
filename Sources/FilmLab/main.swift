@@ -36,6 +36,7 @@ struct PhotoEdits: Codable, Equatable {
   var curveMidtone = 0.0
   var curveHighlight = 0.0
   var outputShoulder = 0.0
+  var compressSRGBGamut = false
   var inputWarmth = 0.0
   var inputTint = 0.0
   var inputTone = 1.0
@@ -172,6 +173,7 @@ struct PhotoEdits: Codable, Equatable {
       result.curveMidtone = source.curveMidtone
       result.curveHighlight = source.curveHighlight
       result.outputShoulder = source.outputShoulder
+      result.compressSRGBGamut = source.compressSRGBGamut
     case .color:
       result.vibrance = source.vibrance
       result.shadowHue = source.shadowHue
@@ -216,6 +218,9 @@ struct PhotoEdits: Codable, Equatable {
     curveMidtone = try values.decodeIfPresent(Double.self, forKey: .curveMidtone) ?? 0
     curveHighlight = try values.decodeIfPresent(Double.self, forKey: .curveHighlight) ?? 0
     outputShoulder = try values.decodeIfPresent(Double.self, forKey: .outputShoulder) ?? 0
+    compressSRGBGamut =
+      try values.decodeIfPresent(Bool.self, forKey: .compressSRGBGamut)
+      ?? UserDefaults.standard.bool(forKey: "FilmLab.compressSRGBGamut")
     inputWarmth = try values.decodeIfPresent(Double.self, forKey: .inputWarmth) ?? 0
     inputTint = try values.decodeIfPresent(Double.self, forKey: .inputTint) ?? 0
     inputTone = try values.decodeIfPresent(Double.self, forKey: .inputTone) ?? 1
@@ -368,6 +373,7 @@ final class PhotoEditor {
   var curveMidtone = 0.0
   var curveHighlight = 0.0
   var outputShoulder = 0.0
+  var compressSRGBGamut = false
   var inputWarmth = 0.0
   var inputTint = 0.0
   var inputTone = 1.0
@@ -439,7 +445,6 @@ final class PhotoEditor {
   var showGamutWarning = false
   var highPrecisionPreview = UserDefaults.standard.bool(forKey: "FilmLab.highPrecisionPreview")
   var displayP3Preview = UserDefaults.standard.bool(forKey: "FilmLab.displayP3Preview")
-  var compressSRGBGamut = UserDefaults.standard.bool(forKey: "FilmLab.compressSRGBGamut")
   var inspectPixel = false
   var pixelReadout: PixelReadout?
   var selectedPixel: CGPoint?
@@ -788,6 +793,7 @@ final class PhotoEditor {
     curveMidtone = saved.curveMidtone
     curveHighlight = saved.curveHighlight
     outputShoulder = saved.outputShoulder
+    compressSRGBGamut = saved.compressSRGBGamut
     inputWarmth = saved.inputWarmth
     inputTint = saved.inputTint
     inputTone = saved.inputTone
@@ -957,6 +963,7 @@ final class PhotoEditor {
     edits.curveMidtone = curveMidtone
     edits.curveHighlight = curveHighlight
     edits.outputShoulder = outputShoulder
+    edits.compressSRGBGamut = compressSRGBGamut
     edits.inputWarmth = inputWarmth
     edits.inputTint = inputTint
     edits.inputTone = inputTone
@@ -1318,6 +1325,7 @@ final class PhotoEditor {
     curveMidtone = defaults.curveMidtone
     curveHighlight = defaults.curveHighlight
     outputShoulder = defaults.outputShoulder
+    compressSRGBGamut = defaults.compressSRGBGamut
     inputWarmth = defaults.inputWarmth
     inputTint = defaults.inputTint
     inputTone = defaults.inputTone
@@ -2144,7 +2152,14 @@ final class PhotoEditor {
     worker.sourceIsRAW = isRAW
     worker.restoreEdits(loaded.value)
     guard let developed = worker.developedImage() else { return nil }
-    return await EditedThumbnailRenderer.shared.render(developed)
+    let thumbnailImage: CIImage
+    if loaded.value.compressSRGBGamut {
+      guard let mapped = OutputGamutMap.apply(to: developed) else { return nil }
+      thumbnailImage = mapped
+    } else {
+      thumbnailImage = developed
+    }
+    return await EditedThumbnailRenderer.shared.render(thumbnailImage)
   }
 
   func exportBatch(
@@ -2152,7 +2167,6 @@ final class PhotoEditor {
     progress: @MainActor (Int, Int) -> Void
   ) async -> String {
     let currentPhotoSaved = flushEdits()
-    let compressOutput = compressSRGBGamut
     var result = BatchExportResult()
     for (index, path) in paths.enumerated() {
       if Task.isCancelled {
@@ -2203,7 +2217,7 @@ final class PhotoEditor {
         try await exporter.export(
           ExportRequest(
             image: image, url: output, format: format, sourceURL: url,
-            compressSRGBGamut: compressOutput))
+            compressSRGBGamut: loaded.value.compressSRGBGamut))
         result.exported += 1
       } catch is CancellationError {
         result.cancelled = true
@@ -2586,8 +2600,7 @@ struct ContentView: View {
       editor.renderPreview()
     }
     .onChange(of: editor.compressSRGBGamut) {
-      UserDefaults.standard.set(editor.compressSRGBGamut, forKey: "FilmLab.compressSRGBGamut")
-      editor.renderPreview()
+      editor.editsChanged()
     }
     .onChange(of: editor.exposure) { editor.editsChanged() }
     .onChange(of: editor.contrast) { editor.editsChanged() }
