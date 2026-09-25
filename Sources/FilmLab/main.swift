@@ -432,6 +432,7 @@ final class PhotoEditor {
   private var batchHistorySavingBlocked = false
   var batchHistoryNotice: String?
   var canUndoBatch: Bool { !lastBatchChanges.isEmpty }
+  var batchChangedPaths: [String] { lastBatchChanges.map(\.path) }
   var isRAWSource: Bool { sourceURL != nil && sourceIsRAW }
   var canExport: Bool {
     preview != nil && !isOpening && rawDecodeTask == nil && !isExporting
@@ -461,6 +462,7 @@ final class PhotoEditor {
   private var pixelVersion = 0
   private var neutralVersion = 0
   private let exporter = ImageExporter()
+  private static let thumbnailDecoder = ImageDecoder()
 
   private static var batchHistoryURL: URL {
     FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -1779,6 +1781,36 @@ final class PhotoEditor {
     }
   }
 
+  static func renderedThumbnail(for url: URL) async -> CGImage? {
+    guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+    let accessing = url.startAccessingSecurityScopedResource()
+    defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+    let isRAW = await thumbnailDecoder.isRAWFile(url)
+    guard !Task.isCancelled else { return nil }
+    let editsDirectory = FileManager.default.urls(
+      for: .applicationSupportDirectory, in: .userDomainMask)[0]
+      .appendingPathComponent("FilmLab/Edits", isDirectory: true)
+    let location = EditRecordLocator.locate(sourceURL: url, directory: editsDirectory)
+    let loaded = SavedEditStore.load(
+      from: location.primaryURL, fallbackURL: location.pathURL,
+      defaultValue: PhotoEdits.defaults(
+        forRAW: isRAW, grainSeed: EditRecordLocator.grainSeed(for: url)))
+    guard loaded.canSave, loaded.notice == nil else { return nil }
+    guard
+      let decoded = try? await thumbnailDecoder.decode(
+        from: url, isRAW: isRAW, flatRAW: loaded.value.flatRAW,
+        highlightRecovery: loaded.value.rawHighlightRecovery,
+        temperature: loaded.value.rawTemperature, tint: loaded.value.rawTint)
+    else { return nil }
+    guard !Task.isCancelled else { return nil }
+    let worker = PhotoEditor()
+    worker.source = decoded.image
+    worker.sourceIsRAW = isRAW
+    worker.restoreEdits(loaded.value)
+    guard let developed = worker.developedImage() else { return nil }
+    return await EditedThumbnailRenderer.shared.render(developed)
+  }
+
   func exportBatch(
     _ paths: [String], to directory: URL, format: ExportFormat,
     progress: @MainActor (Int, Int) -> Void
@@ -1893,6 +1925,8 @@ struct ContentView: View {
   @State private var selectingPhotos = false
   @State private var selectedPhotoPaths = Set<String>()
   @State private var selectionAnchor: String?
+  @State private var thumbnailRefresh: [String: Int] = [:]
+  @State private var lastActiveThumbnailPath: String?
   @State private var librarySearch = ""
   @State private var librarySort: LibrarySort = .importOrder
   @State private var showFavoritesOnly = false
@@ -2127,6 +2161,12 @@ struct ContentView: View {
     .onChange(of: editor.paintingLocalArea) {
       if !editor.paintingLocalArea { paintDragPoints.removeAll() }
     }
+    .onChange(of: editor.sourceURL) {
+      if let lastActiveThumbnailPath {
+        thumbnailRefresh[lastActiveThumbnailPath, default: 0] += 1
+      }
+      lastActiveThumbnailPath = editor.sourceURL?.standardizedFileURL.path
+    }
     .onChange(of: scenePhase) {
       if scenePhase != .active { editor.flushEdits() }
     }
@@ -2300,6 +2340,14 @@ struct ContentView: View {
     }
   }
 
+  private func liveThumbnail(for path: String) -> NSImage? {
+    guard editor.sourceURL?.standardizedFileURL.path == path,
+      !editor.showOriginal, !editor.showLocalMask,
+      !editor.showGamutWarning, !editor.showCropBounds
+    else { return nil }
+    return editor.preview
+  }
+
   private func selectRange(through path: String) {
     let range = LibrarySelection.range(
       in: visibleLibraryPaths, from: selectionAnchor, through: path)
@@ -2314,6 +2362,7 @@ struct ContentView: View {
     applyingBatch = true
     Task {
       libraryNotice = await editor.pasteSettings(to: paths, workspaceOnly: workspaceOnly)
+      for path in paths { thumbnailRefresh[path, default: 0] += 1 }
       applyingBatch = false
       selectedPhotoPaths.removeAll()
       selectionAnchor = nil
@@ -2524,7 +2573,9 @@ struct ContentView: View {
             Spacer()
             if editor.canUndoBatch {
               Button("Undo Last Batch", systemImage: "arrow.uturn.backward") {
+                let paths = editor.batchChangedPaths
                 libraryNotice = editor.undoLastBatch()
+                for path in paths { thumbnailRefresh[path, default: 0] += 1 }
               }
               .disabled(applyingBatch)
             }
@@ -2562,18 +2613,21 @@ struct ContentView: View {
                     selectOrOpenPhoto(path)
                   } label: {
                     VStack(alignment: .leading, spacing: 8) {
-                      PhotoThumbnail(path: path)
-                        .frame(height: 135)
-                        .frame(maxWidth: .infinity)
-                        .background(Color(white: 0.13))
-                        .clipShape(RoundedRectangle(cornerRadius: 7))
-                        .overlay {
-                          RoundedRectangle(cornerRadius: 7)
-                            .strokeBorder(
-                              selectedPhotoPaths.contains(path)
-                                ? Color.white.opacity(0.85) : .clear,
-                              lineWidth: 2)
-                        }
+                      PhotoThumbnail(
+                        path: path, refreshToken: thumbnailRefresh[path, default: 0],
+                        activePreview: liveThumbnail(for: path)
+                      )
+                      .frame(height: 135)
+                      .frame(maxWidth: .infinity)
+                      .background(Color(white: 0.13))
+                      .clipShape(RoundedRectangle(cornerRadius: 7))
+                      .overlay {
+                        RoundedRectangle(cornerRadius: 7)
+                          .strokeBorder(
+                            selectedPhotoPaths.contains(path)
+                              ? Color.white.opacity(0.85) : .clear,
+                            lineWidth: 2)
+                      }
                       Text(URL(fileURLWithPath: path).lastPathComponent)
                         .font(.caption)
                         .lineLimit(1)
@@ -2691,16 +2745,19 @@ struct ContentView: View {
                 selectPhoto(path)
               } label: {
                 VStack(alignment: .leading, spacing: 5) {
-                  PhotoThumbnail(path: path)
-                    .frame(width: 90, height: 62)
-                    .background(Color(white: 0.14))
-                    .clipShape(RoundedRectangle(cornerRadius: 5))
-                    .overlay {
-                      RoundedRectangle(cornerRadius: 5)
-                        .strokeBorder(
-                          editor.sourceURL?.standardizedFileURL.path == path
-                            ? Color.white.opacity(0.8) : .clear, lineWidth: 1.5)
-                    }
+                  PhotoThumbnail(
+                    path: path, refreshToken: thumbnailRefresh[path, default: 0],
+                    activePreview: liveThumbnail(for: path)
+                  )
+                  .frame(width: 90, height: 62)
+                  .background(Color(white: 0.14))
+                  .clipShape(RoundedRectangle(cornerRadius: 5))
+                  .overlay {
+                    RoundedRectangle(cornerRadius: 5)
+                      .strokeBorder(
+                        editor.sourceURL?.standardizedFileURL.path == path
+                          ? Color.white.opacity(0.8) : .clear, lineWidth: 1.5)
+                  }
                   Text(URL(fileURLWithPath: path).lastPathComponent)
                     .font(.caption2)
                     .lineLimit(1)
