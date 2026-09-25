@@ -1164,6 +1164,9 @@ final class PhotoEditor {
     }
     let decoder = ImageDecoder()
     var changes: [BatchSettingsChange] = []
+    let previousBatch = lastBatchChanges
+    var undoHistoryWarning = false
+    var appliedCount = 0
     var skipped = 0
     var failures: [String] = []
     var cancelled = false
@@ -1212,37 +1215,55 @@ final class PhotoEditor {
       if updated == loaded.value {
         skipped += 1
       } else {
+        let change = BatchSettingsChange(
+          path: path, location: location, before: loaded.value, after: updated)
+        let backupURL = editsDirectory.appendingPathComponent("BatchBackups", isDirectory: true)
+          .appendingPathComponent("\(UUID().uuidString).json")
         do {
-          let backupURL = editsDirectory.appendingPathComponent("BatchBackups", isDirectory: true)
-            .appendingPathComponent("\(UUID().uuidString).json")
           try SavedEditStore.save(
             BatchSettingsBackup(sourcePath: path, previous: loaded.value), to: backupURL)
-          try SavedEditStore.save(updated, to: location.pathURL)
-          if location.primaryURL != location.pathURL {
-            try SavedEditStore.save(updated, to: location.primaryURL)
+          lastBatchChanges = changes + [change]
+          if saveBatchHistory() {
+            do {
+              try SavedEditStore.save(updated, to: location.pathURL)
+              if location.primaryURL != location.pathURL {
+                try SavedEditStore.save(updated, to: location.primaryURL)
+              }
+              changes.append(change)
+              appliedCount += 1
+            } catch {
+              do {
+                try SavedEditStore.save(loaded.value, to: location.pathURL)
+                if location.primaryURL != location.pathURL {
+                  try SavedEditStore.save(loaded.value, to: location.primaryURL)
+                }
+                lastBatchChanges = changes.isEmpty ? previousBatch : changes
+                if !saveBatchHistory() { undoHistoryWarning = true }
+              } catch {
+                // Keep the staged undo intent when either edit record could not be restored.
+                changes.append(change)
+                lastBatchChanges = changes
+              }
+              failures.append(url.lastPathComponent)
+            }
+          } else {
+            lastBatchChanges = changes.isEmpty ? previousBatch : changes
+            try? FileManager.default.removeItem(at: backupURL)
+            failures.append(url.lastPathComponent + " (undo history unavailable)")
+            undoHistoryWarning = true
           }
-          changes.append(
-            BatchSettingsChange(
-              path: path, location: location, before: loaded.value, after: updated))
         } catch {
-          try? SavedEditStore.save(loaded.value, to: location.pathURL)
-          if location.primaryURL != location.pathURL {
-            try? SavedEditStore.save(loaded.value, to: location.primaryURL)
-          }
           failures.append(url.lastPathComponent)
         }
       }
       if access { url.stopAccessingSecurityScopedResource() }
       await Task.yield()
     }
-    if !changes.isEmpty {
-      lastBatchChanges = changes
-    }
     var message = BatchSettingsResult(
-      applied: changes.count, skipped: skipped, failures: failures, cancelled: cancelled
+      applied: appliedCount, skipped: skipped, failures: failures, cancelled: cancelled
     ).summary
-    if !changes.isEmpty, !saveBatchHistory() {
-      message += " Undo is available now but may not survive an app restart."
+    if undoHistoryWarning {
+      message += " Check the batch undo history notice before continuing."
     }
     return BatchPasteOutcome(
       summary: message, changedPaths: changes.map(\.path), cancelled: cancelled)
@@ -1280,11 +1301,12 @@ final class PhotoEditor {
         }
         current = loaded.value
       }
-      guard current == change.after else {
+      guard current == change.after || current == change.before else {
         failures.append(url.lastPathComponent)
         remaining.append(change)
         continue
       }
+      let wasApplied = current == change.after
       do {
         try SavedEditStore.save(change.before, to: change.location.pathURL)
         if change.location.primaryURL != change.location.pathURL {
@@ -1293,9 +1315,13 @@ final class PhotoEditor {
         if sourceURL?.standardizedFileURL.path == change.path {
           restoreEdits(change.before)
           editsChanged()
-          flushEdits()
+          guard flushEdits() else {
+            failures.append(url.lastPathComponent)
+            remaining.append(change)
+            continue
+          }
         }
-        restored += 1
+        if wasApplied { restored += 1 }
       } catch {
         failures.append(url.lastPathComponent)
         remaining.append(change)
