@@ -903,9 +903,11 @@ final class PhotoEditor {
       }
       image = shaped
     }
-    for area in radialLights where abs(area.exposure) > 0.001 {
+    for area in radialLights
+    where abs(area.exposure) > 0.001 || abs(area.warmth) > 0.001 || abs(area.tint) > 0.001 {
       image = LocalExposure.apply(
-        to: image, ev: area.exposure, centerX: area.centerX,
+        to: image, ev: area.exposure, warmth: area.warmth, tint: area.tint,
+        centerX: area.centerX,
         centerY: area.centerY, radius: area.radius, feather: area.feather,
         inverted: area.inverted, shape: area.shape, angle: area.angle,
         brushSize: area.brushSize, strokes: area.strokes)
@@ -1625,6 +1627,8 @@ struct ContentView: View {
           .pickerStyle(.menu)
           Toggle("Invert area", isOn: localBoolBinding(\.inverted))
           control("Exposure (EV)", value: localBinding(\.exposure), range: -2...2)
+          control("Warmth", value: localBinding(\.warmth), range: -1...1)
+          control("Tint", value: localBinding(\.tint), range: -1...1)
           if editor.radialLights[editor.selectedLocalIndex].shape == 2 {
             control("Brush size", value: localBinding(\.brushSize), range: 0.003...0.15)
             control("Soft edge", value: localBinding(\.feather), range: 0...1)
@@ -1641,7 +1645,7 @@ struct ContentView: View {
             }
           }
           Text(
-            "Each area changes scene light before film processing. Painted strokes follow source pixels through framing. A new linear area starts vertically in the displayed photo. Show mask is temporary; 0 EV disables the selected area."
+            "Each area changes light and color before film processing. Painted strokes follow source pixels through framing. A new linear area starts vertically in the displayed photo. Show mask is temporary; zero exposure, warmth, and tint disable the selected area."
           )
           .font(.caption).foregroundStyle(.secondary)
         case .framing:

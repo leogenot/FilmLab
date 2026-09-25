@@ -114,12 +114,15 @@ enum LocalExposure {
   }
 
   static func apply(
-    to image: CIImage, ev: Double, centerX: Double, centerY: Double,
+    to image: CIImage, ev: Double, warmth: Double = 0, tint: Double = 0,
+    centerX: Double, centerY: Double,
     radius: Double, feather: Double, inverted: Bool = false,
     shape: Int = 0, angle: Double = 90,
     brushSize: Double = 0.03, strokes: [BrushStroke] = []
   ) -> CIImage {
-    guard abs(ev) > 0.001, image.extent.width > 0, image.extent.height > 0 else {
+    guard abs(ev) > 0.001 || abs(warmth) > 0.001 || abs(tint) > 0.001,
+      image.extent.width > 0, image.extent.height > 0
+    else {
       return image
     }
     guard
@@ -128,8 +131,19 @@ enum LocalExposure {
         inverted: inverted, shape: shape, angle: angle,
         brushSize: brushSize, strokes: strokes)
     else { return image }
-    let lit = image.applyingFilter("CIExposureAdjust", parameters: [kCIInputEVKey: ev])
-    return lit.applyingFilter(
+    var adjusted = image
+    if abs(ev) > 0.001 {
+      adjusted = adjusted.applyingFilter("CIExposureAdjust", parameters: [kCIInputEVKey: ev])
+    }
+    if abs(warmth) > 0.001 || abs(tint) > 0.001 {
+      let balance = CIFilter.temperatureAndTint()
+      balance.inputImage = adjusted
+      balance.neutral = CIVector(x: 6500, y: 0)
+      balance.targetNeutral = CIVector(x: 6500 - warmth * 1000, y: tint * 100)
+      guard let balanced = balance.outputImage else { return image }
+      adjusted = balanced
+    }
+    return adjusted.applyingFilter(
       "CIBlendWithMask",
       parameters: [kCIInputBackgroundImageKey: image, kCIInputMaskImageKey: mask]
     ).cropped(to: image.extent)
