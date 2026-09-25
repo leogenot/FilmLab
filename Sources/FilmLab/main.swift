@@ -362,6 +362,8 @@ final class PhotoEditor {
   var placingLocalArea = false
   var pickingLocalHue = false
   var localHueNotice: String?
+  var pickingLocalTone = false
+  var localToneNotice: String?
   var pickingNeutralArea = false
   var neutralNotice: String?
   var paintingLocalArea = false
@@ -462,9 +464,11 @@ final class PhotoEditor {
   private var pixelTask: Task<Void, Never>?
   private var neutralTask: Task<Void, Never>?
   private var localHueTask: Task<Void, Never>?
+  private var localToneTask: Task<Void, Never>?
   private var pixelVersion = 0
   private var neutralVersion = 0
   private var localHueVersion = 0
+  private var localToneVersion = 0
   private let exporter = ImageExporter()
   private static let thumbnailDecoder = ImageDecoder()
 
@@ -562,6 +566,8 @@ final class PhotoEditor {
         neutralNotice = nil
         setPickingLocalHue(false)
         localHueNotice = nil
+        setPickingLocalTone(false)
+        localToneNotice = nil
         if let scopedURL { scopedURL.stopAccessingSecurityScopedResource() }
         scopedURL = access ? url : nil
         retainAccess = access
@@ -1302,8 +1308,10 @@ final class PhotoEditor {
   func selectLocalArea(_ index: Int) {
     guard radialLights.indices.contains(index) else { return }
     setPickingLocalHue(false)
+    setPickingLocalTone(false)
     selectedLocalIndex = index
     localHueNotice = nil
+    localToneNotice = nil
     if radialLights[index].shape != 2 { paintingLocalArea = false }
     if showLocalMask { renderPreview() }
   }
@@ -1329,6 +1337,7 @@ final class PhotoEditor {
   func setMaskPreview(_ visible: Bool) {
     setPickingNeutralArea(false)
     setPickingLocalHue(false)
+    setPickingLocalTone(false)
     placingLocalArea = false
     paintingLocalArea = false
     showCropBounds = false
@@ -1366,6 +1375,7 @@ final class PhotoEditor {
   func setPlacingLocalArea(_ placing: Bool) {
     setPickingNeutralArea(false)
     setPickingLocalHue(false)
+    setPickingLocalTone(false)
     placingLocalArea = placing && source != nil
     if placingLocalArea {
       paintingLocalArea = false
@@ -1381,6 +1391,7 @@ final class PhotoEditor {
   func setPaintingLocalArea(_ painting: Bool) {
     setPickingNeutralArea(false)
     setPickingLocalHue(false)
+    setPickingLocalTone(false)
     paintingLocalArea =
       painting && source != nil
       && radialLights[selectedLocalIndex].shape == 2
@@ -1709,7 +1720,10 @@ final class PhotoEditor {
   }
 
   func setPickingNeutralArea(_ picking: Bool) {
-    if picking { setPickingLocalHue(false) }
+    if picking {
+      setPickingLocalHue(false)
+      setPickingLocalTone(false)
+    }
     neutralTask?.cancel()
     neutralVersion += 1
     pickingNeutralArea = picking && source != nil
@@ -1735,6 +1749,7 @@ final class PhotoEditor {
     pickingLocalHue = picking && source != nil
     if pickingLocalHue {
       setPickingNeutralArea(false)
+      setPickingLocalTone(false)
       localHueNotice = nil
       placingLocalArea = false
       paintingLocalArea = false
@@ -1747,6 +1762,62 @@ final class PhotoEditor {
       compareEnabled = false
       zoom100 = false
       renderPreview()
+    }
+  }
+
+  func setPickingLocalTone(_ picking: Bool) {
+    localToneTask?.cancel()
+    localToneVersion += 1
+    pickingLocalTone = picking && source != nil
+    if pickingLocalTone {
+      setPickingNeutralArea(false)
+      setPickingLocalHue(false)
+      localToneNotice = nil
+      placingLocalArea = false
+      paintingLocalArea = false
+      inspectPixel = false
+      selectedPixel = nil
+      pixelReadout = nil
+      showCropBounds = false
+      showLocalMask = false
+      showOriginal = false
+      compareEnabled = false
+      zoom100 = false
+      renderPreview()
+    }
+  }
+
+  func pickLocalTone(displayX: Double, displayY: Double) {
+    guard pickingLocalTone, let source, let sourceURL,
+      let location = Framing.sourceLocation(
+        displayX: displayX, displayY: displayY, sourceExtent: source.extent,
+        quarterTurns: frameRotation, straightenDegrees: frameStraighten,
+        aspect: frameAspect, offsetX: frameOffsetX, offsetY: frameOffsetY,
+        freeCrop: frameFreeCrop),
+      let input = imageBeforeLocalArea(selectedLocalIndex)
+    else { return }
+    pickingLocalTone = false
+    localToneTask?.cancel()
+    localToneVersion += 1
+    let version = localToneVersion
+    let areaIndex = selectedLocalIndex
+    let request = PixelSampleRequest(
+      input: input, output: input, inputLocation: location,
+      displayX: displayX, displayY: displayY, sourceURL: scopedURL)
+    localToneTask = Task {
+      let sampled = await pixelSampler.sampleInput(request)
+      guard !Task.isCancelled, version == localToneVersion, self.sourceURL == sourceURL,
+        selectedLocalIndex == areaIndex
+      else { return }
+      localToneTask = nil
+      guard let sampled else {
+        localToneNotice = "Could not read that pixel. Try another detailed area."
+        return
+      }
+      radialLights[areaIndex].toneCenter = min(max(sampled.stopsFromMiddleGray, -6), 6)
+      radialLights[areaIndex].toneRangeEnabled = true
+      localToneNotice = nil
+      editsChanged()
     }
   }
 
@@ -2935,6 +3006,17 @@ struct ContentView: View {
           .allowsHitTesting(false)
           .zIndex(1)
       }
+      if editor.pickingLocalTone {
+        Text("Click a detail to target its pre-film brightness")
+          .font(.caption.weight(.semibold))
+          .padding(9)
+          .background(.ultraThinMaterial)
+          .clipShape(RoundedRectangle(cornerRadius: 7))
+          .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+          .padding(16)
+          .allowsHitTesting(false)
+          .zIndex(1)
+      }
       if let preview = editor.preview {
         if editor.compareEnabled, let original = editor.comparisonPreview {
           GeometryReader { geometry in
@@ -3080,6 +3162,7 @@ struct ContentView: View {
                 }.onEnded { value in
                   if editor.inspectPixel || editor.placingLocalArea
                     || editor.pickingNeutralArea || editor.pickingLocalHue
+                    || editor.pickingLocalTone
                   {
                     let scale = min(
                       geometry.size.width / preview.size.width,
@@ -3094,6 +3177,8 @@ struct ContentView: View {
                       editor.pickNeutralArea(displayX: x, displayY: y)
                     } else if editor.pickingLocalHue {
                       editor.pickLocalHue(displayX: x, displayY: y)
+                    } else if editor.pickingLocalTone {
+                      editor.pickLocalTone(displayX: x, displayY: y)
                     } else if editor.inspectPixel {
                       editor.inspect(displayX: x, displayY: y)
                     } else {
@@ -3459,6 +3544,14 @@ struct ContentView: View {
           control("Tint", value: localBinding(\.tint), range: -1...1)
           Toggle("Limit by brightness", isOn: localBoolBinding(\.toneRangeEnabled))
           if editor.radialLights[editor.selectedLocalIndex].toneRangeEnabled {
+            Button(
+              editor.pickingLocalTone ? "Cancel pick" : "Pick brightness on photo",
+              systemImage: "eyedropper"
+            ) { editor.setPickingLocalTone(!editor.pickingLocalTone) }
+            .disabled(editor.preview == nil)
+            if let notice = editor.localToneNotice {
+              Text(notice).font(.caption).foregroundStyle(.orange)
+            }
             control("Brightness center (stops)", value: localBinding(\.toneCenter), range: -6...6)
             control("Brightness width (stops)", value: localBinding(\.toneWidth), range: 0.5...8)
             control("Brightness softness", value: localBinding(\.toneFeather), range: 0.1...2)

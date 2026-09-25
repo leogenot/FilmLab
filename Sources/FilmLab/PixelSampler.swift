@@ -7,6 +7,10 @@ struct LinearRGB: Sendable {
 
   var luminance: Double { 0.2126 * red + 0.7152 * green + 0.0722 * blue }
 
+  var stopsFromMiddleGray: Double {
+    log2(max(luminance, 0.000001) / 0.18)
+  }
+
   var hueDegrees: Double? {
     let r = max(red, 0)
     let g = max(green, 0)
