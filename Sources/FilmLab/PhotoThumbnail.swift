@@ -28,8 +28,9 @@ struct PhotoThumbnail: View {
       }
     }
     .clipped()
-    .task(id: "\(path)#\(refreshToken)") {
+    .task(id: "\(path)#\(refreshToken)#\(activePreview == nil)") {
       image = nil
+      guard activePreview == nil else { return }
       if let original = await ThumbnailLoader.shared.loadOriginal(path), !Task.isCancelled {
         image = NSImage(
           cgImage: original.image,
@@ -52,6 +53,15 @@ private struct SendableThumbnail: @unchecked Sendable {
 
 private actor ThumbnailLoader {
   static let shared = ThumbnailLoader()
+  private struct EditedKey: Hashable, Sendable {
+    let path: String
+    let refreshToken: Int
+  }
+  private let queue = RenderWorkQueue<EditedKey, SendableThumbnail>(maxConcurrent: 2) { key in
+    await PhotoEditor.renderedThumbnail(for: URL(fileURLWithPath: key.path)).map {
+      SendableThumbnail(image: $0)
+    }
+  }
   private var originals: [String: SendableThumbnail] = [:]
   private var edited: [String: (refreshToken: Int, thumbnail: SendableThumbnail?)] = [:]
   private var order: [String] = []
@@ -88,11 +98,10 @@ private actor ThumbnailLoader {
       return cached.thumbnail
     }
     guard !Task.isCancelled else { return nil }
-    let rendered = await PhotoEditor.renderedThumbnail(for: URL(fileURLWithPath: path))
+    let rendered = await queue.value(for: EditedKey(path: path, refreshToken: refreshToken))
     guard !Task.isCancelled else { return nil }
-    let result = rendered.map { SendableThumbnail(image: $0) }
-    edited[path] = (refreshToken, result)
-    return result
+    if originals[path] != nil { edited[path] = (refreshToken, rendered) }
+    return rendered
   }
 }
 
