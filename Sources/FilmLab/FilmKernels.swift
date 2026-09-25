@@ -17,6 +17,7 @@ enum FilmKernels {
           "vibrance",
           "outputGamutWarning",
           "localLuminanceMask",
+          "localHueMask",
         ])
         guard required.isSubset(of: Set(names)) else {
           throw KernelLoadError.incompleteLibrary
@@ -99,6 +100,28 @@ enum FilmKernels {
         float softness = clamp(feather, 0.1, 2.0) * 0.5;
         float selected = 1.0 - smoothstep(max(0.0, halfWidth - softness),
                                           halfWidth + softness, distance);
+        return float4(selected, selected, selected, 1.0);
+    }
+    [[stitchable]] float4 localHueMask(coreimage::sample_t pixel,
+                                      float center, float width, float feather) {
+        float3 rgb = max(pixel.rgb, float3(0.0));
+        float maximum = max(max(rgb.r, rgb.g), rgb.b);
+        float minimum = min(min(rgb.r, rgb.g), rgb.b);
+        float chroma = maximum - minimum;
+        if (maximum < 0.002 || chroma < 0.000001) return float4(0.0, 0.0, 0.0, 1.0);
+        float hue;
+        if (maximum == rgb.r) hue = (rgb.g - rgb.b) / chroma;
+        else if (maximum == rgb.g) hue = (rgb.b - rgb.r) / chroma + 2.0;
+        else hue = (rgb.r - rgb.g) / chroma + 4.0;
+        hue = fract(hue / 6.0 + 1.0) * 360.0;
+        float selectedCenter = fract(center / 360.0 + 1.0) * 360.0;
+        float distance = abs(hue - selectedCenter);
+        distance = min(distance, 360.0 - distance);
+        float outer = clamp(width, 5.0, 90.0);
+        float inner = max(0.0, outer - clamp(feather, 5.0, 45.0));
+        float hueWeight = 1.0 - smoothstep(inner, outer, distance);
+        float saturationWeight = smoothstep(0.02, 0.12, chroma / maximum);
+        float selected = hueWeight * saturationWeight;
         return float4(selected, selected, selected, 1.0);
     }
     inline float toneCurveTangent(float previous, float next,

@@ -81,8 +81,42 @@ struct LocalExposureProbe {
           .utf8))
     precondition(
       oldArea.shape == 0 && oldArea.angle == 90 && oldArea.inverted
-        && oldArea.warmth == 0 && oldArea.tint == 0 && !oldArea.toneRangeEnabled,
+        && oldArea.warmth == 0 && oldArea.tint == 0 && !oldArea.toneRangeEnabled
+        && !oldArea.hueRangeEnabled,
       "Older saved radial areas did not decode")
+    var colorPixels = [Float](repeating: 1, count: 4 * 4)
+    let colors: [[Float]] = [
+      [1, 0, 0], [0, 1, 0], [0, 0, 1], [0.5, 0.5, 0.5],
+    ]
+    for (index, rgb) in colors.enumerated() {
+      for channel in 0..<3 { colorPixels[index * 4 + channel] = rgb[channel] }
+    }
+    let colorSource = colorPixels.withUnsafeBytes { bytes in
+      CIImage(
+        bitmapData: Data(bytes), bytesPerRow: 4 * 4 * MemoryLayout<Float>.size,
+        size: CGSize(width: 4, height: 1), format: .RGBAf, colorSpace: space)
+    }
+    let colorMask = LocalExposure.mask(
+      for: colorSource, centerX: 0.5, centerY: 0.5, radius: 1,
+      feather: 0.01, hueRangeEnabled: true, hueCenter: 240,
+      hueWidth: 45, hueFeather: 20)!
+    precondition(red(colorMask, 0, 0) < 0.01, "Blue mask included red")
+    precondition(red(colorMask, 1, 0) < 0.01, "Blue mask included green")
+    precondition(red(colorMask, 2, 0) > 0.99, "Blue mask missed blue")
+    precondition(red(colorMask, 3, 0) < 0.01, "Blue mask included gray")
+    let colorBright = LocalExposure.apply(
+      to: colorSource, ev: 1, centerX: 0.5, centerY: 0.5,
+      radius: 1, feather: 0.01, hueRangeEnabled: true,
+      hueCenter: 240, hueWidth: 45, hueFeather: 20)
+    precondition(channel(colorBright, 0, 0, 2) < 0.01, "Red pixel gained blue")
+    precondition(channel(colorBright, 2, 0, 2) > 1.9, "Blue pixel did not brighten")
+    let combinedMask = LocalExposure.mask(
+      for: colorSource, centerX: 0.5, centerY: 0.5, radius: 1,
+      feather: 0.01, toneRangeEnabled: true, toneCenter: 2,
+      toneWidth: 1, toneFeather: 0.5,
+      hueRangeEnabled: true, hueCenter: 240,
+      hueWidth: 45, hueFeather: 20)!
+    precondition(red(combinedMask, 2, 0) < 0.01, "Tonal gate did not narrow hue mask")
     var tonalPixels = [Float](repeating: 1, count: 3 * 4)
     for (index, luminance) in [Float(0.018), 0.18, 1.8].enumerated() {
       for channel in 0..<3 { tonalPixels[index * 4 + channel] = luminance }

@@ -10,7 +10,9 @@ enum LocalExposure {
     shape: Int = 0, angle: Double = 90,
     brushSize: Double = 0.03, strokes: [BrushStroke] = [],
     toneRangeEnabled: Bool = false, toneCenter: Double = 0,
-    toneWidth: Double = 4, toneFeather: Double = 1
+    toneWidth: Double = 4, toneFeather: Double = 1,
+    hueRangeEnabled: Bool = false, hueCenter: Double = 210,
+    hueWidth: Double = 45, hueFeather: Double = 20
   ) -> CIImage? {
     guard image.extent.width > 0, image.extent.height > 0 else { return nil }
     let extent = image.extent
@@ -23,9 +25,11 @@ enum LocalExposure {
           extent: extent, brushSize: brushSize, feather: feather, strokes: strokes)
       else { return nil }
       let geometric = inverted ? mask.applyingFilter("CIColorInvert").cropped(to: extent) : mask
-      return tonalMask(
+      return rangedMask(
         geometric, source: image, enabled: toneRangeEnabled,
-        center: toneCenter, width: toneWidth, feather: toneFeather)
+        center: toneCenter, width: toneWidth, feather: toneFeather,
+        hueEnabled: hueRangeEnabled, hueCenter: hueCenter,
+        hueWidth: hueWidth, hueFeather: hueFeather)
     }
     if shape == 1 {
       let radians = min(max(angle, -180), 180) * .pi / 180
@@ -41,9 +45,11 @@ enum LocalExposure {
       gradient.color1 = CIColor(red: 1, green: 1, blue: 1)
       guard let mask = gradient.outputImage?.cropped(to: extent) else { return nil }
       let geometric = inverted ? mask.applyingFilter("CIColorInvert").cropped(to: extent) : mask
-      return tonalMask(
+      return rangedMask(
         geometric, source: image, enabled: toneRangeEnabled,
-        center: toneCenter, width: toneWidth, feather: toneFeather)
+        center: toneCenter, width: toneWidth, feather: toneFeather,
+        hueEnabled: hueRangeEnabled, hueCenter: hueCenter,
+        hueWidth: hueWidth, hueFeather: hueFeather)
     }
     let inner = outer * (1 - min(max(feather, 0.01), 1))
     let gradient = CIFilter.radialGradient()
@@ -59,23 +65,38 @@ enum LocalExposure {
         tx: extent.minX + extent.width * x, ty: extent.minY + extent.height * y)
     ).cropped(to: extent)
     let geometric = inverted ? mask.applyingFilter("CIColorInvert").cropped(to: extent) : mask
-    return tonalMask(
+    return rangedMask(
       geometric, source: image, enabled: toneRangeEnabled,
-      center: toneCenter, width: toneWidth, feather: toneFeather)
+      center: toneCenter, width: toneWidth, feather: toneFeather,
+      hueEnabled: hueRangeEnabled, hueCenter: hueCenter,
+      hueWidth: hueWidth, hueFeather: hueFeather)
   }
 
-  private static func tonalMask(
+  private static func rangedMask(
     _ geometry: CIImage, source: CIImage, enabled: Bool,
-    center: Double, width: Double, feather: Double
+    center: Double, width: Double, feather: Double,
+    hueEnabled: Bool, hueCenter: Double, hueWidth: Double, hueFeather: Double
   ) -> CIImage? {
-    guard enabled else { return geometry }
-    guard let kernel = FilmKernels.kernel("localLuminanceMask"),
-      let tone = kernel.apply(
-        extent: source.extent, arguments: [source, center, width, feather])
-    else { return nil }
-    return geometry.applyingFilter(
-      "CIMultiplyBlendMode", parameters: [kCIInputBackgroundImageKey: tone]
-    ).cropped(to: source.extent)
+    var result = geometry
+    if enabled {
+      guard let kernel = FilmKernels.kernel("localLuminanceMask"),
+        let tone = kernel.apply(
+          extent: source.extent, arguments: [source, center, width, feather])
+      else { return nil }
+      result = result.applyingFilter(
+        "CIMultiplyBlendMode", parameters: [kCIInputBackgroundImageKey: tone]
+      ).cropped(to: source.extent)
+    }
+    if hueEnabled {
+      guard let kernel = FilmKernels.kernel("localHueMask"),
+        let hue = kernel.apply(
+          extent: source.extent, arguments: [source, hueCenter, hueWidth, hueFeather])
+      else { return nil }
+      result = result.applyingFilter(
+        "CIMultiplyBlendMode", parameters: [kCIInputBackgroundImageKey: hue]
+      ).cropped(to: source.extent)
+    }
+    return result
   }
 
   private static func paintedMask(
@@ -145,7 +166,9 @@ enum LocalExposure {
     shape: Int = 0, angle: Double = 90,
     brushSize: Double = 0.03, strokes: [BrushStroke] = [],
     toneRangeEnabled: Bool = false, toneCenter: Double = 0,
-    toneWidth: Double = 4, toneFeather: Double = 1
+    toneWidth: Double = 4, toneFeather: Double = 1,
+    hueRangeEnabled: Bool = false, hueCenter: Double = 210,
+    hueWidth: Double = 45, hueFeather: Double = 20
   ) -> CIImage {
     guard abs(ev) > 0.001 || abs(warmth) > 0.001 || abs(tint) > 0.001,
       image.extent.width > 0, image.extent.height > 0
@@ -158,7 +181,9 @@ enum LocalExposure {
         inverted: inverted, shape: shape, angle: angle,
         brushSize: brushSize, strokes: strokes,
         toneRangeEnabled: toneRangeEnabled, toneCenter: toneCenter,
-        toneWidth: toneWidth, toneFeather: toneFeather)
+        toneWidth: toneWidth, toneFeather: toneFeather,
+        hueRangeEnabled: hueRangeEnabled, hueCenter: hueCenter,
+        hueWidth: hueWidth, hueFeather: hueFeather)
     else { return image }
     var adjusted = image
     if abs(ev) > 0.001 {

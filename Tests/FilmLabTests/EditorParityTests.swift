@@ -74,7 +74,9 @@ final class EditorParityTests: XCTestCase {
         RadialAdjustment(
           exposure: 0.35, warmth: 0.1, centerX: 0.52, centerY: 0.46,
           radius: 0.3, feather: 0.6, toneRangeEnabled: true,
-          toneCenter: 0, toneWidth: 4, toneFeather: 1)
+          toneCenter: 0, toneWidth: 4, toneFeather: 1,
+          hueRangeEnabled: true, hueCenter: 210,
+          hueWidth: 60, hueFeather: 20)
       ]
       editor.frameRotation = 1
       editor.frameAspect = 2
@@ -97,6 +99,8 @@ final class EditorParityTests: XCTestCase {
       let area = try XCTUnwrap(areas.first)
       XCTAssertEqual(area["toneRangeEnabled"] as? Bool, true)
       XCTAssertEqual(area["toneWidth"] as? Double, 4)
+      XCTAssertEqual(area["hueRangeEnabled"] as? Bool, true)
+      XCTAssertEqual(area["hueCenter"] as? Double, 210)
       let output = directory.appendingPathComponent("\(kind)-FilmLab.tiff")
       let exported = try XCTUnwrap(CIImage(contentsOf: output))
       let difference = compare(preview: previewImage, export: exported)

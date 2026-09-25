@@ -1443,7 +1443,9 @@ final class PhotoEditor {
         shape: area.shape, angle: area.angle,
         brushSize: area.brushSize, strokes: area.strokes,
         toneRangeEnabled: area.toneRangeEnabled, toneCenter: area.toneCenter,
-        toneWidth: area.toneWidth, toneFeather: area.toneFeather)
+        toneWidth: area.toneWidth, toneFeather: area.toneFeather,
+        hueRangeEnabled: area.hueRangeEnabled, hueCenter: area.hueCenter,
+        hueWidth: area.hueWidth, hueFeather: area.hueFeather)
     else { return nil }
     return framedImage(mask)
   }
@@ -1493,7 +1495,9 @@ final class PhotoEditor {
         inverted: area.inverted, shape: area.shape, angle: area.angle,
         brushSize: area.brushSize, strokes: area.strokes,
         toneRangeEnabled: area.toneRangeEnabled, toneCenter: area.toneCenter,
-        toneWidth: area.toneWidth, toneFeather: area.toneFeather)
+        toneWidth: area.toneWidth, toneFeather: area.toneFeather,
+        hueRangeEnabled: area.hueRangeEnabled, hueCenter: area.hueCenter,
+        hueWidth: area.hueWidth, hueFeather: area.hueFeather)
     }
     if abs(filmLightWarmth) > 0.001 || abs(filmLightTint) > 0.001 {
       let balance = CIFilter.temperatureAndTint()
@@ -3370,6 +3374,16 @@ struct ContentView: View {
             control("Brightness softness", value: localBinding(\.toneFeather), range: 0.1...2)
             Text(
               "Selects pre-film luminance relative to 18% linear gray. JPEG tone is already baked in. Use Show mask to inspect the affected pixels."
+            )
+            .font(.caption).foregroundStyle(.secondary)
+          }
+          Toggle("Limit by color", isOn: localBoolBinding(\.hueRangeEnabled))
+          if editor.radialLights[editor.selectedLocalIndex].hueRangeEnabled {
+            control("Hue center (°)", value: localBinding(\.hueCenter), range: 0...360)
+            control("Hue reach (°)", value: localBinding(\.hueWidth), range: 5...90)
+            control("Hue softness (°)", value: localBinding(\.hueFeather), range: 5...45)
+            Text(
+              "Selects colored pixels by pre-film RGB hue; grays and very dark pixels are excluded. Use Show mask to inspect the selection."
             )
             .font(.caption).foregroundStyle(.secondary)
           }

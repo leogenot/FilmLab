@@ -24,7 +24,7 @@ Input neutral correction averages a 32 × 32 decoded-pixel patch chosen in Fit v
 
 Film-light warmth and tint are creative balances after input correction and local edits but before the stock response. They are included in copied settings and saved looks. They let the stock model react to a changed input color, while output warmth and tint finish the developed image. These controls are not measured illuminant or film spectral corrections.
 
-Each local area can optionally limit its spatial mask to a range of pre-film luminance, with adjustable center, width, and softness in stops around 18% linear gray. Show mask previews the combined selection. This targets brightness within a brush, radial, or linear area; it does not recover clipped JPEG pixels or model a film stock's spectral sensitivity.
+Each local area can optionally limit its spatial mask by pre-film luminance and RGB hue. Both ranges have adjustable centers and soft edges, and can be combined; Show mask previews the intersection. This targets brightness and color within a brush, radial, or linear area. It does not recover clipped JPEG pixels or model a film stock's spectral sensitivity.
 
 Recovery copies preserve unreadable edit data for inspection. When a valid path backup exists, FilmLab restores it to a missing or damaged identity record and shows a notice. If neither record can be decoded, FilmLab cannot reconstruct those edits automatically. The editor can reveal a damaged record's recovery copy in Finder.
 
