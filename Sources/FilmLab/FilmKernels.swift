@@ -280,6 +280,13 @@ enum FilmKernels {
              + (-2.0 * t3 + 3.0 * t2) * y1
              + (t3 - t2) * width * m1;
     }
+    inline float3 paperDensityShoulder(float x, float endpoint,
+                                       float3 density, float3 tangent) {
+        // A provisional, bounded continuation with the fitted endpoint slope.
+        // It avoids the kink from clamping a still-rising paper curve.
+        float distance = max(x - endpoint, 0.0);
+        return density + tangent * (0.5 * (1.0 - exp(-distance / 0.5)));
+    }
     inline float3 portraDensityAt(float logH) {
         if (logH <= portraH[0]) return portraD[0];
         for (int i = 0; i < 8; i++) {
@@ -407,7 +414,7 @@ enum FilmKernels {
                                      enduraTangent[i], enduraTangent[i + 1]);
             }
         }
-        return enduraD[9];
+        return paperDensityShoulder(logH, enduraH[9], enduraD[9], enduraTangent[9]);
     }
     inline float3 enduraPaperReflectance(float3 negativeDensity, float3 reference,
                                         float paperExposureStops) {
@@ -459,7 +466,7 @@ enum FilmKernels {
                                      premierTangent[i], premierTangent[i + 1]);
             }
         }
-        return premierD[11];
+        return paperDensityShoulder(logH, premierH[11], premierD[11], premierTangent[11]);
     }
     inline float3 premierPaperReflectance(float3 negativeDensity, float3 reference,
                                          float paperExposureStops) {

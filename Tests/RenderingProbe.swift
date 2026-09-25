@@ -347,6 +347,42 @@ struct RenderingProbe {
         )
       }
     }
+    func paperOutput(_ stock: Double, _ paperLogH: Double) -> [Float] {
+      let reference = negativeDensity(stock, stock == 1 ? -1.44 : -0.84)
+      let shift = stock == 1 ? 0.8 : 0.6
+      let density = colorPatch(
+        Double(reference[0]) - shift,
+        Double(reference[1]) - shift,
+        Double(reference[2]) - shift)
+      let paperBase = stock == 1 ? -1.625 : -1.4
+      let paperEV = (paperLogH - paperBase - shift) / log10(2)
+      return channels(
+        positive.apply(
+          extent: density.extent,
+          arguments: [density, patch(0.18), 0.0, 1.0, 1.0, paperEV, stock])!)
+    }
+    for stock in [1.0, 2.0] {
+      let endpoint = -0.25
+      let distance = 0.01
+      let before = paperOutput(stock, endpoint - distance)
+      let atEnd = paperOutput(stock, endpoint)
+      let after = paperOutput(stock, endpoint + distance)
+      for channel in 0..<3 {
+        let slopeBefore = (atEnd[channel] - before[channel]) / Float(distance)
+        let slopeAfter = (after[channel] - atEnd[channel]) / Float(distance)
+        precondition(after[channel] <= atEnd[channel], "Paper shoulder reverses exposure")
+        if abs(slopeBefore) > 0.00005 {
+          precondition(
+            abs(slopeAfter / slopeBefore - 1) < 0.3,
+            "Paper stock \(stock) channel \(channel) has a slope jump: \(slopeBefore), \(slopeAfter)"
+          )
+        } else {
+          precondition(
+            abs(slopeAfter - slopeBefore) < 0.00005,
+            "Paper stock \(stock) channel \(channel) has a small-slope jump")
+        }
+      }
+    }
     print("Metal film rendering checks passed")
   }
 }
