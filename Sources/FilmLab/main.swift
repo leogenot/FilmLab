@@ -24,6 +24,8 @@ private struct PhotoEdits: Codable, Equatable {
   var contrast = 1.0
   var saturation = 1.0
   var warmth = 0.0
+  var inputWarmth = 0.0
+  var inputTint = 0.0
   var filmAmount = 1.0
   var stockIndex = 0
   var enduraPaperTone = false
@@ -79,6 +81,8 @@ private struct PhotoEdits: Codable, Equatable {
     contrast = try values.decodeIfPresent(Double.self, forKey: .contrast) ?? 1
     saturation = try values.decodeIfPresent(Double.self, forKey: .saturation) ?? 1
     warmth = try values.decodeIfPresent(Double.self, forKey: .warmth) ?? 0
+    inputWarmth = try values.decodeIfPresent(Double.self, forKey: .inputWarmth) ?? 0
+    inputTint = try values.decodeIfPresent(Double.self, forKey: .inputTint) ?? 0
     filmAmount = try values.decodeIfPresent(Double.self, forKey: .filmAmount) ?? 1.0
     stockIndex = try values.decodeIfPresent(Int.self, forKey: .stockIndex) ?? 0
     enduraPaperTone = try values.decodeIfPresent(Bool.self, forKey: .enduraPaperTone) ?? false
@@ -145,6 +149,8 @@ final class PhotoEditor {
   var contrast = 1.0
   var saturation = 1.0
   var warmth = 0.0
+  var inputWarmth = 0.0
+  var inputTint = 0.0
   var filmAmount = 1.0
   var stockIndex = 0
   var enduraPaperTone = false
@@ -344,6 +350,8 @@ final class PhotoEditor {
     contrast = saved.contrast
     saturation = saved.saturation
     warmth = saved.warmth
+    inputWarmth = saved.inputWarmth
+    inputTint = saved.inputTint
     filmAmount = saved.filmAmount
     stockIndex = saved.stockIndex
     enduraPaperTone = saved.enduraPaperTone
@@ -470,6 +478,8 @@ final class PhotoEditor {
     edits.contrast = contrast
     edits.saturation = saturation
     edits.warmth = warmth
+    edits.inputWarmth = inputWarmth
+    edits.inputTint = inputTint
     edits.filmAmount = filmAmount
     edits.stockIndex = stockIndex
     edits.enduraPaperTone = enduraPaperTone
@@ -555,6 +565,8 @@ final class PhotoEditor {
     settings.rawHighlightRecovery = true
     settings.rawTemperature = nil
     settings.rawTint = nil
+    settings.inputWarmth = 0
+    settings.inputTint = 0
     do {
       try LookFile(settings: settings).write(to: url)
       error = nil
@@ -587,6 +599,8 @@ final class PhotoEditor {
     copied.rawHighlightRecovery = current.rawHighlightRecovery
     copied.rawTemperature = current.rawTemperature
     copied.rawTint = current.rawTint
+    copied.inputWarmth = current.inputWarmth
+    copied.inputTint = current.inputTint
     restoreEdits(copied)
     showCropBounds = false
     showLocalMask = false
@@ -626,6 +640,8 @@ final class PhotoEditor {
     contrast = defaults.contrast
     saturation = defaults.saturation
     warmth = defaults.warmth
+    inputWarmth = defaults.inputWarmth
+    inputTint = defaults.inputTint
     filmAmount = defaults.filmAmount
     stockIndex = defaults.stockIndex
     enduraPaperTone = defaults.enduraPaperTone
@@ -865,6 +881,17 @@ final class PhotoEditor {
 
   private func developedImage(previewUncropped: Bool = false) -> CIImage? {
     guard var image = source else { return nil }
+    if !sourceIsRAW && (abs(inputWarmth) > 0.001 || abs(inputTint) > 0.001) {
+      let balance = CIFilter.temperatureAndTint()
+      balance.inputImage = image
+      balance.neutral = CIVector(x: 6500, y: 0)
+      balance.targetNeutral = CIVector(x: 6500 - inputWarmth * 1000, y: inputTint * 100)
+      guard let balanced = balance.outputImage else {
+        error = "The JPEG input balance could not be rendered."
+        return nil
+      }
+      image = balanced
+    }
     if abs(shadowLight) > 0.001 || abs(highlightLight) > 0.001 {
       guard let sceneLightKernel,
         let shaped = sceneLightKernel.apply(
@@ -1139,6 +1166,8 @@ struct ContentView: View {
     .onChange(of: editor.contrast) { editor.editsChanged() }
     .onChange(of: editor.saturation) { editor.editsChanged() }
     .onChange(of: editor.warmth) { editor.editsChanged() }
+    .onChange(of: editor.inputWarmth) { editor.editsChanged() }
+    .onChange(of: editor.inputTint) { editor.editsChanged() }
     .onChange(of: editor.filmAmount) { editor.editsChanged() }
     .onChange(of: editor.stockIndex) { editor.editsChanged() }
     .onChange(of: editor.enduraPaperTone) { editor.editsChanged() }
@@ -1483,6 +1512,16 @@ struct ContentView: View {
             Toggle("Linear RAW input", isOn: $editor.flatRAW)
             Text("Removes the decoder's global and shadow tone curves before film processing.")
               .font(.caption).foregroundStyle(.secondary)
+            Divider()
+          }
+          if !editor.isRAWSource {
+            Text("JPEG input balance").font(.headline)
+            control("Input warmth", value: $editor.inputWarmth, range: -1...1)
+            control("Input tint", value: $editor.inputTint, range: -1...1)
+            Text(
+              "Balances the rendered JPEG before film processing; clipped source detail stays lost."
+            )
+            .font(.caption).foregroundStyle(.secondary)
             Divider()
           }
           Text("Scene light before film").font(.headline)
