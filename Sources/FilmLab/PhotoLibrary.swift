@@ -109,6 +109,16 @@ struct PhotoLibrary: Codable, Equatable, Sendable {
     if !favoritePaths.insert(path).inserted { favoritePaths.remove(path) }
   }
 
+  mutating func setFavorites(_ paths: Set<String>, favorite: Bool) {
+    let available = Set(catalogs.flatMap(\.photoPaths))
+    let targets = paths.intersection(available)
+    if favorite {
+      favoritePaths.formUnion(targets)
+    } else {
+      favoritePaths.subtract(targets)
+    }
+  }
+
   private mutating func pruneOrphanedFavorites() {
     let available = Set(catalogs.flatMap(\.photoPaths))
     favoritePaths.formIntersection(available)
@@ -233,6 +243,12 @@ struct PhotoLibrary: Codable, Equatable, Sendable {
   mutating func removePhoto(_ path: String) {
     guard let index = catalogs.firstIndex(where: { $0.id == selectedCatalogID }) else { return }
     catalogs[index].photoPaths.removeAll { $0 == path }
+    pruneOrphanedFavorites()
+  }
+
+  mutating func removePhotos(_ paths: Set<String>) {
+    guard let index = catalogs.firstIndex(where: { $0.id == selectedCatalogID }) else { return }
+    catalogs[index].photoPaths.removeAll { paths.contains($0) }
     pruneOrphanedFavorites()
   }
 

@@ -2603,6 +2603,7 @@ struct ContentView: View {
   @State private var folderScanner = PhotoFolderScanner()
   @State private var selectingPhotos = false
   @State private var selectedPhotoPaths = Set<String>()
+  @State private var confirmingSelectedPhotoRemoval = false
   @State private var selectionAnchor: String?
   @State private var thumbnailRefresh: [String: Int] = [:]
   @State private var lastActiveThumbnailPath: String?
@@ -2852,6 +2853,16 @@ struct ContentView: View {
     } message: {
       Text(
         "This removes the catalog and its photo references. Original photos and edits stay in place."
+      )
+    }
+    .alert("Remove Selected Photos?", isPresented: $confirmingSelectedPhotoRemoval) {
+      Button("Remove from Catalog", role: .destructive) {
+        removeSelectedPhotos()
+      }
+      Button("Cancel", role: .cancel) {}
+    } message: {
+      Text(
+        "Remove \(selectedPhotoPaths.count) photo references from this catalog? Original files and edits stay in place."
       )
     }
     .onAppear {
@@ -3431,6 +3442,33 @@ struct ContentView: View {
     selectionAnchor = path
   }
 
+  private func setSelectedFavorites(_ favorite: Bool) {
+    let paths = selectedPhotoPaths
+    guard !paths.isEmpty else { return }
+    if updateLibrary({ $0.setFavorites(paths, favorite: favorite) }) {
+      libraryNotice =
+        favorite ? "Added selected photos to Favorites." : "Removed selected photos from Favorites."
+    }
+  }
+
+  private func removeSelectedPhotos() {
+    let paths = selectedPhotoPaths
+    guard !paths.isEmpty else { return }
+    if let openPath = editor.sourceURL?.standardizedFileURL.path,
+      paths.contains(openPath), !editor.flushEdits()
+    {
+      libraryNotice = "Current edits could not be saved. The selected photos were kept."
+      return
+    }
+    guard updateLibrary({ $0.removePhotos(paths) }) else { return }
+    selectedPhotoPaths.removeAll()
+    selectionAnchor = nil
+    selectingPhotos = false
+    alignEditorToCatalog()
+    libraryNotice =
+      "Removed \(paths.count) photo references from this catalog. Original files and edits remain."
+  }
+
   private func applySettingsToSelection(workspaceOnly: Bool = false) {
     let paths = library.selectedCatalog?.photoPaths.filter { selectedPhotoPaths.contains($0) } ?? []
     guard !paths.isEmpty, !applyingBatch else { return }
@@ -3815,6 +3853,21 @@ struct ContentView: View {
                 selectionAnchor = nil
               }
               .disabled(applyingBatch || exportingBatch)
+              if !selectedPhotoPaths.isEmpty {
+                Menu("Organize Selected") {
+                  Button("Add to Favorites") {
+                    setSelectedFavorites(true)
+                  }
+                  Button("Remove from Favorites") {
+                    setSelectedFavorites(false)
+                  }
+                  Divider()
+                  Button("Remove from Catalog", role: .destructive) {
+                    confirmingSelectedPhotoRemoval = true
+                  }
+                }
+                .disabled(applyingBatch || exportingBatch)
+              }
               Button("Paste to \(selectedPhotoPaths.count) Photos") {
                 applySettingsToSelection()
               }

@@ -4,6 +4,42 @@ import XCTest
 @testable import FilmLab
 
 final class PhotoLibraryPersistenceTests: XCTestCase {
+  func testBatchOrganizationPreservesSharedReferencesAndOriginals() throws {
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("FilmLab-batch-library-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let first = directory.appendingPathComponent("first.jpg")
+    let second = directory.appendingPathComponent("second.jpg")
+    try Data("first".utf8).write(to: first)
+    try Data("second".utf8).write(to: second)
+    let index = directory.appendingPathComponent("Library.json")
+    var library = PhotoLibrary.empty()
+    let originalID = library.selectedCatalogID
+    library.importPhotos([first, second])
+    library.createCatalog(named: "Keepers")
+    let keeperID = library.selectedCatalogID
+    library.importPhotos([first], into: keeperID)
+    library.selectedCatalogID = originalID
+    try PhotoLibraryStore.save(library, to: index)
+
+    library = try PhotoLibraryStore.updating(library, at: index) {
+      $0.setFavorites([first.path, second.path, "/missing.jpg"], favorite: true)
+      $0.removePhotos([first.path, second.path])
+    }
+    XCTAssertEqual(library.catalogs[0].photoPaths, [])
+    XCTAssertEqual(library.catalogs[1].photoPaths, [first.path])
+    XCTAssertEqual(library.favoritePaths, [first.path])
+    XCTAssertNotNil(library.photoBookmarks[first.path])
+    XCTAssertNil(library.photoBookmarks[second.path])
+    XCTAssertTrue(FileManager.default.fileExists(atPath: first.path))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: second.path))
+    XCTAssertEqual(PhotoLibraryStore.load(from: index), library)
+
+    library.setFavorites([first.path], favorite: false)
+    XCTAssertTrue(library.favoritePaths.isEmpty)
+  }
+
   func testDamagedLibraryRestoresLastSavedCatalogState() throws {
     let directory = FileManager.default.temporaryDirectory
       .appendingPathComponent("FilmLab-library-recovery-\(UUID().uuidString)")
