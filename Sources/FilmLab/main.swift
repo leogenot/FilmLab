@@ -395,6 +395,7 @@ private struct ReferencePreviewRequest: Hashable {
   let path: String
   let refreshToken: Int
   let displayP3: Bool
+  let highPrecision: Bool
 }
 
 @MainActor @Observable
@@ -2447,14 +2448,17 @@ final class PhotoEditor {
     await renderedCatalogPreview(for: url, decodeDimension: 1024, renderDimension: 320)
   }
 
-  static func renderedReference(for url: URL, displayP3: Bool) async -> CGImage? {
+  static func renderedReference(
+    for url: URL, displayP3: Bool, highPrecision: Bool = false
+  ) async -> CGImage? {
     await renderedCatalogPreview(
-      for: url, decodeDimension: 1800, renderDimension: 1200, displayP3: displayP3)
+      for: url, decodeDimension: 1800, renderDimension: 1200, displayP3: displayP3,
+      highPrecision: highPrecision)
   }
 
   private static func renderedCatalogPreview(
     for url: URL, decodeDimension: Int, renderDimension: CGFloat,
-    displayP3: Bool = false
+    displayP3: Bool = false, highPrecision: Bool = false
   ) async -> CGImage? {
     guard FileManager.default.fileExists(atPath: url.path) else { return nil }
     let accessing = url.startAccessingSecurityScopedResource()
@@ -2498,7 +2502,8 @@ final class PhotoEditor {
       thumbnailImage = developed
     }
     return await EditedThumbnailRenderer.shared.render(
-      thumbnailImage, maxDimension: renderDimension, displayP3: displayP3)
+      thumbnailImage, maxDimension: renderDimension, displayP3: displayP3,
+      highPrecision: highPrecision)
   }
 
   func exportBatch(
@@ -2702,7 +2707,8 @@ struct ContentView: View {
     return ReferencePreviewRequest(
       path: referencePhotoPath,
       refreshToken: thumbnailRefresh[referencePhotoPath, default: 0],
-      displayP3: editor.displayP3Preview)
+      displayP3: editor.displayP3Preview,
+      highPrecision: editor.highPrecisionPreview)
   }
   private var editsDirectory: URL {
     libraryURL.deletingLastPathComponent().appendingPathComponent("Edits", isDirectory: true)
@@ -2996,7 +3002,8 @@ struct ContentView: View {
       referencePreview = nil
       referenceUnavailable = false
       let rendered = await PhotoEditor.renderedReference(
-        for: URL(fileURLWithPath: request.path), displayP3: request.displayP3)
+        for: URL(fileURLWithPath: request.path), displayP3: request.displayP3,
+        highPrecision: request.highPrecision)
       guard !Task.isCancelled, referenceRequest == request else { return }
       referencePreview = rendered.map {
         NSImage(cgImage: $0, size: NSSize(width: $0.width, height: $0.height))

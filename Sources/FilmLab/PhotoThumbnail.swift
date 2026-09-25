@@ -159,9 +159,15 @@ actor EditedThumbnailRenderer {
     .workingColorSpace: CGColorSpace(name: CGColorSpace.extendedLinearSRGB)!,
     .workingFormat: CIFormat.RGBAh,
   ])
+  private let floatContext = CIContext(options: [
+    .useSoftwareRenderer: false,
+    .workingColorSpace: CGColorSpace(name: CGColorSpace.extendedLinearSRGB)!,
+    .workingFormat: CIFormat.RGBAf,
+  ])
 
   func render(
-    _ source: CIImage, maxDimension: CGFloat = 320, displayP3: Bool = false
+    _ source: CIImage, maxDimension: CGFloat = 320, displayP3: Bool = false,
+    highPrecision: Bool = false
   ) -> CGImage? {
     guard !Task.isCancelled else { return nil }
     let scale = min(1, maxDimension / max(source.extent.width, source.extent.height))
@@ -171,8 +177,8 @@ actor EditedThumbnailRenderer {
         "CILanczosScaleTransform",
         parameters: [kCIInputScaleKey: scale, kCIInputAspectRatioKey: 1])
       : source
-    return context.createCGImage(
-      reduced, from: reduced.extent, format: .RGBA8,
+    return (highPrecision ? floatContext : context).createCGImage(
+      reduced, from: reduced.extent, format: highPrecision ? .RGBA16 : .RGBA8,
       colorSpace: CGColorSpace(name: displayP3 ? CGColorSpace.displayP3 : CGColorSpace.sRGB)!)
   }
 }

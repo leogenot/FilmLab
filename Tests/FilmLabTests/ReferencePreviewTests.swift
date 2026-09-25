@@ -19,6 +19,13 @@ final class ReferencePreviewTests: XCTestCase {
       XCTAssertGreaterThan(max(reference.width, reference.height), 320)
       XCTAssertLessThanOrEqual(max(reference.width, reference.height), 1200)
       XCTAssertEqual(reference.colorSpace?.name, CGColorSpace.sRGB)
+      XCTAssertEqual(reference.bitsPerComponent, 8)
+
+      let floatRendered = await PhotoEditor.renderedReference(
+        for: URL(fileURLWithPath: path), displayP3: false, highPrecision: true)
+      let floatReference = try XCTUnwrap(floatRendered)
+      XCTAssertEqual(floatReference.bitsPerComponent, 16)
+      XCTAssertEqual(floatReference.colorSpace?.name, CGColorSpace.sRGB)
     }
 
     let renderedP3 = await PhotoEditor.renderedReference(
