@@ -128,10 +128,12 @@ struct PhotoLibraryProbe {
     precondition(
       movedLibrary.movedFolderRelinkCandidates(from: oldRAW.path, to: newJPEG).count == 1)
     precondition(FileManager.default.fileExists(atPath: url.path))
+    try PhotoLibraryStore.save(library, to: url)
     try Data("{damaged library".utf8).write(to: url)
     let recovered = PhotoLibraryStore.loadSafely(from: url)
     precondition(recovered.notice != nil)
     precondition(recovered.canSave)
+    precondition(recovered.value == library)
     precondition(recovered.backupURL != nil)
     let backupData = try Data(contentsOf: recovered.backupURL!)
     precondition(backupData == Data("{damaged library".utf8))
@@ -157,7 +159,7 @@ struct PhotoLibraryProbe {
     let emptyURL = directory.appendingPathComponent("EmptyLibrary.json")
     try PhotoLibraryStore.save(PhotoLibrary(catalogs: [], selectedCatalogID: UUID()), to: emptyURL)
     let emptyRepaired = PhotoLibraryStore.loadSafely(from: emptyURL)
-    precondition(emptyRepaired.value.catalogs.count == 1 && emptyRepaired.canSave)
+    precondition(emptyRepaired.value.catalogs.count == 1 && !emptyRepaired.canSave)
     print("Photo library checks passed")
   }
 }

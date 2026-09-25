@@ -13,7 +13,8 @@ enum FilmKernels {
           "grade", "selectiveColor", "colorMixerBand", "colorMixerBandV2", "applyGrain",
           "applyNegativeGrain",
           "preservingSelectiveColor",
-          "highlightMask", "applyHalation", "applyAcutance", "renderedInputTone",
+          "highlightMask", "sceneHighlightMask", "applyHalation", "applyAcutance",
+          "renderedInputTone",
           "outputShoulder",
           "outputToneCurve", "channelToneCurves",
           "vibrance",
@@ -703,6 +704,18 @@ enum FilmKernels {
                   float value = smoothstep(0.65, 1.15, luminance);
                   return float4(value, value, value, 1.0);
               }
+
+    [[stitchable]] float4 sceneHighlightMask(coreimage::sample_t pixel, float shotExposureEV) {
+        float3 light = max(pixel.rgb, float3(0.0));
+        float luminance = dot(light, float3(0.2126, 0.7152, 0.0722))
+                        * exp2(clamp(shotExposureEV, -10.0, 10.0));
+        float excess = max(luminance - 0.55, 0.0);
+        // A soft onset and long shoulder retain differences between bright stops.
+        // This is a provisional scattering model, not measured stock halation.
+        float value = smoothstep(0.55, 0.90, luminance)
+                    * (1.0 - exp(-excess / 2.0));
+        return float4(value, value, value, 1.0);
+    }
 
     [[stitchable]] float4 applyHalation(coreimage::sample_t pixel, coreimage::sample_t mask, coreimage::sample_t blurred, float amount) {
                   float spill = max(blurred.r - mask.r, 0.0) * amount * 0.24;

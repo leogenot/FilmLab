@@ -64,6 +64,7 @@ struct PhotoEdits: Codable, Equatable {
   var grainVersion = 2
   var grainSeed = 0.0
   var halation = 0.0
+  var halationVersion = 2
   var acutance = 0.0
   var colorTimingVersion = 2
   var shadowHue = 210.0
@@ -200,6 +201,7 @@ struct PhotoEdits: Codable, Equatable {
       result.grainSize = source.grainSize
       result.grainVersion = source.grainVersion
       result.halation = source.halation
+      result.halationVersion = source.halationVersion
       result.acutance = source.acutance
     case .framing:
       result.frameRotation = source.frameRotation
@@ -268,6 +270,7 @@ struct PhotoEdits: Codable, Equatable {
     grainVersion = try values.decodeIfPresent(Int.self, forKey: .grainVersion) ?? 1
     grainSeed = try values.decodeIfPresent(Double.self, forKey: .grainSeed) ?? 0
     halation = try values.decodeIfPresent(Double.self, forKey: .halation) ?? 0
+    halationVersion = try values.decodeIfPresent(Int.self, forKey: .halationVersion) ?? 1
     acutance = try values.decodeIfPresent(Double.self, forKey: .acutance) ?? 0
     colorTimingVersion = try values.decodeIfPresent(Int.self, forKey: .colorTimingVersion) ?? 1
     shadowHue = try values.decodeIfPresent(Double.self, forKey: .shadowHue) ?? 210
@@ -436,6 +439,7 @@ final class PhotoEditor {
   var grainVersion = 2
   var grainSeed = 0.0
   var halation = 0.0
+  var halationVersion = 2
   var acutance = 0.0
   var colorTimingVersion = 2
   var shadowHue = 210.0
@@ -858,6 +862,7 @@ final class PhotoEditor {
     grainVersion = saved.grainVersion
     grainSeed = saved.grainSeed
     halation = saved.halation
+    halationVersion = saved.halationVersion
     acutance = saved.acutance
     colorTimingVersion = saved.colorTimingVersion
     shadowHue = saved.shadowHue
@@ -1033,6 +1038,7 @@ final class PhotoEditor {
     edits.grainVersion = grainVersion
     edits.grainSeed = grainSeed
     edits.halation = halation
+    edits.halationVersion = halationVersion
     edits.acutance = acutance
     edits.colorTimingVersion = colorTimingVersion
     edits.shadowHue = shadowHue
@@ -1452,6 +1458,7 @@ final class PhotoEditor {
     grainVersion = defaults.grainVersion
     grainSeed = sourceURL.map { EditRecordLocator.grainSeed(for: $0) } ?? 0
     halation = defaults.halation
+    halationVersion = defaults.halationVersion
     acutance = defaults.acutance
     colorTimingVersion = defaults.colorTimingVersion
     shadowHue = defaults.shadowHue
@@ -1944,7 +1951,8 @@ final class PhotoEditor {
       to: channelAdjusted,
       grain: stockIndex > 0 && grainVersion >= 2 ? 0 : grain * thumbnailSpatialScale,
       grainSize: grainSize * thumbnailSpatialScale, grainSeed: grainSeed,
-      halation: halation,
+      halation: halation, halationSource: startingImage, halationExposureEV: shotExposureEV,
+      halationVersion: halationVersion,
       acutance: acutance, spatialScale: thumbnailSpatialScale)
     if outputShoulder > 0.001 {
       guard let outputShoulderKernel,
@@ -2279,6 +2287,12 @@ final class PhotoEditor {
   func useFilmDensityGrain() {
     guard grainVersion < 2 else { return }
     grainVersion = 2
+    editsChanged()
+  }
+
+  func useSceneLightHalation() {
+    guard halationVersion < 2 else { return }
+    halationVersion = 2
     editsChanged()
   }
 
@@ -4890,6 +4904,16 @@ struct ContentView: View {
             .font(.caption).foregroundStyle(.secondary)
           }
           control("Halation", value: $editor.halation, range: 0...1)
+          if editor.halationVersion == 1 {
+            Button("Use scene-light halation") { editor.useSceneLightHalation() }
+            Text(
+              "This changes the rendering of this saved grade. Undo restores the earlier output-based halation."
+            )
+            .font(.caption).foregroundStyle(.secondary)
+          } else {
+            Text("Halation follows bright scene light and Shot Exposure before film response.")
+              .font(.caption).foregroundStyle(.secondary)
+          }
           control("Edge detail", value: $editor.acutance, range: 0...1)
           Text(
             "Grain size 0 keeps the earlier fine noise; 1 adds roughly 2–3 source-pixel structure. Inspect texture and edge detail at 100% zoom."
