@@ -31,6 +31,7 @@ private struct PhotoEdits: Codable, Equatable {
   var saturation = 1.0
   var vibrance = 0.0
   var warmth = 0.0
+  var tint = 0.0
   var curveShadow = 0.0
   var curveMidtone = 0.0
   var curveHighlight = 0.0
@@ -110,6 +111,7 @@ private struct PhotoEdits: Codable, Equatable {
     saturation = try values.decodeIfPresent(Double.self, forKey: .saturation) ?? 1
     vibrance = try values.decodeIfPresent(Double.self, forKey: .vibrance) ?? 0
     warmth = try values.decodeIfPresent(Double.self, forKey: .warmth) ?? 0
+    tint = try values.decodeIfPresent(Double.self, forKey: .tint) ?? 0
     curveShadow = try values.decodeIfPresent(Double.self, forKey: .curveShadow) ?? 0
     curveMidtone = try values.decodeIfPresent(Double.self, forKey: .curveMidtone) ?? 0
     curveHighlight = try values.decodeIfPresent(Double.self, forKey: .curveHighlight) ?? 0
@@ -234,6 +236,7 @@ final class PhotoEditor {
   var saturation = 1.0
   var vibrance = 0.0
   var warmth = 0.0
+  var tint = 0.0
   var curveShadow = 0.0
   var curveMidtone = 0.0
   var curveHighlight = 0.0
@@ -541,6 +544,7 @@ final class PhotoEditor {
     saturation = saved.saturation
     vibrance = saved.vibrance
     warmth = saved.warmth
+    tint = saved.tint
     curveShadow = saved.curveShadow
     curveMidtone = saved.curveMidtone
     curveHighlight = saved.curveHighlight
@@ -680,6 +684,7 @@ final class PhotoEditor {
     edits.saturation = saturation
     edits.vibrance = vibrance
     edits.warmth = warmth
+    edits.tint = tint
     edits.curveShadow = curveShadow
     edits.curveMidtone = curveMidtone
     edits.curveHighlight = curveHighlight
@@ -987,6 +992,7 @@ final class PhotoEditor {
     saturation = defaults.saturation
     vibrance = defaults.vibrance
     warmth = defaults.warmth
+    tint = defaults.tint
     curveShadow = defaults.curveShadow
     curveMidtone = defaults.curveMidtone
     curveHighlight = defaults.curveHighlight
@@ -1346,7 +1352,7 @@ final class PhotoEditor {
     let temperature = CIFilter.temperatureAndTint()
     temperature.inputImage = image
     temperature.neutral = CIVector(x: 6500, y: 0)
-    temperature.targetNeutral = CIVector(x: 6500 - warmth * 1000, y: 0)
+    temperature.targetNeutral = CIVector(x: 6500 - warmth * 1000, y: -tint * 100)
     let graded = ColorGrade.apply(
       to: temperature.outputImage ?? image,
       shadowHue: shadowHue, shadowStrength: shadowStrength,
@@ -1797,6 +1803,7 @@ struct ContentView: View {
     .onChange(of: editor.saturation) { editor.editsChanged() }
     .onChange(of: editor.vibrance) { editor.editsChanged() }
     .onChange(of: editor.warmth) { editor.editsChanged() }
+    .onChange(of: editor.tint) { editor.editsChanged() }
     .onChange(of: editor.curveShadow) { editor.editsChanged() }
     .onChange(of: editor.curveMidtone) { editor.editsChanged() }
     .onChange(of: editor.curveHighlight) { editor.editsChanged() }
@@ -2676,6 +2683,7 @@ struct ContentView: View {
           control("Contrast", value: $editor.contrast, range: 0.5...1.5)
           control("Saturation", value: $editor.saturation, range: 0...1.5)
           control("Warmth", value: $editor.warmth, range: -1...1)
+          control("Output tint (magenta +)", value: $editor.tint, range: -1...1)
           Divider()
           Text("Output tone curve").font(.headline)
           control("Shadow point", value: $editor.curveShadow, range: -0.14...0.14)
