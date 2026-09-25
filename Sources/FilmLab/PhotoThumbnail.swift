@@ -160,9 +160,11 @@ actor EditedThumbnailRenderer {
     .workingFormat: CIFormat.RGBAh,
   ])
 
-  func render(_ source: CIImage) -> CGImage? {
+  func render(
+    _ source: CIImage, maxDimension: CGFloat = 320, displayP3: Bool = false
+  ) -> CGImage? {
     guard !Task.isCancelled else { return nil }
-    let scale = min(1, 320 / max(source.extent.width, source.extent.height))
+    let scale = min(1, maxDimension / max(source.extent.width, source.extent.height))
     let reduced =
       scale < 1
       ? source.applyingFilter(
@@ -171,6 +173,6 @@ actor EditedThumbnailRenderer {
       : source
     return context.createCGImage(
       reduced, from: reduced.extent, format: .RGBA8,
-      colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
+      colorSpace: CGColorSpace(name: displayP3 ? CGColorSpace.displayP3 : CGColorSpace.sRGB)!)
   }
 }

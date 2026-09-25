@@ -391,6 +391,12 @@ struct ExposureStudyFrame: Identifiable {
   var id: Double { ev }
 }
 
+private struct ReferencePreviewRequest: Hashable {
+  let path: String
+  let refreshToken: Int
+  let displayP3: Bool
+}
+
 @MainActor @Observable
 final class PhotoEditor {
   var sourceURL: URL?
@@ -2438,6 +2444,18 @@ final class PhotoEditor {
   }
 
   static func renderedThumbnail(for url: URL) async -> CGImage? {
+    await renderedCatalogPreview(for: url, decodeDimension: 1024, renderDimension: 320)
+  }
+
+  static func renderedReference(for url: URL, displayP3: Bool) async -> CGImage? {
+    await renderedCatalogPreview(
+      for: url, decodeDimension: 1800, renderDimension: 1200, displayP3: displayP3)
+  }
+
+  private static func renderedCatalogPreview(
+    for url: URL, decodeDimension: Int, renderDimension: CGFloat,
+    displayP3: Bool = false
+  ) async -> CGImage? {
     guard FileManager.default.fileExists(atPath: url.path) else { return nil }
     let accessing = url.startAccessingSecurityScopedResource()
     defer { if accessing { url.stopAccessingSecurityScopedResource() } }
@@ -2460,7 +2478,7 @@ final class PhotoEditor {
         luminanceNoiseReduction: loaded.value.rawLuminanceNoiseReduction,
         colorNoiseReduction: loaded.value.rawColorNoiseReduction,
         temperature: loaded.value.rawTemperature, tint: loaded.value.rawTint,
-        maxDimension: 1024)
+        maxDimension: decodeDimension)
     else { return nil }
     guard !Task.isCancelled else { return nil }
     let worker = PhotoEditor()
@@ -2473,13 +2491,14 @@ final class PhotoEditor {
     worker.restoreEdits(loaded.value)
     guard let developed = worker.developedImage() else { return nil }
     let thumbnailImage: CIImage
-    if loaded.value.compressSRGBGamut {
+    if loaded.value.compressSRGBGamut && !displayP3 {
       guard let mapped = OutputGamutMap.apply(to: developed) else { return nil }
       thumbnailImage = mapped
     } else {
       thumbnailImage = developed
     }
-    return await EditedThumbnailRenderer.shared.render(thumbnailImage)
+    return await EditedThumbnailRenderer.shared.render(
+      thumbnailImage, maxDimension: renderDimension, displayP3: displayP3)
   }
 
   func exportBatch(
@@ -2646,6 +2665,9 @@ struct ContentView: View {
   @State private var selectionAnchor: String?
   @State private var thumbnailRefresh: [String: Int] = [:]
   @State private var lastActiveThumbnailPath: String?
+  @State private var referencePhotoPath: String?
+  @State private var referencePreview: NSImage?
+  @State private var referenceUnavailable = false
   @State private var lastPhotoByCatalog = CatalogPhotoMemory.load()
   @State private var librarySearch = ""
   @State private var librarySort: LibrarySort = .importOrder
@@ -2675,6 +2697,13 @@ struct ContentView: View {
   }
 
   private var libraryURL: URL { Self.libraryURL }
+  private var referenceRequest: ReferencePreviewRequest? {
+    guard let referencePhotoPath else { return nil }
+    return ReferencePreviewRequest(
+      path: referencePhotoPath,
+      refreshToken: thumbnailRefresh[referencePhotoPath, default: 0],
+      displayP3: editor.displayP3Preview)
+  }
   private var editsDirectory: URL {
     libraryURL.deletingLastPathComponent().appendingPathComponent("Edits", isDirectory: true)
   }
@@ -2725,6 +2754,7 @@ struct ContentView: View {
       } else {
         VStack(spacing: 0) {
           HStack(spacing: 0) {
+            if let referencePhotoPath { referencePanel(for: referencePhotoPath) }
             photoCanvas
             if editor.sourceURL != nil { inspector }
           }
@@ -2760,6 +2790,18 @@ struct ContentView: View {
         editor.compareEnabled ? "Close Compare" : "Compare", systemImage: "rectangle.split.2x1"
       ) {
         editor.toggleCompare()
+      }
+      .disabled(editor.preview == nil)
+      Button(
+        referencePhotoPath == editor.sourceURL?.standardizedFileURL.path
+          ? "Clear Reference" : "Pin Reference",
+        systemImage: "pin"
+      ) {
+        if referencePhotoPath == editor.sourceURL?.standardizedFileURL.path {
+          clearReference()
+        } else if let path = editor.sourceURL?.standardizedFileURL.path {
+          setReference(path)
+        }
       }
       .disabled(editor.preview == nil)
       Button("Undo", systemImage: "arrow.uturn.backward") { editor.undo() }
@@ -2948,6 +2990,18 @@ struct ContentView: View {
       }
       guard !Task.isCancelled else { return }
       captureDates = dates
+    }
+    .task(id: referenceRequest) {
+      guard let request = referenceRequest else { return }
+      referencePreview = nil
+      referenceUnavailable = false
+      let rendered = await PhotoEditor.renderedReference(
+        for: URL(fileURLWithPath: request.path), displayP3: request.displayP3)
+      guard !Task.isCancelled, referenceRequest == request else { return }
+      referencePreview = rendered.map {
+        NSImage(cgImage: $0, size: NSSize(width: $0.width, height: $0.height))
+      }
+      referenceUnavailable = rendered == nil
     }
     .onDisappear { editor.flushEdits() }
     .onChange(of: panel) {
@@ -3169,6 +3223,26 @@ struct ContentView: View {
     }
     showingLibrary = false
     editor.open(URL(fileURLWithPath: path))
+  }
+
+  private func setReference(_ path: String) {
+    guard FileManager.default.fileExists(atPath: path) else {
+      libraryNotice = "The reference photo is missing. Locate its original first."
+      return
+    }
+    if editor.sourceURL?.standardizedFileURL.path == path, !editor.flushEdits() {
+      libraryNotice = "Current edits could not be saved. The reference was not changed."
+      return
+    }
+    referencePhotoPath = path
+    referencePreview = nil
+    referenceUnavailable = false
+  }
+
+  private func clearReference() {
+    referencePhotoPath = nil
+    referencePreview = nil
+    referenceUnavailable = false
   }
 
   private func openRecentPhoto(_ path: String) {
@@ -4136,6 +4210,7 @@ struct ContentView: View {
                   .draggable(URL(fileURLWithPath: path))
                   .disabled(applyingBatch || exportingBatch)
                   .contextMenu {
+                    Button("Pin as Reference") { setReference(path) }
                     if let selectionAnchor, selectionAnchor != path,
                       visibleLibraryPaths.contains(selectionAnchor)
                     {
@@ -4254,6 +4329,9 @@ struct ContentView: View {
               }
               .buttonStyle(.plain)
               .help(path)
+              .contextMenu {
+                Button("Pin as Reference") { setReference(path) }
+              }
               .id(path)
             }
           }
@@ -4272,6 +4350,45 @@ struct ContentView: View {
     .padding(.vertical, 9)
     .frame(height: 118)
     .background(Color(white: 0.095))
+  }
+
+  private func referencePanel(for path: String) -> some View {
+    VStack(alignment: .leading, spacing: 10) {
+      HStack {
+        Text("REFERENCE")
+          .font(.caption2.weight(.semibold))
+          .tracking(1.2)
+          .foregroundStyle(.secondary)
+        Spacer()
+        Button("Clear Reference", systemImage: "xmark") { clearReference() }
+          .labelStyle(.iconOnly)
+      }
+      Text(URL(fileURLWithPath: path).lastPathComponent)
+        .font(.caption)
+        .lineLimit(1)
+      Divider()
+      Group {
+        if let referencePreview {
+          Image(nsImage: referencePreview)
+            .resizable()
+            .scaledToFit()
+        } else if referenceUnavailable {
+          ContentUnavailableView(
+            "Reference unavailable", systemImage: "photo.badge.exclamationmark",
+            description: Text("Check its original photo and saved grade."))
+        } else {
+          ProgressView("Rendering reference…")
+        }
+      }
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+      Spacer(minLength: 0)
+      Text("Pinned photo · Saved grade")
+        .font(.caption2)
+        .foregroundStyle(.secondary)
+    }
+    .padding(14)
+    .frame(width: 280)
+    .background(Color(white: 0.09))
   }
 
   private var photoCanvas: some View {
