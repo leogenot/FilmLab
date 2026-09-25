@@ -2077,6 +2077,9 @@ struct ContentView: View {
   @State private var pathToRelink: String?
   @State private var showingRelinkImporter = false
   @State private var libraryNotice: String?
+  @State private var importingFolder = false
+  @State private var folderImportTask: Task<Void, Never>?
+  @State private var folderScanner = PhotoFolderScanner()
   @State private var selectingPhotos = false
   @State private var selectedPhotoPaths = Set<String>()
   @State private var selectionAnchor: String?
@@ -2199,6 +2202,7 @@ struct ContentView: View {
         .disabled(editor.preview == nil)
       Menu("Open", systemImage: "folder") {
         Button("Import Photos…") { showingImporter = true }
+        Button("Import Folder…") { importFolder() }
         if !editor.recentPaths.isEmpty {
           Divider()
           ForEach(editor.recentPaths, id: \.self) { path in
@@ -2469,6 +2473,54 @@ struct ContentView: View {
     editor.open(URL(fileURLWithPath: path))
   }
 
+  private func importFolder() {
+    guard !importingFolder else { return }
+    let panel = NSOpenPanel()
+    panel.canChooseFiles = false
+    panel.canChooseDirectories = true
+    panel.allowsMultipleSelection = false
+    panel.prompt = "Import Folder"
+    guard panel.runModal() == .OK, let folder = panel.url else { return }
+    let catalogID = library.selectedCatalogID
+    let catalogName = library.selectedCatalog?.name ?? "catalog"
+    showingLibrary = true
+    importingFolder = true
+    libraryNotice = nil
+    folderImportTask = Task { @MainActor in
+      let access = folder.startAccessingSecurityScopedResource()
+      defer { if access { folder.stopAccessingSecurityScopedResource() } }
+      do {
+        let photos = try await folderScanner.scan(folder)
+        try Task.checkCancellation()
+        guard library.catalogs.contains(where: { $0.id == catalogID }) else {
+          libraryNotice = "The destination catalog was removed before import finished."
+          importingFolder = false
+          folderImportTask = nil
+          return
+        }
+        let previousLibrary = library
+        let added = library.importPhotos(photos, into: catalogID)
+        if added == 0 {
+          libraryNotice =
+            photos.isEmpty
+            ? "No supported photos were found in that folder."
+            : "All \(photos.count) photos in that folder are already in \(catalogName)."
+        } else if saveLibrary() {
+          libraryNotice =
+            "Imported \(added) photo\(added == 1 ? "" : "s") from \(folder.lastPathComponent) into \(catalogName)."
+        } else {
+          library = previousLibrary
+        }
+      } catch is CancellationError {
+        libraryNotice = "Folder import cancelled."
+      } catch {
+        libraryNotice = "Could not import folder: \(error.localizedDescription)"
+      }
+      importingFolder = false
+      folderImportTask = nil
+    }
+  }
+
   private func adjacentPhoto(step: Int) -> String? {
     let paths = library.selectedCatalog?.photoPaths ?? []
     guard !paths.isEmpty else { return nil }
@@ -2708,7 +2760,11 @@ struct ContentView: View {
             }
           }
           .disabled(applyingBatch || exportingBatch)
-          Button("Import Photos…", systemImage: "plus") { showingImporter = true }
+          Menu("Import…", systemImage: "plus") {
+            Button("Photos…") { showingImporter = true }
+            Button("Folder…") { importFolder() }
+          }
+          .disabled(importingFolder)
         }
         HStack(spacing: 10) {
           TextField("Search filenames", text: $librarySearch)
@@ -2770,6 +2826,13 @@ struct ContentView: View {
           }
         }
         if applyingBatch { ProgressView("Applying copied settings…") }
+        if importingFolder {
+          HStack {
+            ProgressView("Scanning photo folder…")
+            Spacer()
+            Button("Cancel Import") { folderImportTask?.cancel() }
+          }
+        }
         if exportingBatch {
           HStack {
             ProgressView(batchExportProgress)

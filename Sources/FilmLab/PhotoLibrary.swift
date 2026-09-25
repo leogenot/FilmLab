@@ -117,14 +117,21 @@ struct PhotoLibrary: Codable, Equatable {
     return transferred
   }
 
-  mutating func importPhotos(_ urls: [URL]) {
-    guard let index = catalogs.firstIndex(where: { $0.id == selectedCatalogID }) else { return }
+  @discardableResult
+  mutating func importPhotos(_ urls: [URL], into catalogID: UUID? = nil) -> Int {
+    guard let index = catalogs.firstIndex(where: { $0.id == catalogID ?? selectedCatalogID }) else {
+      return 0
+    }
+    var imported = 0
+    var knownPaths = Set(catalogs[index].photoPaths)
     for url in urls {
       let path = url.standardizedFileURL.path
-      if !catalogs[index].photoPaths.contains(path) {
+      if knownPaths.insert(path).inserted {
         catalogs[index].photoPaths.append(path)
+        imported += 1
       }
     }
+    return imported
   }
 
   mutating func removePhoto(_ path: String) {
