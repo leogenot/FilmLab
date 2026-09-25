@@ -2979,6 +2979,22 @@ struct ContentView: View {
           Menu("Import…", systemImage: "plus") {
             Button("Photos…") { showingImporter = true }
             Button("Folder…") { importFolder() }
+            if library.selectedCatalog?.importedFolderPaths.isEmpty == false {
+              Divider()
+              Menu("Linked Folders") {
+                ForEach(library.selectedCatalog?.importedFolderPaths ?? [], id: \.self) { path in
+                  Button("Stop Refreshing \(URL(fileURLWithPath: path).lastPathComponent)") {
+                    if updateLibrary({
+                      $0.untrackImportedFolder(path, in: library.selectedCatalogID)
+                    }) {
+                      libraryNotice =
+                        "Stopped refreshing \(path). Existing photos remain in the catalog."
+                    }
+                  }
+                  .help(path)
+                }
+              }
+            }
           }
           .disabled(importingFolder)
           Button("Refresh Folders", systemImage: "arrow.clockwise") {

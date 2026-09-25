@@ -53,6 +53,11 @@ final class PhotoFolderScannerTests: XCTestCase {
     XCTAssertEqual(library.importPhotos(refreshedPhotos, into: originalCatalog), 1)
     XCTAssertEqual(library.catalogs[0].photoPaths, [first.path, second.path])
     XCTAssertEqual(library.selectedCatalog?.photoPaths, [])
+
+    XCTAssertTrue(library.untrackImportedFolder(folder.path, in: originalCatalog))
+    XCTAssertFalse(library.untrackImportedFolder(folder.path, in: originalCatalog))
+    XCTAssertEqual(library.catalogs[0].importedFolderPaths, [])
+    XCTAssertEqual(library.catalogs[0].photoPaths, [first.path, second.path])
   }
 
   func testLegacyCatalogLoadsWithoutTrackedFolders() throws {

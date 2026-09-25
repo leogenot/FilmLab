@@ -174,6 +174,15 @@ struct PhotoLibrary: Codable, Equatable {
     return true
   }
 
+  @discardableResult
+  mutating func untrackImportedFolder(_ path: String, in catalogID: UUID) -> Bool {
+    guard let index = catalogs.firstIndex(where: { $0.id == catalogID }),
+      catalogs[index].importedFolderPaths.contains(path)
+    else { return false }
+    catalogs[index].importedFolderPaths.removeAll { $0 == path }
+    return true
+  }
+
   mutating func removePhoto(_ path: String) {
     guard let index = catalogs.firstIndex(where: { $0.id == selectedCatalogID }) else { return }
     catalogs[index].photoPaths.removeAll { $0 == path }
