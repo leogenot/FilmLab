@@ -492,6 +492,7 @@ final class PhotoEditor {
     .filter { FileManager.default.fileExists(atPath: $0) }
 
   private var source: CIImage?
+  private var thumbnailSpatialScale = 1.0
   private var sourceEditLocation: EditRecordLocation?
   private var didAttemptResume = false
   private let lastPhotoKey = "FilmLab.lastPhotoPath"
@@ -1813,7 +1814,11 @@ final class PhotoEditor {
       if grainVersion >= 2 && grain > 0 {
         guard let negativeGrainKernel,
           let textured = negativeGrainKernel.apply(
-            extent: negative.extent, arguments: [negative, grain, grainSize, grainSeed]
+            extent: negative.extent,
+            arguments: [
+              negative, grain * thumbnailSpatialScale,
+              grainSize * thumbnailSpatialScale, grainSeed,
+            ]
           )
         else {
           error = "The film-density grain stage could not be loaded."
@@ -1900,10 +1905,10 @@ final class PhotoEditor {
     }
     var finished = FilmEffects.apply(
       to: channelAdjusted,
-      grain: stockIndex > 0 && grainVersion >= 2 ? 0 : grain,
-      grainSize: grainSize, grainSeed: grainSeed,
+      grain: stockIndex > 0 && grainVersion >= 2 ? 0 : grain * thumbnailSpatialScale,
+      grainSize: grainSize * thumbnailSpatialScale, grainSeed: grainSeed,
       halation: halation,
-      acutance: acutance)
+      acutance: acutance, spatialScale: thumbnailSpatialScale)
     if outputShoulder > 0.001 {
       guard let outputShoulderKernel,
         let rolled = outputShoulderKernel.apply(
@@ -2334,6 +2339,10 @@ final class PhotoEditor {
     let worker = PhotoEditor()
     worker.source = decoded.image
     worker.sourceIsRAW = isRAW
+    worker.thumbnailSpatialScale = min(
+      1,
+      max(decoded.image.extent.width, decoded.image.extent.height)
+        / max(1, decoded.sourceLongestSide))
     worker.restoreEdits(loaded.value)
     guard let developed = worker.developedImage() else { return nil }
     let thumbnailImage: CIImage

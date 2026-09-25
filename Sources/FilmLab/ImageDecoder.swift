@@ -13,6 +13,7 @@ struct DecodedPhoto: @unchecked Sendable {
   let colorNoiseReductionSupported: Bool
   let jpegChannelNearWhiteFraction: Double?
   let inputExposureRange: InputExposureRange?
+  let sourceLongestSide: CGFloat
 }
 
 actor ImageDecoder {
@@ -75,7 +76,8 @@ actor ImageDecoder {
         luminanceNoiseReductionSupported: raw.isLuminanceNoiseReductionSupported,
         colorNoiseReductionSupported: raw.isColorNoiseReductionSupported,
         jpegChannelNearWhiteFraction: nil,
-        inputExposureRange: includeDiagnostics ? inputExposureRange(in: image) : nil)
+        inputExposureRange: includeDiagnostics ? inputExposureRange(in: image) : nil,
+        sourceLongestSide: max(raw.nativeSize.width, raw.nativeSize.height))
     }
     let image: CIImage
     if let maxDimension, maxDimension > 0,
@@ -98,10 +100,18 @@ actor ImageDecoder {
       image = fullImage
     }
     try Task.checkCancellation()
+    let imageSource = CGImageSourceCreateWithURL(
+      url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary)
     let isJPEG =
-      CGImageSourceCreateWithURL(url as CFURL, nil)
+      imageSource
       .flatMap { CGImageSourceGetType($0) as String? }
       .flatMap { UTType($0) }?.conforms(to: .jpeg) == true
+    let properties = imageSource.flatMap {
+      CGImageSourceCopyPropertiesAtIndex($0, 0, nil) as? [CFString: Any]
+    }
+    let nativeWidth = (properties?[kCGImagePropertyPixelWidth] as? NSNumber)?.doubleValue
+    let nativeHeight = (properties?[kCGImagePropertyPixelHeight] as? NSNumber)?.doubleValue
+    let nativeLongest = max(nativeWidth ?? 0, nativeHeight ?? 0)
     let nearWhiteFraction =
       includeDiagnostics && isJPEG
       ? jpegChannelNearWhiteFraction(in: image) : nil
@@ -112,7 +122,9 @@ actor ImageDecoder {
       luminanceNoiseReductionSupported: false,
       colorNoiseReductionSupported: false,
       jpegChannelNearWhiteFraction: nearWhiteFraction,
-      inputExposureRange: includeDiagnostics ? inputExposureRange(in: image) : nil)
+      inputExposureRange: includeDiagnostics ? inputExposureRange(in: image) : nil,
+      sourceLongestSide: nativeLongest > 0
+        ? nativeLongest : max(image.extent.width, image.extent.height))
   }
 
   private func inputExposureRange(in image: CIImage) -> InputExposureRange? {

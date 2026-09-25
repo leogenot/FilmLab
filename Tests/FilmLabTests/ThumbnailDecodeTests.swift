@@ -21,6 +21,8 @@ final class ThumbnailDecodeTests: XCTestCase {
     XCTAssertGreaterThan(fullLongest, 1024)
     XCTAssertLessThanOrEqual(thumbnailLongest, 1032)
     XCTAssertGreaterThan(thumbnailLongest, 512)
+    XCTAssertEqual(full.sourceLongestSide, fullLongest, accuracy: 1)
+    XCTAssertEqual(thumbnail.sourceLongestSide, fullLongest, accuracy: 1)
     XCTAssertEqual(
       full.image.extent.width / full.image.extent.height,
       thumbnail.image.extent.width / thumbnail.image.extent.height,
@@ -46,6 +48,8 @@ final class ThumbnailDecodeTests: XCTestCase {
     XCTAssertGreaterThan(fullLongest, 1024)
     XCTAssertLessThanOrEqual(thumbnailLongest, 1024)
     XCTAssertGreaterThan(thumbnailLongest, 512)
+    XCTAssertEqual(full.sourceLongestSide, fullLongest, accuracy: 1)
+    XCTAssertEqual(thumbnail.sourceLongestSide, fullLongest, accuracy: 1)
     XCTAssertEqual(
       full.image.extent.width / full.image.extent.height,
       thumbnail.image.extent.width / thumbnail.image.extent.height,

@@ -14,14 +14,14 @@ enum FilmEffects {
   static func apply(
     to image: CIImage, grain: Double, grainSize: Double = 1,
     grainSeed: Double = 0,
-    halation: Double, acutance: Double = 0
+    halation: Double, acutance: Double = 0, spatialScale: Double = 1
   )
     -> CIImage
   {
     var result = image
     if acutance > 0, let acutanceKernel {
       let blurred = result.applyingFilter(
-        "CIGaussianBlur", parameters: [kCIInputRadiusKey: 1.5]
+        "CIGaussianBlur", parameters: [kCIInputRadiusKey: 1.5 * spatialScale]
       ).cropped(to: image.extent)
       result =
         acutanceKernel.apply(
@@ -36,7 +36,7 @@ enum FilmEffects {
       let blurred = mask.applyingFilter(
         "CIGaussianBlur",
         parameters: [
-          kCIInputRadiusKey: 18.0
+          kCIInputRadiusKey: 18.0 * spatialScale
         ]
       ).cropped(to: image.extent)
       result =
