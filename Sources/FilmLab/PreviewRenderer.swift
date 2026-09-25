@@ -7,10 +7,11 @@ struct PreviewRequest: @unchecked Sendable {
   let originalImage: CIImage?
   let showGamutWarning: Bool
   let highPrecision: Bool
+  let displayP3: Bool
 
   init(
     image: CIImage, scale: CGFloat, sourceURL: URL?, originalImage: CIImage?,
-    showGamutWarning: Bool, highPrecision: Bool = false
+    showGamutWarning: Bool, highPrecision: Bool = false, displayP3: Bool = false
   ) {
     self.image = image
     self.scale = scale
@@ -18,6 +19,7 @@ struct PreviewRequest: @unchecked Sendable {
     self.originalImage = originalImage
     self.showGamutWarning = showGamutWarning
     self.highPrecision = highPrecision
+    self.displayP3 = displayP3
   }
 }
 
@@ -106,11 +108,16 @@ actor PreviewRenderer {
     } else {
       displayImage = request.image
     }
-    guard let image = renderImage(displayImage, scale: request.scale, context: context) else {
+    let canvasSpace = CGColorSpace(
+      name: request.displayP3 ? CGColorSpace.displayP3 : CGColorSpace.sRGB)!
+    guard
+      let image = renderImage(
+        displayImage, scale: request.scale, context: context, colorSpace: canvasSpace)
+    else {
       return nil
     }
     let original = request.originalImage.flatMap {
-      renderImage($0, scale: request.scale, context: context)
+      renderImage($0, scale: request.scale, context: context, colorSpace: canvasSpace)
     }
     guard !Task.isCancelled, request.originalImage == nil || original != nil else { return nil }
     return PreviewResult(
@@ -201,12 +208,14 @@ actor PreviewRenderer {
     )
   }
 
-  private func renderImage(_ source: CIImage, scale: CGFloat, context: CIContext) -> CGImage? {
+  private func renderImage(
+    _ source: CIImage, scale: CGFloat, context: CIContext, colorSpace: CGColorSpace
+  ) -> CGImage? {
     let reduced = downsampled(source, scale: scale)
     guard !Task.isCancelled else { return nil }
     return context.createCGImage(
       reduced, from: reduced.extent, format: .RGBA8,
-      colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
+      colorSpace: colorSpace)
   }
 
   private func downsampled(_ source: CIImage, scale: CGFloat) -> CIImage {

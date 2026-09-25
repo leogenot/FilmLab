@@ -438,6 +438,7 @@ final class PhotoEditor {
   var showOriginal = false
   var showGamutWarning = false
   var highPrecisionPreview = UserDefaults.standard.bool(forKey: "FilmLab.highPrecisionPreview")
+  var displayP3Preview = UserDefaults.standard.bool(forKey: "FilmLab.displayP3Preview")
   var inspectPixel = false
   var pixelReadout: PixelReadout?
   var selectedPixel: CGPoint?
@@ -1835,7 +1836,7 @@ final class PhotoEditor {
       image: image, scale: scale, sourceURL: scopedURL,
       originalImage: compareEnabled ? source.map { framedImage($0) } : nil,
       showGamutWarning: showGamutWarning && !showOriginal && !showLocalMask && !showCropBounds,
-      highPrecision: highPrecisionPreview
+      highPrecision: highPrecisionPreview, displayP3: displayP3Preview
     )
     previewTask = Task {
       do { try await Task.sleep(for: .milliseconds(60)) } catch { return }
@@ -2567,6 +2568,10 @@ struct ContentView: View {
     }
     .onChange(of: editor.highPrecisionPreview) {
       UserDefaults.standard.set(editor.highPrecisionPreview, forKey: "FilmLab.highPrecisionPreview")
+      editor.renderPreview()
+    }
+    .onChange(of: editor.displayP3Preview) {
+      UserDefaults.standard.set(editor.displayP3Preview, forKey: "FilmLab.displayP3Preview")
       editor.renderPreview()
     }
     .onChange(of: editor.exposure) { editor.editsChanged() }
@@ -3858,7 +3863,13 @@ struct ContentView: View {
         Toggle("Float preview", isOn: $editor.highPrecisionPreview)
           .font(.caption)
           .help(
-            "Develop previews with the 32-bit float working format used for export. Display remains sRGB; full-size previews use more memory."
+            "Develop previews with the 32-bit float working format used for export. Full-size previews use more memory."
+          )
+          .disabled(editor.preview == nil)
+        Toggle("Display P3 canvas", isOn: $editor.displayP3Preview)
+          .font(.caption)
+          .help(
+            "Render the photo canvas in Display P3 for a compatible display. The histogram, scopes and gamut warning remain based on sRGB."
           )
           .disabled(editor.preview == nil)
         if editor.preview != nil {

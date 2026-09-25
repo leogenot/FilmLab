@@ -42,6 +42,40 @@ struct PreviewRendererProbe {
       let warningData = warningImage.dataProvider?.data as Data?
     else { preconditionFailure("Gamut warning preview is unreadable") }
     precondition(plainData != warningData, "Gamut warning did not change the preview")
+    let p3Space = CGColorSpace(name: CGColorSpace.displayP3)!
+    let wideGreen = CIImage(
+      color: CIColor(red: 0, green: 1, blue: 0, colorSpace: p3Space)!
+    ).cropped(to: CGRect(x: 0, y: 0, width: 1, height: 1))
+    let srgbCanvas = await renderer.render(
+      PreviewRequest(
+        image: wideGreen, scale: 1, sourceURL: nil, originalImage: nil,
+        showGamutWarning: false))
+    let p3Canvas = await renderer.render(
+      PreviewRequest(
+        image: wideGreen, scale: 1, sourceURL: nil, originalImage: wideGreen,
+        showGamutWarning: false, displayP3: true))
+    guard let srgbImage = srgbCanvas?.image, let p3Image = p3Canvas?.image else {
+      preconditionFailure("Wide-gamut canvas previews are unreadable")
+    }
+    precondition(srgbImage.colorSpace?.name == CGColorSpace.sRGB)
+    precondition(p3Image.colorSpace?.name == CGColorSpace.displayP3)
+    precondition(p3Canvas?.original?.colorSpace?.name == CGColorSpace.displayP3)
+    precondition(srgbCanvas?.histogram?.greenBins == p3Canvas?.histogram?.greenBins)
+    let p3Context = CIContext(options: [
+      .workingColorSpace: CGColorSpace(name: CGColorSpace.extendedLinearSRGB)!,
+      .workingFormat: CIFormat.RGBAf,
+    ])
+    func p3Green(_ image: CGImage) -> Float {
+      var pixel = [Float](repeating: 0, count: 4)
+      pixel.withUnsafeMutableBytes { bytes in
+        p3Context.render(
+          CIImage(cgImage: image), toBitmap: bytes.baseAddress!, rowBytes: 16,
+          bounds: CGRect(x: 0, y: 0, width: 1, height: 1), format: .RGBAf,
+          colorSpace: p3Space)
+      }
+      return pixel[1]
+    }
+    precondition(p3Green(p3Image) > p3Green(srgbImage) + 0.01)
     let directory = FileManager.default.temporaryDirectory
       .appendingPathComponent("FilmLab-preview-parity-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
