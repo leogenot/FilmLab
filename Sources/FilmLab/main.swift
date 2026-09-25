@@ -2533,6 +2533,7 @@ struct ContentView: View {
   @State private var lastPhotoByCatalog = CatalogPhotoMemory.load()
   @State private var librarySearch = ""
   @State private var librarySort: LibrarySort = .importOrder
+  @State private var catalogDropTarget: UUID?
   @State private var captureDates: [String: Date] = [:]
   @State private var showFavoritesOnly = false
   @State private var applyingBatch = false
@@ -3075,7 +3076,7 @@ struct ContentView: View {
     importExternalURLs(panel.urls)
   }
 
-  private func importExternalURLs(_ urls: [URL]) {
+  private func importExternalURLs(_ urls: [URL], into destinationCatalogID: UUID? = nil) {
     guard !importingFolder else {
       libraryNotice = "Finish or cancel the current folder import before importing more photos."
       return
@@ -3085,11 +3086,22 @@ struct ContentView: View {
       libraryNotice = "No supported photos or folders were selected."
       return
     }
-    let catalogID = library.selectedCatalogID
-    let catalogName = library.selectedCatalog?.name ?? "catalog"
+    let catalogID = destinationCatalogID ?? library.selectedCatalogID
+    guard let catalogName = library.catalogs.first(where: { $0.id == catalogID })?.name else {
+      libraryNotice = "The destination catalog is no longer available."
+      return
+    }
     if selection.folders.isEmpty {
+      let previousCount =
+        library.catalogs.first(where: { $0.id == catalogID })?.photoPaths.count ?? 0
       guard updateLibrary({ $0.importPhotos(selection.photos, into: catalogID) }) else { return }
-      if let first = selection.photos.first {
+      let currentCount =
+        library.catalogs.first(where: { $0.id == catalogID })?.photoPaths.count ?? 0
+      let added = currentCount - previousCount
+      if catalogID != library.selectedCatalogID {
+        libraryNotice =
+          "Added \(added) photo\(added == 1 ? "" : "s") to \(catalogName). Originals and saved edits remain in place."
+      } else if let first = selection.photos.first {
         showingLibrary = false
         editor.open(first)
       }
@@ -3584,11 +3596,19 @@ struct ContentView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(9)
             .background(
-              library.selectedCatalogID == catalog.id ? Color.white.opacity(0.11) : .clear
+              catalogDropTarget == catalog.id
+                ? Color.white.opacity(0.20)
+                : library.selectedCatalogID == catalog.id ? Color.white.opacity(0.11) : .clear
             )
             .clipShape(RoundedRectangle(cornerRadius: 7))
           }
           .buttonStyle(.plain)
+          .dropDestination(for: URL.self) { urls, _ in
+            importExternalURLs(urls, into: catalog.id)
+            return true
+          } isTargeted: { targeted in
+            catalogDropTarget = targeted ? catalog.id : nil
+          }
           .contextMenu {
             Button("Rename Catalog") {
               catalogToRename = catalog
@@ -3838,6 +3858,7 @@ struct ContentView: View {
                     }
                   }
                   .buttonStyle(.plain)
+                  .draggable(URL(fileURLWithPath: path))
                   .disabled(applyingBatch || exportingBatch)
                   .contextMenu {
                     if let selectionAnchor, selectionAnchor != path,
