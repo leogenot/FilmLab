@@ -1,3 +1,4 @@
+import CoreImage
 import Foundation
 import XCTest
 
@@ -12,12 +13,15 @@ final class PhotoFolderScannerTests: XCTestCase {
     let hidden = folder.appendingPathComponent(".Hidden")
     try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
     try FileManager.default.createDirectory(at: hidden, withIntermediateDirectories: true)
-    for path in ["b.jpg", "Nested/a.ARW", "Nested/notes.txt", ".Hidden/secret.jpg"] {
+    for path in ["b.jpg", "Nested/a.jpg", ".Hidden/secret.jpg"] {
+      try writeJPEG(to: folder.appendingPathComponent(path))
+    }
+    for path in ["Nested/notes.txt", "Nested/impostor.jpg"] {
       try Data("test".utf8).write(to: folder.appendingPathComponent(path))
     }
 
     let found = try await PhotoFolderScanner().scan(folder).map(\.lastPathComponent)
-    XCTAssertEqual(Set(found), ["a.ARW", "b.jpg"])
+    XCTAssertEqual(Set(found), ["a.jpg", "b.jpg"])
   }
 
   func testImportsIntoOriginalCatalogAndIgnoresDuplicates() {
@@ -37,7 +41,7 @@ final class PhotoFolderScannerTests: XCTestCase {
     defer { try? FileManager.default.removeItem(at: folder) }
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     let first = folder.appendingPathComponent("first.jpg")
-    try Data("first".utf8).write(to: first)
+    try writeJPEG(to: first)
 
     var library = PhotoLibrary.empty()
     let originalCatalog = library.selectedCatalogID
@@ -47,8 +51,8 @@ final class PhotoFolderScannerTests: XCTestCase {
     XCTAssertEqual(library.importPhotos(initialPhotos), 1)
 
     library.createCatalog(named: "Another catalog")
-    let second = folder.appendingPathComponent("second.ARW")
-    try Data("second".utf8).write(to: second)
+    let second = folder.appendingPathComponent("second.jpg")
+    try writeJPEG(to: second)
     let refreshedPhotos = try await PhotoFolderScanner().scan(folder)
     XCTAssertEqual(library.importPhotos(refreshedPhotos, into: originalCatalog), 1)
     XCTAssertEqual(library.catalogs[0].photoPaths, [first.path, second.path])
@@ -128,5 +132,13 @@ final class PhotoFolderScannerTests: XCTestCase {
     XCTAssertEqual(library.catalogs[1].importedFolderPaths, [newFolder.path])
     XCTAssertEqual(library.catalogs[0].photoPaths, [movedShared.path])
     XCTAssertEqual(library.catalogs[1].photoPaths, [movedShared.path, movedOther.path])
+  }
+
+  private func writeJPEG(to url: URL) throws {
+    let image = CIImage(color: CIColor(red: 0.3, green: 0.4, blue: 0.5))
+      .cropped(to: CGRect(x: 0, y: 0, width: 4, height: 4))
+    let space = try XCTUnwrap(CGColorSpace(name: CGColorSpace.sRGB))
+    let data = try XCTUnwrap(CIContext().jpegRepresentation(of: image, colorSpace: space))
+    try data.write(to: url)
   }
 }

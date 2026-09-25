@@ -2625,6 +2625,7 @@ struct ContentView: View {
   @State private var showingRelinkImporter = false
   @State private var libraryNotice: String?
   @State private var importingFolder = false
+  @State private var classifyingImport = false
   @State private var reconnectingPhotos = false
   @State private var reconnectTask: Task<Void, Never>?
   @State private var folderImportTask: Task<Void, Never>?
@@ -3192,16 +3193,27 @@ struct ContentView: View {
   }
 
   private func importExternalURLs(_ urls: [URL], into destinationCatalogID: UUID? = nil) {
-    guard !importingFolder else {
-      libraryNotice = "Finish or cancel the current folder import before importing more photos."
+    guard !importingFolder, !classifyingImport else {
+      libraryNotice = "Finish the current import before importing more photos."
       return
     }
-    let selection = PhotoImportSelection(urls: urls)
+    let catalogID = destinationCatalogID ?? library.selectedCatalogID
+    classifyingImport = true
+    showingLibrary = true
+    Task { @MainActor in
+      let selection = await Task.detached(priority: .utility) {
+        PhotoImportSelection(urls: urls)
+      }.value
+      classifyingImport = false
+      finishImport(selection, into: catalogID)
+    }
+  }
+
+  private func finishImport(_ selection: PhotoImportSelection, into catalogID: UUID) {
     guard !selection.photos.isEmpty || !selection.folders.isEmpty else {
       libraryNotice = "No supported photos or folders were selected."
       return
     }
-    let catalogID = destinationCatalogID ?? library.selectedCatalogID
     guard let catalogName = library.catalogs.first(where: { $0.id == catalogID })?.name else {
       libraryNotice = "The destination catalog is no longer available."
       return
@@ -3957,6 +3969,9 @@ struct ContentView: View {
             Spacer()
             Button("Cancel Paste") { batchPasteTask?.cancel() }
           }
+        }
+        if classifyingImport {
+          ProgressView("Checking selected photos…")
         }
         if importingFolder {
           HStack {

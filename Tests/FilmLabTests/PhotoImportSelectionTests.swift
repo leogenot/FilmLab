@@ -1,3 +1,4 @@
+import CoreImage
 import Foundation
 import XCTest
 
@@ -11,16 +12,35 @@ final class PhotoImportSelectionTests: XCTestCase {
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     let folder = root.appendingPathComponent("Collection")
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-    let raw = root.appendingPathComponent("one.ARW")
+    let first = root.appendingPathComponent("one.jpg")
     let jpeg = root.appendingPathComponent("two.jpg")
     let text = root.appendingPathComponent("notes.txt")
+    let impostor = root.appendingPathComponent("impostor.jpg")
     let link = root.appendingPathComponent("linked.jpg")
-    for url in [raw, jpeg, text] { try Data("test".utf8).write(to: url) }
+    for url in [first, jpeg] { try writeJPEG(to: url) }
+    for url in [text, impostor] { try Data("test".utf8).write(to: url) }
     try FileManager.default.createSymbolicLink(at: link, withDestinationURL: jpeg)
 
-    let selection = PhotoImportSelection(urls: [raw, raw, jpeg, folder, text, link])
-    XCTAssertEqual(selection.photos, [raw, jpeg])
+    let selection = PhotoImportSelection(urls: [first, first, jpeg, folder, text, impostor, link])
+    XCTAssertEqual(selection.photos, [first, jpeg])
     XCTAssertEqual(selection.folders.map(\.path), [folder.path])
-    XCTAssertEqual(selection.ignoredCount, 3)
+    XCTAssertEqual(selection.ignoredCount, 4)
+  }
+
+  func testActualRAWHeaderIsAcceptedWhenAvailable() throws {
+    guard let path = ProcessInfo.processInfo.environment["FILMLAB_TEST_RAW"] else {
+      throw XCTSkip("Set FILMLAB_TEST_RAW to a disposable RAW photo")
+    }
+    let raw = URL(fileURLWithPath: path)
+    XCTAssertTrue(PhotoFileSupport.hasImageHeader(raw))
+    XCTAssertEqual(PhotoImportSelection(urls: [raw]).photos, [raw.standardizedFileURL])
+  }
+
+  private func writeJPEG(to url: URL) throws {
+    let image = CIImage(color: CIColor(red: 0.3, green: 0.4, blue: 0.5))
+      .cropped(to: CGRect(x: 0, y: 0, width: 4, height: 4))
+    let space = try XCTUnwrap(CGColorSpace(name: CGColorSpace.sRGB))
+    let data = try XCTUnwrap(CIContext().jpegRepresentation(of: image, colorSpace: space))
+    try data.write(to: url)
   }
 }

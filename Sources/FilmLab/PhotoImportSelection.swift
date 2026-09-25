@@ -1,7 +1,7 @@
 import Foundation
 import UniformTypeIdentifiers
 
-struct PhotoImportSelection {
+struct PhotoImportSelection: Sendable {
   var photos: [URL] = []
   var folders: [URL] = []
   var ignoredCount = 0
@@ -22,7 +22,8 @@ struct PhotoImportSelection {
         folders.append(url)
       } else if values.isRegularFile == true,
         let type = UTType(filenameExtension: url.pathExtension),
-        type.conforms(to: .image) || type.conforms(to: .rawImage)
+        type.conforms(to: .image) || type.conforms(to: .rawImage),
+        PhotoFileSupport.hasImageHeader(url)
       {
         photos.append(url)
       } else {

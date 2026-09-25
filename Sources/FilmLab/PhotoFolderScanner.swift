@@ -30,7 +30,8 @@ actor PhotoFolderScanner {
       let properties = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
       guard properties.isRegularFile == true, properties.isSymbolicLink != true,
         let type = UTType(filenameExtension: url.pathExtension),
-        type.conforms(to: .image) || type.conforms(to: .rawImage)
+        type.conforms(to: .image) || type.conforms(to: .rawImage),
+        PhotoFileSupport.hasImageHeader(url)
       else { continue }
       photos.append(url.standardizedFileURL)
     }
