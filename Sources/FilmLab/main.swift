@@ -186,6 +186,8 @@ final class PhotoEditor {
   var rawTemperature = 6500.0
   var rawTint = 0.0
   var error: String?
+  var editRecoveryNotice: String?
+  var editRecoveryURL: URL?
   var showOriginal = false
   var showLocalMask = false
   var zoom100 = false
@@ -204,6 +206,7 @@ final class PhotoEditor {
   private var cameraRawTemperature = 6500.0
   private var cameraRawTint = 0.0
   private var sourceIsRAW = false
+  private var editSavingBlocked = false
   var isRAWSource: Bool { sourceURL != nil && sourceIsRAW }
   private var scopedURL: URL?
   private var saveTask: Task<Void, Never>?
@@ -250,7 +253,9 @@ final class PhotoEditor {
       do {
         let isRAW = await imageDecoder.isRAWFile(url)
         try Task.checkCancellation()
-        let saved = savedEdits(for: url, isRAW: isRAW)
+        let loaded = SavedEditStore.load(
+          from: editsURL(for: url), defaultValue: PhotoEdits.defaults(forRAW: isRAW))
+        let saved = loaded.value
         let decoded = try await imageDecoder.decode(
           from: url, isRAW: isRAW, flatRAW: saved.flatRAW,
           highlightRecovery: saved.rawHighlightRecovery, temperature: saved.rawTemperature,
@@ -272,6 +277,9 @@ final class PhotoEditor {
         retainAccess = access
         source = image
         sourceURL = url
+        editRecoveryNotice = loaded.notice
+        editRecoveryURL = loaded.backupURL
+        editSavingBlocked = !loaded.canSave
         UserDefaults.standard.set(url.standardizedFileURL.path, forKey: lastPhotoKey)
         sourceIsRAW = isRAW
         decodedFlatRAW = saved.flatRAW
@@ -329,15 +337,6 @@ final class PhotoEditor {
     return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
       .appendingPathComponent("FilmLab/Edits", isDirectory: true)
       .appendingPathComponent(key + ".json")
-  }
-
-  private func savedEdits(for url: URL, isRAW: Bool) -> PhotoEdits {
-    if let data = try? Data(contentsOf: editsURL(for: url)),
-      let saved = try? JSONDecoder().decode(PhotoEdits.self, from: data)
-    {
-      return saved
-    }
-    return PhotoEdits.defaults(forRAW: isRAW)
   }
 
   private func restoreEdits(_ saved: PhotoEdits) {
@@ -512,13 +511,11 @@ final class PhotoEditor {
 
   private func saveEdits() {
     guard let sourceURL else { return }
+    guard !editSavingBlocked else { return }
     let edits = currentEdits()
     let url = editsURL(for: sourceURL)
     do {
-      try FileManager.default.createDirectory(
-        at: url.deletingLastPathComponent(), withIntermediateDirectories: true
-      )
-      try JSONEncoder().encode(edits).write(to: url, options: .atomic)
+      try SavedEditStore.save(edits, to: url)
     } catch {
       self.error = "Could not save edits: \(error.localizedDescription)"
     }
@@ -1374,6 +1371,17 @@ struct ContentView: View {
     ScrollView {
       VStack(alignment: .leading, spacing: 20) {
         Text(panel.rawValue).font(.title2.weight(.semibold))
+        if let notice = editor.editRecoveryNotice {
+          VStack(alignment: .leading, spacing: 6) {
+            Text(notice).font(.caption).foregroundStyle(.orange)
+            if let backupURL = editor.editRecoveryURL {
+              Button("Reveal backup in Finder") {
+                NSWorkspace.shared.activateFileViewerSelecting([backupURL])
+              }
+              .font(.caption)
+            }
+          }
+        }
         if let histogram = editor.histogram {
           OutputHistogram(
             bins: histogram.bins,
