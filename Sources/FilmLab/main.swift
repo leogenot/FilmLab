@@ -107,6 +107,15 @@ private struct PhotoEdits: Codable, Equatable {
     return result
   }
 
+  static func transferring(
+    _ copied: PhotoEdits, panel: EditorPanel, onto destination: PhotoEdits
+  ) -> PhotoEdits {
+    let safeSource = transferring(copied, onto: destination)
+    var result = destination.replacing(panel, with: safeSource)
+    if panel == .color { result.colorTimingVersion = copied.colorTimingVersion }
+    return result
+  }
+
   func resetting(_ panel: EditorPanel, isRAW: Bool) -> PhotoEdits {
     replacing(panel, with: PhotoEdits.defaults(forRAW: isRAW))
   }
@@ -883,14 +892,14 @@ final class PhotoEditor {
     sourceURL != nil && copiedWorkspace?.panel == panel
   }
 
+  fileprivate var copiedWorkspaceName: String? { copiedWorkspace?.panel.rawValue }
+
   fileprivate func pasteWorkspace(_ panel: EditorPanel) {
     guard canPasteWorkspace(panel), let copied = copiedWorkspace?.edits else { return }
     historyTask?.cancel()
     historyOpen = false
     let current = currentEdits()
-    let transferred = PhotoEdits.transferring(copied, onto: current)
-    var result = current.replacing(panel, with: transferred)
-    if panel == .color { result.colorTimingVersion = copied.colorTimingVersion }
+    let result = PhotoEdits.transferring(copied, panel: panel, onto: current)
     guard result != current else { return }
     restoreEdits(result)
     if panel == .local {
@@ -910,8 +919,10 @@ final class PhotoEditor {
     return try? JSONDecoder().decode(PhotoEdits.self, from: data)
   }
 
-  func pasteSettings(to paths: [String]) async -> String {
-    guard let copied = settingsForPaste() else {
+  func pasteSettings(to paths: [String], workspaceOnly: Bool = false) async -> String {
+    let workspace = workspaceOnly ? copiedWorkspace : nil
+    if workspaceOnly && workspace == nil { return "Copy a workspace first." }
+    guard let copied = workspace?.edits ?? settingsForPaste() else {
       return "Copy settings from a FilmLab photo first."
     }
     guard !paths.isEmpty else { return "Select photos in the catalog first." }
@@ -940,7 +951,12 @@ final class PhotoEditor {
         failures.append(url.lastPathComponent)
         continue
       }
-      let updated = PhotoEdits.transferring(copied, onto: loaded.value)
+      let updated: PhotoEdits
+      if let workspace {
+        updated = PhotoEdits.transferring(copied, panel: workspace.panel, onto: loaded.value)
+      } else {
+        updated = PhotoEdits.transferring(copied, onto: loaded.value)
+      }
       if updated == loaded.value {
         skipped += 1
       } else {
@@ -2255,11 +2271,11 @@ struct ContentView: View {
     }
   }
 
-  private func applySettingsToSelection() {
+  private func applySettingsToSelection(workspaceOnly: Bool = false) {
     let paths = library.selectedCatalog?.photoPaths.filter { selectedPhotoPaths.contains($0) } ?? []
     applyingBatch = true
     Task {
-      libraryNotice = await editor.pasteSettings(to: paths)
+      libraryNotice = await editor.pasteSettings(to: paths, workspaceOnly: workspaceOnly)
       applyingBatch = false
       selectedPhotoPaths.removeAll()
       selectingPhotos = false
@@ -2440,6 +2456,12 @@ struct ContentView: View {
                 applySettingsToSelection()
               }
               .disabled(selectedPhotoPaths.isEmpty || applyingBatch || exportingBatch)
+              if let workspace = editor.copiedWorkspaceName {
+                Button("Paste \(workspace) to \(selectedPhotoPaths.count) Photos") {
+                  applySettingsToSelection(workspaceOnly: true)
+                }
+                .disabled(selectedPhotoPaths.isEmpty || applyingBatch || exportingBatch)
+              }
               Menu("Export Selected…") {
                 Button("JPEG (sRGB)") { exportSelection(format: .jpeg) }
                 Button("16-bit TIFF (sRGB)") { exportSelection(format: .tiff16SRGB) }
