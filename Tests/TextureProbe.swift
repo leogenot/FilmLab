@@ -121,6 +121,17 @@ struct TextureProbe {
       abs(level(detailedExport, x: 55) - 0.7) < 0.001, "Acutance changed a flat highlight")
     let edgeDifference = zip(detailedPreview, detailedExport).map { abs($0 - $1) }.max()!
     precondition(edgeDifference < 0.002, "Preview and export acutance disagree")
+
+    let signed = CIImage(
+      color: CIColor(red: -0.1, green: 0.25, blue: 0.4, colorSpace: space)!
+    ).cropped(to: source.extent)
+    let signedTexture = FilmEffects.apply(
+      to: signed, grain: 1, halation: 0, acutance: 1)
+    let signedPixels = pixels(signedTexture, context: export)
+    let center = (32 * 64 + 32) * 4
+    precondition(abs(signedPixels[center] + 0.1) < 0.0001)
+    precondition(abs(signedPixels[center + 1] - 0.25) < 0.0001)
+    precondition(abs(signedPixels[center + 2] - 0.4) < 0.0001)
     print("Edge-detail checks passed; maximum working-format difference \(edgeDifference)")
   }
 }

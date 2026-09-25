@@ -685,6 +685,9 @@ enum FilmKernels {
     [[stitchable]] float4 applyGrain(coreimage::sample_t pixel,
                                     float amount, float size, float seed,
                                     coreimage::destination destination) {
+                  // Signed channels can encode out-of-gamut detail for float TIFF.
+                  // Output grain is not defined there; leave those pixels intact.
+                  if (any(pixel.rgb < float3(0.0))) return pixel;
                   float2 coord = destination.coord();
                   uint photoSeed = uint(seed);
                   float fine = grainHash(int2(floor(coord)), 0xcb1ab31fu ^ photoSeed);
@@ -739,6 +742,8 @@ enum FilmKernels {
 
     [[stitchable]] float4 applyAcutance(coreimage::sample_t pixel,
                                        coreimage::sample_t blurred, float amount) {
+        // Do not turn valid signed working-color values into black at an edge.
+        if (any(pixel.rgb < float3(0.0))) return pixel;
         float3 source = max(pixel.rgb, float3(0.0));
         float3 lowPass = max(blurred.rgb, float3(0.0));
         float luma = dot(source, float3(0.2126, 0.7152, 0.0722));
