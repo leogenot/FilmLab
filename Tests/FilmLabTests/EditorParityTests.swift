@@ -74,7 +74,8 @@ final class EditorParityTests: XCTestCase {
       editor.outputShoulder = 0.15
       editor.radialLights = [
         RadialAdjustment(
-          exposure: 0.35, warmth: 0.1, saturation: -0.2,
+          exposure: 0.35, shadowLight: 0.2, highlightLight: -0.1,
+          warmth: 0.1, saturation: -0.2,
           centerX: 0.52, centerY: 0.46,
           radius: 0.3, feather: 0.6, toneRangeEnabled: true,
           toneCenter: 0, toneWidth: 4, toneFeather: 1,
@@ -151,6 +152,8 @@ final class EditorParityTests: XCTestCase {
       XCTAssertEqual(area["hueRangeEnabled"] as? Bool, true)
       XCTAssertEqual(area["hueCenter"] as? Double, 210)
       XCTAssertEqual(area["saturation"] as? Double, -0.2)
+      XCTAssertEqual(area["shadowLight"] as? Double, 0.2)
+      XCTAssertEqual(area["highlightLight"] as? Double, -0.1)
     }
   }
 

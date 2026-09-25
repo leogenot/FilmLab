@@ -160,7 +160,8 @@ enum LocalExposure {
   }
 
   static func apply(
-    to image: CIImage, ev: Double, warmth: Double = 0, tint: Double = 0,
+    to image: CIImage, ev: Double, shadowLight: Double = 0, highlightLight: Double = 0,
+    warmth: Double = 0, tint: Double = 0,
     saturation: Double = 0,
     centerX: Double, centerY: Double,
     radius: Double, feather: Double, inverted: Bool = false,
@@ -172,7 +173,8 @@ enum LocalExposure {
     hueWidth: Double = 45, hueFeather: Double = 20
   ) -> CIImage {
     guard
-      abs(ev) > 0.001 || abs(warmth) > 0.001 || abs(tint) > 0.001
+      abs(ev) > 0.001 || abs(shadowLight) > 0.001 || abs(highlightLight) > 0.001
+        || abs(warmth) > 0.001 || abs(tint) > 0.001
         || abs(saturation) > 0.001,
       image.extent.width > 0, image.extent.height > 0
     else {
@@ -191,6 +193,13 @@ enum LocalExposure {
     var adjusted = image
     if abs(ev) > 0.001 {
       adjusted = adjusted.applyingFilter("CIExposureAdjust", parameters: [kCIInputEVKey: ev])
+    }
+    if abs(shadowLight) > 0.001 || abs(highlightLight) > 0.001 {
+      guard let kernel = FilmKernels.kernel("shapeSceneLight"),
+        let shaped = kernel.apply(
+          extent: image.extent, arguments: [adjusted, shadowLight, highlightLight])
+      else { return image }
+      adjusted = shaped
     }
     if abs(warmth) > 0.001 || abs(tint) > 0.001 {
       let balance = CIFilter.temperatureAndTint()

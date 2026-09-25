@@ -81,6 +81,7 @@ struct LocalExposureProbe {
           .utf8))
     precondition(
       oldArea.shape == 0 && oldArea.angle == 90 && oldArea.inverted
+        && oldArea.shadowLight == 0 && oldArea.highlightLight == 0
         && oldArea.warmth == 0 && oldArea.tint == 0 && oldArea.saturation == 0
         && !oldArea.toneRangeEnabled
         && !oldArea.hueRangeEnabled,
@@ -155,6 +156,24 @@ struct LocalExposureProbe {
     precondition(abs(red(tonalBright, 0, 0) - 0.018) < 0.002, "Deep shadow changed")
     precondition(red(tonalBright, 1, 0) > 0.35, "Middle gray did not brighten")
     precondition(abs(red(tonalBright, 2, 0) - 1.8) < 0.002, "Bright highlight changed")
+    let locallyShaped = LocalExposure.apply(
+      to: tonalSource, ev: 0, shadowLight: 1, highlightLight: -1,
+      centerX: 0.5, centerY: 0.5, radius: 1, feather: 0.01)
+    precondition(red(locallyShaped, 0, 0) > 0.03, "Local shadow light did not lift shadows")
+    precondition(
+      abs(red(locallyShaped, 1, 0) - 0.18) < 0.002,
+      "Local light shaping moved middle gray")
+    precondition(red(locallyShaped, 2, 0) < 1.0, "Local highlight light did not hold highlights")
+    let darkSource = CIImage(
+      color: CIColor(red: 0.018, green: 0.018, blue: 0.018, colorSpace: space)!
+    ).cropped(to: source.extent)
+    let spatiallyShaped = LocalExposure.apply(
+      to: darkSource, ev: 0, shadowLight: 1,
+      centerX: 0.5, centerY: 0.5, radius: 0.25, feather: 0.5)
+    precondition(red(spatiallyShaped, 50, 50) > 0.03, "Local shadow missed mask center")
+    precondition(
+      abs(red(spatiallyShaped, 0, 0) - 0.018) < 0.002,
+      "Local shadow light changed the unselected corner")
     let unchanged = LocalExposure.apply(
       to: source, ev: 0, centerX: 0.5, centerY: 0.5, radius: 0.35, feather: 0.5)
     precondition(unchanged === source, "Zero EV should skip the local graph")

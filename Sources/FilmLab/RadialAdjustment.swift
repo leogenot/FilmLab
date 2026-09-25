@@ -25,6 +25,8 @@ struct BrushStroke: Codable, Equatable {
 /// One geometric scene adjustment, evaluated before the selected film response.
 struct RadialAdjustment: Codable, Equatable {
   var exposure: Double
+  var shadowLight: Double
+  var highlightLight: Double
   var warmth: Double
   var tint: Double
   var saturation: Double
@@ -47,7 +49,8 @@ struct RadialAdjustment: Codable, Equatable {
   var hueFeather: Double
 
   init(
-    exposure: Double = 0, warmth: Double = 0, tint: Double = 0,
+    exposure: Double = 0, shadowLight: Double = 0, highlightLight: Double = 0,
+    warmth: Double = 0, tint: Double = 0,
     saturation: Double = 0,
     centerX: Double = 0.5, centerY: Double = 0.5,
     radius: Double = 0.35, feather: Double = 0.5, inverted: Bool = false,
@@ -59,6 +62,8 @@ struct RadialAdjustment: Codable, Equatable {
     hueWidth: Double = 45, hueFeather: Double = 20
   ) {
     self.exposure = exposure
+    self.shadowLight = shadowLight
+    self.highlightLight = highlightLight
     self.warmth = warmth
     self.tint = tint
     self.saturation = saturation
@@ -84,6 +89,8 @@ struct RadialAdjustment: Codable, Equatable {
   init(from decoder: Decoder) throws {
     let values = try decoder.container(keyedBy: CodingKeys.self)
     exposure = try values.decodeIfPresent(Double.self, forKey: .exposure) ?? 0
+    shadowLight = try values.decodeIfPresent(Double.self, forKey: .shadowLight) ?? 0
+    highlightLight = try values.decodeIfPresent(Double.self, forKey: .highlightLight) ?? 0
     warmth = try values.decodeIfPresent(Double.self, forKey: .warmth) ?? 0
     tint = try values.decodeIfPresent(Double.self, forKey: .tint) ?? 0
     saturation = try values.decodeIfPresent(Double.self, forKey: .saturation) ?? 0

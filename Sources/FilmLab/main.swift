@@ -1611,11 +1611,14 @@ final class PhotoEditor {
       image = shaped
     }
     for area in radialLights.prefix(index)
-    where abs(area.exposure) > 0.001 || abs(area.warmth) > 0.001 || abs(area.tint) > 0.001
-      || abs(area.saturation) > 0.001
+    where abs(area.exposure) > 0.001 || abs(area.shadowLight) > 0.001
+      || abs(area.highlightLight) > 0.001 || abs(area.warmth) > 0.001
+      || abs(area.tint) > 0.001 || abs(area.saturation) > 0.001
     {
       image = LocalExposure.apply(
-        to: image, ev: area.exposure, warmth: area.warmth, tint: area.tint,
+        to: image, ev: area.exposure,
+        shadowLight: area.shadowLight, highlightLight: area.highlightLight,
+        warmth: area.warmth, tint: area.tint,
         saturation: area.saturation,
         centerX: area.centerX,
         centerY: area.centerY, radius: area.radius, feather: area.feather,
@@ -4084,6 +4087,8 @@ struct ContentView: View {
           .pickerStyle(.menu)
           Toggle("Invert area", isOn: localBoolBinding(\.inverted))
           control("Exposure (EV)", value: localBinding(\.exposure), range: -2...2)
+          control("Shadow light (EV)", value: localBinding(\.shadowLight), range: -2...2)
+          control("Highlight light (EV)", value: localBinding(\.highlightLight), range: -2...2)
           control("Warmth", value: localBinding(\.warmth), range: -1...1)
           control("Tint", value: localBinding(\.tint), range: -1...1)
           control("Saturation", value: localBinding(\.saturation), range: -1...1)
