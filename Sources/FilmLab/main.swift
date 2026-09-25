@@ -2581,6 +2581,11 @@ struct ContentView: View {
       )
     }
     .onAppear {
+      if let remembered = lastPhotoByCatalog[library.selectedCatalogID],
+        let resolved = library.resolvedMissingPhoto(at: remembered)
+      {
+        relinkPhoto(from: remembered, to: resolved)
+      }
       editor.resumeLastPhoto(
         in: availableCatalogPaths,
         remembered: lastPhotoByCatalog[library.selectedCatalogID])
@@ -2803,6 +2808,17 @@ struct ContentView: View {
 
   private func selectPhoto(_ path: String) {
     guard FileManager.default.fileExists(atPath: path) else {
+      if let resolved = library.resolvedMissingPhoto(at: path) {
+        relinkPhoto(from: path, to: resolved)
+        if library.selectedCatalog?.photoPaths.contains(resolved.standardizedFileURL.path) == true {
+          if editor.sourceURL?.standardizedFileURL.path == resolved.standardizedFileURL.path {
+            showingLibrary = false
+          } else {
+            selectPhoto(resolved.standardizedFileURL.path)
+          }
+        }
+        return
+      }
       libraryNotice = "Photo is missing: \(path)"
       return
     }
@@ -2875,8 +2891,8 @@ struct ContentView: View {
         }
         let previousLibrary = library
         let added = library.importPhotos(photos, into: catalogID)
-        let tracked = library.trackImportedFolder(folder, in: catalogID)
-        if (added > 0 || tracked) && !saveLibrary() {
+        _ = library.trackImportedFolder(folder, in: catalogID)
+        if library != previousLibrary && !saveLibrary() {
           library = previousLibrary
         } else if added == 0 {
           libraryNotice =
@@ -3202,6 +3218,13 @@ struct ContentView: View {
       library = previousLibrary
       return
     }
+    for (previousPath, replacementURL) in relinked {
+      for catalogID in Array(lastPhotoByCatalog.keys)
+      where lastPhotoByCatalog[catalogID] == previousPath {
+        lastPhotoByCatalog[catalogID] = replacementURL.standardizedFileURL.path
+      }
+    }
+    CatalogPhotoMemory.save(lastPhotoByCatalog)
     selectedPhotoPaths.subtract(relinked.map(\.0))
     if let selectionAnchor, relinked.contains(where: { $0.0 == selectionAnchor }) {
       self.selectionAnchor = nil

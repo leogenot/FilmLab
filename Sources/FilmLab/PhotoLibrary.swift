@@ -49,11 +49,16 @@ struct PhotoLibrary: Codable, Equatable {
   var catalogs: [PhotoCatalog]
   var selectedCatalogID: UUID
   var favoritePaths: Set<String>
+  var photoBookmarks: [String: Data]
 
-  init(catalogs: [PhotoCatalog], selectedCatalogID: UUID, favoritePaths: Set<String> = []) {
+  init(
+    catalogs: [PhotoCatalog], selectedCatalogID: UUID, favoritePaths: Set<String> = [],
+    photoBookmarks: [String: Data] = [:]
+  ) {
     self.catalogs = catalogs
     self.selectedCatalogID = selectedCatalogID
     self.favoritePaths = favoritePaths
+    self.photoBookmarks = photoBookmarks
   }
 
   init(from decoder: Decoder) throws {
@@ -61,6 +66,7 @@ struct PhotoLibrary: Codable, Equatable {
     catalogs = try values.decode([PhotoCatalog].self, forKey: .catalogs)
     selectedCatalogID = try values.decode(UUID.self, forKey: .selectedCatalogID)
     favoritePaths = try values.decodeIfPresent(Set<String>.self, forKey: .favoritePaths) ?? []
+    photoBookmarks = try values.decodeIfPresent([String: Data].self, forKey: .photoBookmarks) ?? [:]
   }
 
   static func empty() -> PhotoLibrary {
@@ -106,6 +112,7 @@ struct PhotoLibrary: Codable, Equatable {
   private mutating func pruneOrphanedFavorites() {
     let available = Set(catalogs.flatMap(\.photoPaths))
     favoritePaths.formIntersection(available)
+    photoBookmarks = photoBookmarks.filter { available.contains($0.key) }
   }
 
   mutating func createCatalog(named name: String) {
@@ -157,6 +164,12 @@ struct PhotoLibrary: Codable, Equatable {
     var knownPaths = Set(catalogs[index].photoPaths)
     for url in urls {
       let path = url.standardizedFileURL.path
+      if photoBookmarks[path] == nil,
+        let bookmark = try? url.bookmarkData(
+          options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
+      {
+        photoBookmarks[path] = bookmark
+      }
       if knownPaths.insert(path).inserted {
         catalogs[index].photoPaths.append(path)
         imported += 1
@@ -223,8 +236,32 @@ struct PhotoLibrary: Codable, Equatable {
     pruneOrphanedFavorites()
   }
 
+  func resolvedMissingPhoto(at path: String) -> URL? {
+    guard !FileManager.default.fileExists(atPath: path), let bookmark = photoBookmarks[path] else {
+      return nil
+    }
+    var stale = false
+    guard
+      let resolved = try? URL(
+        resolvingBookmarkData: bookmark, options: [], relativeTo: nil,
+        bookmarkDataIsStale: &stale),
+      resolved.standardizedFileURL.path != path
+    else { return nil }
+    var isDirectory: ObjCBool = false
+    guard FileManager.default.fileExists(atPath: resolved.path, isDirectory: &isDirectory),
+      !isDirectory.boolValue
+    else { return nil }
+    return resolved
+  }
+
   mutating func relinkPhoto(from oldPath: String, to url: URL) {
     let newPath = url.standardizedFileURL.path
+    photoBookmarks.removeValue(forKey: oldPath)
+    if let bookmark = try? url.bookmarkData(
+      options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
+    {
+      photoBookmarks[newPath] = bookmark
+    }
     if favoritePaths.remove(oldPath) != nil { favoritePaths.insert(newPath) }
     for index in catalogs.indices {
       guard catalogs[index].photoPaths.contains(oldPath) else { continue }
