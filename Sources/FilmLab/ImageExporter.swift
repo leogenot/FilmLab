@@ -6,6 +6,7 @@ enum ExportFormat: Sendable, Equatable {
   case jpeg
   case tiff16SRGB
   case tiff16DisplayP3
+  case tiff32Linear
 
   var fileExtension: String {
     self == .jpeg ? "jpg" : "tiff"
@@ -63,7 +64,7 @@ actor ImageExporter {
     let accessing = request.sourceURL?.startAccessingSecurityScopedResource() ?? false
     defer { if accessing { request.sourceURL?.stopAccessingSecurityScopedResource() } }
     let outputImage: CIImage
-    if request.compressSRGBGamut && request.format != .tiff16DisplayP3 {
+    if request.compressSRGBGamut && (request.format == .jpeg || request.format == .tiff16SRGB) {
       guard let mapped = OutputGamutMap.apply(to: request.image) else {
         throw ExportError.renderFailed
       }
@@ -85,14 +86,27 @@ actor ImageExporter {
         throw ExportError.renderFailed
       }
       try data.write(to: request.url, options: .atomic)
-    case .tiff16SRGB, .tiff16DisplayP3:
-      let outputSpaceName: CFString =
-        request.format == .tiff16SRGB ? CGColorSpace.sRGB : CGColorSpace.displayP3
+    case .tiff16SRGB, .tiff16DisplayP3, .tiff32Linear:
+      let outputFormat: CIFormat
+      let outputSpaceName: CFString
+      switch request.format {
+      case .tiff16SRGB:
+        outputFormat = .RGBA16
+        outputSpaceName = CGColorSpace.sRGB
+      case .tiff16DisplayP3:
+        outputFormat = .RGBA16
+        outputSpaceName = CGColorSpace.displayP3
+      case .tiff32Linear:
+        outputFormat = .RGBAf
+        outputSpaceName = CGColorSpace.extendedLinearSRGB
+      case .jpeg:
+        preconditionFailure("JPEG is handled above")
+      }
       let temporaryURL = request.url.deletingLastPathComponent()
         .appendingPathComponent(".FilmLab-\(UUID().uuidString).tiff")
       defer { try? FileManager.default.removeItem(at: temporaryURL) }
       try context.writeTIFFRepresentation(
-        of: image, to: temporaryURL, format: .RGBA16,
+        of: image, to: temporaryURL, format: outputFormat,
         colorSpace: CGColorSpace(name: outputSpaceName)!, options: [:]
       )
       if FileManager.default.fileExists(atPath: request.url.path) {

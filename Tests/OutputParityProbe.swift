@@ -82,11 +82,16 @@ struct OutputParityProbe {
         precondition(widePreview?.histogram?.waveform.intensities.count == 64 * 64)
         let widePreviewPixels = pixels(CIImage(cgImage: widePreviewImage))
 
-        for format in [ExportFormat.tiff16SRGB, .tiff16DisplayP3, .jpeg] {
+        let formats: [ExportFormat] =
+          exposure == 0
+          ? [.tiff16SRGB, .tiff16DisplayP3, .tiff32Linear, .jpeg]
+          : [.tiff16SRGB, .tiff16DisplayP3, .jpeg]
+        for format in formats {
           let formatName =
             switch format {
             case .tiff16SRGB: "srgb-tiff"
             case .tiff16DisplayP3: "p3-tiff"
+            case .tiff32Linear: "linear-float-tiff"
             case .jpeg: "jpeg"
             }
           let outputURL = directory.appendingPathComponent(
@@ -95,6 +100,14 @@ struct OutputParityProbe {
           try await exporter.export(
             ExportRequest(image: developed, url: outputURL, format: format, sourceURL: url))
           guard let exported = CIImage(contentsOf: outputURL) else { throw ProbeError.unreadable }
+          if format == .tiff32Linear {
+            guard let file = CGImageSourceCreateWithURL(outputURL as CFURL, nil),
+              let metadata = CGImageSourceCopyPropertiesAtIndex(file, 0, nil)
+                as? [String: Any]
+            else { throw ProbeError.unreadable }
+            precondition(metadata[kCGImagePropertyDepth as String] as? Int == 32)
+            precondition(metadata[kCGImagePropertyIsFloat as String] as? Bool == true)
+          }
           if format == .tiff16DisplayP3 {
             guard let file = CGImageSourceCreateWithURL(outputURL as CFURL, nil),
               let metadata = CGImageSourceCopyPropertiesAtIndex(file, 0, nil)

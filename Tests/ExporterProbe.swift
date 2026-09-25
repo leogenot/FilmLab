@@ -180,8 +180,40 @@ struct ExporterProbe {
     precondition(abs(savedCompressed[0] - compressed[0]) < 0.001)
     let savedP3 = linearChannels(CIImage(contentsOf: unchangedP3URL)!)
     precondition(savedP3[0] > savedCompressed[0] + 0.1)
+    let floatValues: [Float] = [1.5, 0.3001, -0.1, 1, 0.2501, 0.2502, 0.2503, 1]
+    let floatImage = floatValues.withUnsafeBytes { bytes in
+      CIImage(
+        bitmapData: Data(bytes), bytesPerRow: 32,
+        size: CGSize(width: 2, height: 1), format: .RGBAf,
+        colorSpace: linearSpace)
+    }
+    let floatURL = directory.appendingPathComponent("extended-linear.tiff")
+    try await exporter.export(
+      ExportRequest(
+        image: floatImage, url: floatURL, format: .tiff32Linear, sourceURL: nil,
+        compressSRGBGamut: true))
+    guard let floatSource = CGImageSourceCreateWithURL(floatURL as CFURL, nil),
+      let floatProperties = CGImageSourceCopyPropertiesAtIndex(floatSource, 0, nil)
+        as? [String: Any],
+      let floatDecoded = CIImage(contentsOf: floatURL)
+    else { preconditionFailure("Floating-point TIFF is unreadable") }
+    precondition(floatProperties[kCGImagePropertyDepth as String] as? Int == 32)
+    precondition(floatProperties[kCGImagePropertyIsFloat as String] as? Bool == true)
+    precondition(
+      (floatProperties[kCGImagePropertyProfileName as String] as? String)?
+        .localizedCaseInsensitiveContains("linear") == true)
+    var roundTrip = [Float](repeating: 0, count: floatValues.count)
+    roundTrip.withUnsafeMutableBytes { bytes in
+      context.render(
+        floatDecoded, toBitmap: bytes.baseAddress!, rowBytes: 32,
+        bounds: CGRect(x: 0, y: 0, width: 2, height: 1), format: .RGBAf,
+        colorSpace: linearSpace)
+    }
+    precondition(
+      zip(floatValues, roundTrip).allSatisfy { abs($0 - $1) < 0.00001 },
+      "Float TIFF lost out-of-range or sub-8-bit channel detail")
     let savedSource = try Data(contentsOf: sourceURL)
     precondition(savedSource == original)
-    print("Export source-protection, metadata and atomic TIFF checks passed")
+    print("Export source-protection, metadata, float headroom and atomic TIFF checks passed")
   }
 }

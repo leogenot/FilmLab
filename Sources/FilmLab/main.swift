@@ -2496,6 +2496,9 @@ struct ContentView: View {
         Button("JPEG (sRGB)…") { editor.exportJPEG() }
         Button("16-bit TIFF (sRGB)…") { editor.exportTIFF(format: .tiff16SRGB) }
         Button("16-bit TIFF (Display P3)…") { editor.exportTIFF(format: .tiff16DisplayP3) }
+        Button("32-bit float TIFF (extended linear sRGB)…") {
+          editor.exportTIFF(format: .tiff32Linear)
+        }
       }
       .accessibilityLabel("Export photo")
       .disabled(!editor.canExport)
@@ -3403,6 +3406,9 @@ struct ContentView: View {
                 Button("16-bit TIFF (sRGB)") { exportSelection(format: .tiff16SRGB) }
                 Button("16-bit TIFF (Display P3)") {
                   exportSelection(format: .tiff16DisplayP3)
+                }
+                Button("32-bit float TIFF (extended linear sRGB)") {
+                  exportSelection(format: .tiff32Linear)
                 }
               }
               .disabled(
