@@ -4,6 +4,23 @@ struct PhotoCatalog: Codable, Identifiable, Equatable {
   var id: UUID
   var name: String
   var photoPaths: [String]
+  var importedFolderPaths: [String]
+
+  init(id: UUID, name: String, photoPaths: [String], importedFolderPaths: [String] = []) {
+    self.id = id
+    self.name = name
+    self.photoPaths = photoPaths
+    self.importedFolderPaths = importedFolderPaths
+  }
+
+  init(from decoder: Decoder) throws {
+    let values = try decoder.container(keyedBy: CodingKeys.self)
+    id = try values.decode(UUID.self, forKey: .id)
+    name = try values.decode(String.self, forKey: .name)
+    photoPaths = try values.decode([String].self, forKey: .photoPaths)
+    importedFolderPaths =
+      try values.decodeIfPresent([String].self, forKey: .importedFolderPaths) ?? []
+  }
 }
 
 enum LibrarySelection {
@@ -69,6 +86,10 @@ struct PhotoLibrary: Codable, Equatable {
       }
       var seenPaths = Set<String>()
       result.catalogs[index].photoPaths.removeAll { !seenPaths.insert($0).inserted }
+      var seenFolders = Set<String>()
+      result.catalogs[index].importedFolderPaths.removeAll {
+        !seenFolders.insert($0).inserted
+      }
     }
     if result.selectedCatalog == nil {
       result.selectedCatalogID = result.catalogs[0].id
@@ -142,6 +163,15 @@ struct PhotoLibrary: Codable, Equatable {
       }
     }
     return imported
+  }
+
+  @discardableResult
+  mutating func trackImportedFolder(_ url: URL, in catalogID: UUID) -> Bool {
+    guard let index = catalogs.firstIndex(where: { $0.id == catalogID }) else { return false }
+    let path = url.standardizedFileURL.path
+    guard !catalogs[index].importedFolderPaths.contains(path) else { return false }
+    catalogs[index].importedFolderPaths.append(path)
+    return true
   }
 
   mutating func removePhoto(_ path: String) {

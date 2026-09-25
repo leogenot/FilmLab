@@ -2653,21 +2653,78 @@ struct ContentView: View {
         }
         let previousLibrary = library
         let added = library.importPhotos(photos, into: catalogID)
-        if added == 0 {
+        let tracked = library.trackImportedFolder(folder, in: catalogID)
+        if (added > 0 || tracked) && !saveLibrary() {
+          library = previousLibrary
+        } else if added == 0 {
           libraryNotice =
             photos.isEmpty
-            ? "No supported photos were found in that folder."
-            : "All \(photos.count) photos in that folder are already in \(catalogName)."
-        } else if saveLibrary() {
+            ? "Folder linked to \(catalogName). No supported photos found yet."
+            : "All \(photos.count) photos are already in \(catalogName). Folder linked for refresh."
+        } else {
           libraryNotice =
             "Imported \(added) photo\(added == 1 ? "" : "s") from \(folder.lastPathComponent) into \(catalogName)."
-        } else {
-          library = previousLibrary
         }
       } catch is CancellationError {
         libraryNotice = "Folder import cancelled."
       } catch {
         libraryNotice = "Could not import folder: \(error.localizedDescription)"
+      }
+      importingFolder = false
+      folderImportTask = nil
+    }
+  }
+
+  private func refreshImportedFolders() {
+    guard !importingFolder, let catalog = library.selectedCatalog,
+      !catalog.importedFolderPaths.isEmpty
+    else { return }
+    importingFolder = true
+    libraryNotice = nil
+    folderImportTask = Task { @MainActor in
+      var found: [URL] = []
+      var failed: [String] = []
+      do {
+        for path in catalog.importedFolderPaths {
+          try Task.checkCancellation()
+          let folder = URL(fileURLWithPath: path)
+          let access = folder.startAccessingSecurityScopedResource()
+          do {
+            found += try await folderScanner.scan(folder)
+          } catch is CancellationError {
+            if access { folder.stopAccessingSecurityScopedResource() }
+            throw CancellationError()
+          } catch {
+            failed.append(folder.lastPathComponent)
+          }
+          if access { folder.stopAccessingSecurityScopedResource() }
+        }
+        try Task.checkCancellation()
+        guard library.catalogs.contains(where: { $0.id == catalog.id }) else {
+          libraryNotice = "The catalog was removed before refresh finished."
+          importingFolder = false
+          folderImportTask = nil
+          return
+        }
+        guard updateLibrary({ $0.importPhotos(found, into: catalog.id) }) else {
+          importingFolder = false
+          folderImportTask = nil
+          return
+        }
+        let added = max(
+          0,
+          (library.catalogs.first { $0.id == catalog.id }?.photoPaths.count ?? 0)
+            - catalog.photoPaths.count)
+        libraryNotice =
+          "Added \(added) photo\(added == 1 ? "" : "s") from \(catalog.importedFolderPaths.count) folder\(catalog.importedFolderPaths.count == 1 ? "" : "s")."
+        if !failed.isEmpty {
+          libraryNotice =
+            (libraryNotice ?? "") + " Could not scan: \(failed.joined(separator: ", "))."
+        }
+      } catch is CancellationError {
+        libraryNotice = "Folder refresh cancelled."
+      } catch {
+        libraryNotice = "Could not refresh folders: \(error.localizedDescription)"
       }
       importingFolder = false
       folderImportTask = nil
@@ -2924,6 +2981,14 @@ struct ContentView: View {
             Button("Folder…") { importFolder() }
           }
           .disabled(importingFolder)
+          Button("Refresh Folders", systemImage: "arrow.clockwise") {
+            refreshImportedFolders()
+          }
+          .labelStyle(.iconOnly)
+          .disabled(
+            importingFolder || library.selectedCatalog?.importedFolderPaths.isEmpty != false
+          )
+          .help("Add newly found photos from folders imported into this catalog")
         }
         HStack(spacing: 10) {
           TextField("Search filenames", text: $librarySearch)
@@ -2987,9 +3052,9 @@ struct ContentView: View {
         if applyingBatch { ProgressView("Applying copied settings…") }
         if importingFolder {
           HStack {
-            ProgressView("Scanning photo folder…")
+            ProgressView("Scanning photo folders…")
             Spacer()
-            Button("Cancel Import") { folderImportTask?.cancel() }
+            Button("Cancel Scan") { folderImportTask?.cancel() }
           }
         }
         if exportingBatch {
