@@ -6,6 +6,25 @@ struct LinearRGB: Sendable {
   let blue: Double
 
   var luminance: Double { 0.2126 * red + 0.7152 * green + 0.0722 * blue }
+
+  var hueDegrees: Double? {
+    let r = max(red, 0)
+    let g = max(green, 0)
+    let b = max(blue, 0)
+    let peak = max(r, g, b)
+    let chroma = peak - min(r, g, b)
+    guard peak >= 0.002, chroma / peak >= 0.02 else { return nil }
+    let sector: Double
+    if peak == r {
+      sector = (g - b) / chroma
+    } else if peak == g {
+      sector = (b - r) / chroma + 2
+    } else {
+      sector = (r - g) / chroma + 4
+    }
+    let hue = sector * 60
+    return hue < 0 ? hue + 360 : hue
+  }
 }
 
 struct PixelReadout: Sendable {
@@ -44,6 +63,14 @@ actor PixelSampler {
     return PixelReadout(
       input: input, output: output,
       displayX: request.displayX, displayY: request.displayY)
+  }
+
+  func sampleInput(_ request: PixelSampleRequest) -> LinearRGB? {
+    let accessing = request.sourceURL?.startAccessingSecurityScopedResource() ?? false
+    defer { if accessing { request.sourceURL?.stopAccessingSecurityScopedResource() } }
+    guard !Task.isCancelled else { return nil }
+    return read(
+      request.input, x: Double(request.inputLocation.x), y: Double(request.inputLocation.y))
   }
 
   private func read(_ image: CIImage, x: Double, y: Double) -> LinearRGB? {

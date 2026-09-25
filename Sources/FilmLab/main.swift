@@ -360,6 +360,8 @@ final class PhotoEditor {
   var radialLights = [RadialAdjustment()]
   var selectedLocalIndex = 0
   var placingLocalArea = false
+  var pickingLocalHue = false
+  var localHueNotice: String?
   var pickingNeutralArea = false
   var neutralNotice: String?
   var paintingLocalArea = false
@@ -459,8 +461,10 @@ final class PhotoEditor {
   private let neutralPatchSampler = NeutralPatchSampler()
   private var pixelTask: Task<Void, Never>?
   private var neutralTask: Task<Void, Never>?
+  private var localHueTask: Task<Void, Never>?
   private var pixelVersion = 0
   private var neutralVersion = 0
+  private var localHueVersion = 0
   private let exporter = ImageExporter()
   private static let thumbnailDecoder = ImageDecoder()
 
@@ -556,6 +560,8 @@ final class PhotoEditor {
         neutralVersion += 1
         pickingNeutralArea = false
         neutralNotice = nil
+        setPickingLocalHue(false)
+        localHueNotice = nil
         if let scopedURL { scopedURL.stopAccessingSecurityScopedResource() }
         scopedURL = access ? url : nil
         retainAccess = access
@@ -1295,7 +1301,9 @@ final class PhotoEditor {
 
   func selectLocalArea(_ index: Int) {
     guard radialLights.indices.contains(index) else { return }
+    setPickingLocalHue(false)
     selectedLocalIndex = index
+    localHueNotice = nil
     if radialLights[index].shape != 2 { paintingLocalArea = false }
     if showLocalMask { renderPreview() }
   }
@@ -1320,6 +1328,7 @@ final class PhotoEditor {
 
   func setMaskPreview(_ visible: Bool) {
     setPickingNeutralArea(false)
+    setPickingLocalHue(false)
     placingLocalArea = false
     paintingLocalArea = false
     showCropBounds = false
@@ -1356,6 +1365,7 @@ final class PhotoEditor {
 
   func setPlacingLocalArea(_ placing: Bool) {
     setPickingNeutralArea(false)
+    setPickingLocalHue(false)
     placingLocalArea = placing && source != nil
     if placingLocalArea {
       paintingLocalArea = false
@@ -1370,6 +1380,7 @@ final class PhotoEditor {
 
   func setPaintingLocalArea(_ painting: Bool) {
     setPickingNeutralArea(false)
+    setPickingLocalHue(false)
     paintingLocalArea =
       painting && source != nil
       && radialLights[selectedLocalIndex].shape == 2
@@ -1434,11 +1445,11 @@ final class PhotoEditor {
   }
 
   private func localMaskImage() -> CIImage? {
-    guard let source else { return nil }
-    let area = radialLights[min(selectedLocalIndex, radialLights.count - 1)]
+    guard let image = imageBeforeLocalArea(selectedLocalIndex) else { return nil }
+    let area = radialLights[selectedLocalIndex]
     guard
       let mask = LocalExposure.mask(
-        for: source, centerX: area.centerX, centerY: area.centerY,
+        for: image, centerX: area.centerX, centerY: area.centerY,
         radius: area.radius, feather: area.feather, inverted: area.inverted,
         shape: area.shape, angle: area.angle,
         brushSize: area.brushSize, strokes: area.strokes,
@@ -1451,6 +1462,23 @@ final class PhotoEditor {
   }
 
   private func developedImage(previewUncropped: Bool = false) -> CIImage? {
+    guard var image = imageBeforeLocalArea(radialLights.count) else { return nil }
+    if abs(filmLightWarmth) > 0.001 || abs(filmLightTint) > 0.001 {
+      let balance = CIFilter.temperatureAndTint()
+      balance.inputImage = image
+      balance.neutral = CIVector(x: 6500, y: 0)
+      balance.targetNeutral = CIVector(
+        x: 6500 - filmLightWarmth * 1000, y: -filmLightTint * 100)
+      guard let balanced = balance.outputImage else {
+        error = "The film-light color balance could not be rendered."
+        return nil
+      }
+      image = balanced
+    }
+    return finishDeveloping(image, previewUncropped: previewUncropped)
+  }
+
+  private func imageBeforeLocalArea(_ index: Int) -> CIImage? {
     guard var image = source else { return nil }
     image = inputNeutralBalance.apply(to: image)
     if !sourceIsRAW && abs(inputTone - 1) > 0.001 {
@@ -1486,7 +1514,7 @@ final class PhotoEditor {
       }
       image = shaped
     }
-    for area in radialLights
+    for area in radialLights.prefix(index)
     where abs(area.exposure) > 0.001 || abs(area.warmth) > 0.001 || abs(area.tint) > 0.001 {
       image = LocalExposure.apply(
         to: image, ev: area.exposure, warmth: area.warmth, tint: area.tint,
@@ -1499,18 +1527,11 @@ final class PhotoEditor {
         hueRangeEnabled: area.hueRangeEnabled, hueCenter: area.hueCenter,
         hueWidth: area.hueWidth, hueFeather: area.hueFeather)
     }
-    if abs(filmLightWarmth) > 0.001 || abs(filmLightTint) > 0.001 {
-      let balance = CIFilter.temperatureAndTint()
-      balance.inputImage = image
-      balance.neutral = CIVector(x: 6500, y: 0)
-      balance.targetNeutral = CIVector(
-        x: 6500 - filmLightWarmth * 1000, y: -filmLightTint * 100)
-      guard let balanced = balance.outputImage else {
-        error = "The film-light color balance could not be rendered."
-        return nil
-      }
-      image = balanced
-    }
+    return image
+  }
+
+  private func finishDeveloping(_ startingImage: CIImage, previewUncropped: Bool) -> CIImage? {
+    var image = startingImage
     if stockIndex == 1 || stockIndex == 2 {
       guard let measuredNegativeKernel,
         let portraPositiveKernel,
@@ -1688,6 +1709,7 @@ final class PhotoEditor {
   }
 
   func setPickingNeutralArea(_ picking: Bool) {
+    if picking { setPickingLocalHue(false) }
     neutralTask?.cancel()
     neutralVersion += 1
     pickingNeutralArea = picking && source != nil
@@ -1704,6 +1726,61 @@ final class PhotoEditor {
       compareEnabled = false
       zoom100 = false
       renderPreview()
+    }
+  }
+
+  func setPickingLocalHue(_ picking: Bool) {
+    localHueTask?.cancel()
+    localHueVersion += 1
+    pickingLocalHue = picking && source != nil
+    if pickingLocalHue {
+      setPickingNeutralArea(false)
+      localHueNotice = nil
+      placingLocalArea = false
+      paintingLocalArea = false
+      inspectPixel = false
+      selectedPixel = nil
+      pixelReadout = nil
+      showCropBounds = false
+      showLocalMask = false
+      showOriginal = false
+      compareEnabled = false
+      zoom100 = false
+      renderPreview()
+    }
+  }
+
+  func pickLocalHue(displayX: Double, displayY: Double) {
+    guard pickingLocalHue, let source, let sourceURL,
+      let location = Framing.sourceLocation(
+        displayX: displayX, displayY: displayY, sourceExtent: source.extent,
+        quarterTurns: frameRotation, straightenDegrees: frameStraighten,
+        aspect: frameAspect, offsetX: frameOffsetX, offsetY: frameOffsetY,
+        freeCrop: frameFreeCrop),
+      let input = imageBeforeLocalArea(selectedLocalIndex)
+    else { return }
+    pickingLocalHue = false
+    localHueTask?.cancel()
+    localHueVersion += 1
+    let version = localHueVersion
+    let areaIndex = selectedLocalIndex
+    let request = PixelSampleRequest(
+      input: input, output: input, inputLocation: location,
+      displayX: displayX, displayY: displayY, sourceURL: scopedURL)
+    localHueTask = Task {
+      let sampled = await pixelSampler.sampleInput(request)
+      guard !Task.isCancelled, version == localHueVersion, self.sourceURL == sourceURL,
+        selectedLocalIndex == areaIndex
+      else { return }
+      localHueTask = nil
+      guard let hue = sampled?.hueDegrees else {
+        localHueNotice = "Choose a colored area with visible detail."
+        return
+      }
+      radialLights[areaIndex].hueCenter = hue
+      radialLights[areaIndex].hueRangeEnabled = true
+      localHueNotice = nil
+      editsChanged()
     }
   }
 
@@ -2847,6 +2924,17 @@ struct ContentView: View {
           .allowsHitTesting(false)
           .zIndex(1)
       }
+      if editor.pickingLocalHue {
+        Text("Click a colored detail to target its pre-film hue")
+          .font(.caption.weight(.semibold))
+          .padding(9)
+          .background(.ultraThinMaterial)
+          .clipShape(RoundedRectangle(cornerRadius: 7))
+          .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+          .padding(16)
+          .allowsHitTesting(false)
+          .zIndex(1)
+      }
       if let preview = editor.preview {
         if editor.compareEnabled, let original = editor.comparisonPreview {
           GeometryReader { geometry in
@@ -2991,7 +3079,7 @@ struct ContentView: View {
                   }
                 }.onEnded { value in
                   if editor.inspectPixel || editor.placingLocalArea
-                    || editor.pickingNeutralArea
+                    || editor.pickingNeutralArea || editor.pickingLocalHue
                   {
                     let scale = min(
                       geometry.size.width / preview.size.width,
@@ -3004,6 +3092,8 @@ struct ContentView: View {
                     let y = (value.location.y - top) / imageHeight
                     if editor.pickingNeutralArea {
                       editor.pickNeutralArea(displayX: x, displayY: y)
+                    } else if editor.pickingLocalHue {
+                      editor.pickLocalHue(displayX: x, displayY: y)
                     } else if editor.inspectPixel {
                       editor.inspect(displayX: x, displayY: y)
                     } else {
@@ -3379,6 +3469,16 @@ struct ContentView: View {
           }
           Toggle("Limit by color", isOn: localBoolBinding(\.hueRangeEnabled))
           if editor.radialLights[editor.selectedLocalIndex].hueRangeEnabled {
+            Button(
+              editor.pickingLocalHue ? "Cancel pick" : "Pick color on photo",
+              systemImage: "eyedropper"
+            ) {
+              editor.setPickingLocalHue(!editor.pickingLocalHue)
+            }
+            .disabled(editor.preview == nil)
+            if let notice = editor.localHueNotice {
+              Text(notice).font(.caption).foregroundStyle(.orange)
+            }
             control("Hue center (°)", value: localBinding(\.hueCenter), range: 0...360)
             control("Hue reach (°)", value: localBinding(\.hueWidth), range: 5...90)
             control("Hue softness (°)", value: localBinding(\.hueFeather), range: 5...45)
