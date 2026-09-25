@@ -8,6 +8,13 @@ struct EditRecordLocation: Codable {
 }
 
 enum EditRecordLocator {
+  static func grainSeed(for sourceURL: URL) -> Double {
+    let key = fileIdentity(for: sourceURL) ?? sourceURL.standardizedFileURL.path
+    let bytes = Array(SHA256.hash(data: Data(key.utf8)))
+    let seed = (UInt32(bytes[0]) << 16) | (UInt32(bytes[1]) << 8) | UInt32(bytes[2])
+    return Double(max(1, seed))
+  }
+
   static func locate(sourceURL: URL, directory: URL) -> EditRecordLocation {
     let pathURL = directory.appendingPathComponent(
       digest(sourceURL.standardizedFileURL.path) + ".json")

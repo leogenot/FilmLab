@@ -498,10 +498,11 @@ enum FilmKernels {
                   return float(hash & 0x00ffffffu) / 16777216.0 - 0.5;
               }
     [[stitchable]] float4 applyGrain(coreimage::sample_t pixel,
-                                    float amount, float size,
+                                    float amount, float size, float seed,
                                     coreimage::destination destination) {
                   float2 coord = destination.coord();
-                  float fine = grainHash(int2(floor(coord)), 0xcb1ab31fu);
+                  uint photoSeed = uint(seed);
+                  float fine = grainHash(int2(floor(coord)), 0xcb1ab31fu ^ photoSeed);
                   float noise = fine;
                   if (size > 0.001) {
                       float2 lattice = coord / (2.5 * size);
@@ -514,10 +515,10 @@ enum FilmKernels {
                           (1.0 - blend.x) * blend.y,
                           blend.x * blend.y);
                       float4 samples = float4(
-                          grainHash(cell, 0x61c88647u),
-                          grainHash(cell + int2(1, 0), 0x61c88647u),
-                          grainHash(cell + int2(0, 1), 0x61c88647u),
-                          grainHash(cell + int2(1, 1), 0x61c88647u));
+                          grainHash(cell, 0x61c88647u ^ photoSeed),
+                          grainHash(cell + int2(1, 0), 0x61c88647u ^ photoSeed),
+                          grainHash(cell + int2(0, 1), 0x61c88647u ^ photoSeed),
+                          grainHash(cell + int2(1, 1), 0x61c88647u ^ photoSeed));
                       float coarse = dot(weights, samples)
                           / sqrt(max(dot(weights, weights), 0.000001));
                       noise = (coarse * 0.9 + fine * 0.1) / sqrt(0.82);

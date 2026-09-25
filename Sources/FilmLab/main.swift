@@ -60,6 +60,7 @@ private struct PhotoEdits: Codable, Equatable {
   var development = 0.0
   var grain = 0.0
   var grainSize = 1.0
+  var grainSeed = 0.0
   var halation = 0.0
   var acutance = 0.0
   var colorTimingVersion = 2
@@ -87,10 +88,11 @@ private struct PhotoEdits: Codable, Equatable {
 
   init() {}
 
-  static func defaults(forRAW isRAW: Bool) -> PhotoEdits {
+  static func defaults(forRAW isRAW: Bool, grainSeed: Double = 0) -> PhotoEdits {
     var edits = PhotoEdits()
     edits.filmAmount = isRAW ? 1.0 : 0.7
     edits.flatRAW = isRAW
+    edits.grainSeed = grainSeed
     return edits
   }
 
@@ -104,6 +106,7 @@ private struct PhotoEdits: Codable, Equatable {
     result.inputTint = destination.inputTint
     result.inputTone = destination.inputTone
     result.inputNeutralBalance = destination.inputNeutralBalance
+    result.grainSeed = destination.grainSeed
     return result
   }
 
@@ -233,6 +236,7 @@ private struct PhotoEdits: Codable, Equatable {
     development = try values.decodeIfPresent(Double.self, forKey: .development) ?? 0
     grain = try values.decodeIfPresent(Double.self, forKey: .grain) ?? 0
     grainSize = try values.decodeIfPresent(Double.self, forKey: .grainSize) ?? 0
+    grainSeed = try values.decodeIfPresent(Double.self, forKey: .grainSeed) ?? 0
     halation = try values.decodeIfPresent(Double.self, forKey: .halation) ?? 0
     acutance = try values.decodeIfPresent(Double.self, forKey: .acutance) ?? 0
     colorTimingVersion = try values.decodeIfPresent(Int.self, forKey: .colorTimingVersion) ?? 1
@@ -363,6 +367,7 @@ final class PhotoEditor {
   var development = 0.0
   var grain = 0.0
   var grainSize = 1.0
+  var grainSeed = 0.0
   var halation = 0.0
   var acutance = 0.0
   var colorTimingVersion = 2
@@ -521,7 +526,8 @@ final class PhotoEditor {
           sourceURL: url, directory: editsDirectory)
         let loaded = SavedEditStore.load(
           from: editLocation.primaryURL, fallbackURL: editLocation.pathURL,
-          defaultValue: PhotoEdits.defaults(forRAW: isRAW))
+          defaultValue: PhotoEdits.defaults(
+            forRAW: isRAW, grainSeed: EditRecordLocator.grainSeed(for: url)))
         let saved = loaded.value
         let decoded = try await imageDecoder.decode(
           from: url, isRAW: isRAW, flatRAW: saved.flatRAW,
@@ -673,6 +679,7 @@ final class PhotoEditor {
     development = saved.development
     grain = saved.grain
     grainSize = saved.grainSize
+    grainSeed = saved.grainSeed
     halation = saved.halation
     acutance = saved.acutance
     colorTimingVersion = saved.colorTimingVersion
@@ -815,6 +822,7 @@ final class PhotoEditor {
     edits.development = development
     edits.grain = grain
     edits.grainSize = grainSize
+    edits.grainSeed = grainSeed
     edits.halation = halation
     edits.acutance = acutance
     edits.colorTimingVersion = colorTimingVersion
@@ -946,7 +954,8 @@ final class PhotoEditor {
       let location = EditRecordLocator.locate(sourceURL: url, directory: editsDirectory)
       let loaded = SavedEditStore.load(
         from: location.primaryURL, fallbackURL: location.pathURL,
-        defaultValue: PhotoEdits.defaults(forRAW: isRAW))
+        defaultValue: PhotoEdits.defaults(
+          forRAW: isRAW, grainSeed: EditRecordLocator.grainSeed(for: url)))
       guard loaded.canSave, loaded.notice == nil else {
         if access { url.stopAccessingSecurityScopedResource() }
         failures.append(url.lastPathComponent)
@@ -1167,6 +1176,7 @@ final class PhotoEditor {
     development = defaults.development
     grain = defaults.grain
     grainSize = defaults.grainSize
+    grainSeed = sourceURL.map { EditRecordLocator.grainSeed(for: $0) } ?? 0
     halation = defaults.halation
     acutance = defaults.acutance
     colorTimingVersion = defaults.colorTimingVersion
@@ -1569,7 +1579,7 @@ final class PhotoEditor {
     )
     let mixed = ColorMixer.apply(to: selected, adjustments: mixer)
     var finished = FilmEffects.apply(
-      to: mixed, grain: grain, grainSize: grainSize, halation: halation,
+      to: mixed, grain: grain, grainSize: grainSize, grainSeed: grainSeed, halation: halation,
       acutance: acutance)
     if outputShoulder > 0.001 {
       guard let outputShoulderKernel,
@@ -1728,6 +1738,12 @@ final class PhotoEditor {
     editsChanged()
   }
 
+  func usePhotoGrainPattern() {
+    guard grainSeed == 0, let sourceURL else { return }
+    grainSeed = EditRecordLocator.grainSeed(for: sourceURL)
+    editsChanged()
+  }
+
   func exportJPEG() {
     guard canExport else { return }
     guard let image = developedImage() else { return }
@@ -1791,7 +1807,8 @@ final class PhotoEditor {
         let location = EditRecordLocator.locate(sourceURL: url, directory: editsDirectory)
         let loaded = SavedEditStore.load(
           from: location.primaryURL, fallbackURL: location.pathURL,
-          defaultValue: PhotoEdits.defaults(forRAW: isRAW))
+          defaultValue: PhotoEdits.defaults(
+            forRAW: isRAW, grainSeed: EditRecordLocator.grainSeed(for: url)))
         guard loaded.notice == nil else {
           result.failed.append(url.lastPathComponent + " (saved edits need review)")
           continue
@@ -3309,6 +3326,13 @@ struct ContentView: View {
         case .texture:
           control("Grain", value: $editor.grain, range: 0...1)
           control("Grain size", value: $editor.grainSize, range: 0...2)
+          if editor.grainSeed == 0 {
+            Button("Use unique grain pattern") { editor.usePhotoGrainPattern() }
+            Text(
+              "Older grades keep their original grain pattern until you choose this change. Undo restores the earlier pattern."
+            )
+            .font(.caption).foregroundStyle(.secondary)
+          }
           control("Halation", value: $editor.halation, range: 0...1)
           control("Edge detail", value: $editor.acutance, range: 0...1)
           Text(

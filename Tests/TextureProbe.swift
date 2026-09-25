@@ -29,6 +29,16 @@ struct TextureProbe {
     precondition(values.max()! - values.min()! > 0.01, "Grain lacks spatial variation")
     let difference = zip(first, full).map { abs($0 - $1) }.max()!
     precondition(difference < 0.002, "Preview and export grain disagree")
+    let seededA = pixels(
+      FilmEffects.apply(to: source, grain: 0.75, grainSeed: 17, halation: 0), context: export)
+    let seededAgain = pixels(
+      FilmEffects.apply(to: source, grain: 0.75, grainSeed: 17, halation: 0), context: preview)
+    let seededB = pixels(
+      FilmEffects.apply(to: source, grain: 0.75, grainSeed: 29, halation: 0), context: export)
+    precondition(seededA != full && seededA != seededB, "Photo seeds repeat the same grain")
+    precondition(
+      zip(seededA, seededAgain).map { abs($0 - $1) }.max()! < 0.002,
+      "Seeded grain differs between preview and export")
     let fine = pixels(
       FilmEffects.apply(to: source, grain: 0.75, grainSize: 0, halation: 0), context: export)
     func horizontalCorrelation(_ pixels: [Float], distance: Int) -> Double {

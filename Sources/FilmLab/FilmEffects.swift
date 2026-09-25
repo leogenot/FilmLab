@@ -13,6 +13,7 @@ enum FilmEffects {
 
   static func apply(
     to image: CIImage, grain: Double, grainSize: Double = 1,
+    grainSeed: Double = 0,
     halation: Double, acutance: Double = 0
   )
     -> CIImage
@@ -50,7 +51,7 @@ enum FilmEffects {
         grainKernel.apply(
           extent: image.extent,
           arguments: [
-            result, grain, grainSize,
+            result, grain, grainSize, grainSeed,
           ]) ?? result
     }
     return result
