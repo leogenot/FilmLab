@@ -1,3 +1,4 @@
+import CoreImage
 import Foundation
 import XCTest
 
@@ -34,6 +35,36 @@ final class BatchPasteCancellationTests: XCTestCase {
     XCTAssertTrue(outcome.summary.contains("Skipped 1"), outcome.summary)
     XCTAssertFalse(FileManager.default.fileExists(atPath: location.pathURL.path))
     XCTAssertFalse(FileManager.default.fileExists(atPath: location.primaryURL.path))
+  }
+
+  @MainActor func testUnreadableOriginalIsNotGivenNewBatchEdits() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("FilmLab-batch-unreadable-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let source = root.appendingPathComponent("source.jpg")
+    let damaged = root.appendingPathComponent("damaged.jpg")
+    try writeJPEG(to: source)
+    try Data("not a photo".utf8).write(to: damaged)
+    let location = EditRecordLocator.locate(
+      sourceURL: damaged,
+      directory: FileManager.default.urls(
+        for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("FilmLab/Edits"))
+    defer {
+      try? FileManager.default.removeItem(at: location.primaryURL)
+      try? FileManager.default.removeItem(at: location.pathURL)
+    }
+
+    let editor = PhotoEditor()
+    editor.sourceURL = source
+    editor.shotExposure = 1.25
+    editor.copyWorkspace(.film)
+    let outcome = await editor.pasteSettings(to: [damaged.path], workspaceOnly: true)
+    XCTAssertTrue(outcome.changedPaths.isEmpty)
+    XCTAssertTrue(outcome.summary.contains("damaged.jpg (unreadable original)"), outcome.summary)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: location.primaryURL.path))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: location.pathURL.path))
   }
 
   private struct PendingChange: Encodable {
@@ -126,7 +157,7 @@ final class BatchPasteCancellationTests: XCTestCase {
     let source = root.appendingPathComponent("source.jpg")
     let first = root.appendingPathComponent("first.jpg")
     let second = root.appendingPathComponent("second.jpg")
-    for url in [source, first, second] { try Data("photo".utf8).write(to: url) }
+    for url in [source, first, second] { try writeJPEG(to: url) }
 
     let history = FileManager.default.urls(
       for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -193,5 +224,13 @@ final class BatchPasteCancellationTests: XCTestCase {
       PhotoEdits.self, from: Data(contentsOf: firstLocation.pathURL))
     XCTAssertEqual(restored.shotExposure, 0)
     XCTAssertFalse(editor.canUndoBatch)
+  }
+
+  private func writeJPEG(to url: URL) throws {
+    let image = CIImage(color: CIColor(red: 0.3, green: 0.4, blue: 0.5))
+      .cropped(to: CGRect(x: 0, y: 0, width: 4, height: 4))
+    let space = try XCTUnwrap(CGColorSpace(name: CGColorSpace.sRGB))
+    let data = try XCTUnwrap(CIContext().jpegRepresentation(of: image, colorSpace: space))
+    try data.write(to: url)
   }
 }

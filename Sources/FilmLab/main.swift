@@ -1216,7 +1216,11 @@ final class PhotoEditor {
       }
       let url = URL(fileURLWithPath: path)
       let access = url.startAccessingSecurityScopedResource()
-      let isRAW = await decoder.isRAWFile(url)
+      guard let isRAW = await decoder.supportedRAWStatus(url) else {
+        if access { url.stopAccessingSecurityScopedResource() }
+        failures.append(url.lastPathComponent + " (unreadable original)")
+        continue
+      }
       if Task.isCancelled {
         if access { url.stopAccessingSecurityScopedResource() }
         cancelled = true

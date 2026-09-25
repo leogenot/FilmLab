@@ -46,11 +46,11 @@ actor ImageDecoder {
   ])
 
   func isRAWFile(_ url: URL) -> Bool {
-    guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-      let identifier = CGImageSourceGetType(source) as String?,
-      let type = UTType(identifier)
-    else { return false }
-    return type.conforms(to: .rawImage)
+    PhotoFileSupport.rawStatus(url) ?? false
+  }
+
+  func supportedRAWStatus(_ url: URL) -> Bool? {
+    PhotoFileSupport.rawStatus(url)
   }
 
   func decode(
