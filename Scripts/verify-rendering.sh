@@ -12,6 +12,12 @@ DEVELOPER_DIR="$developer_dir" swiftc \
   -o "$project_dir/.build/FilmLabRenderingProbe"
 "$project_dir/.build/FilmLabRenderingProbe"
 DEVELOPER_DIR="$developer_dir" swiftc \
+  "$project_dir/Sources/FilmLab/FilmKernels.swift" \
+  "$project_dir/Sources/FilmLab/ColorGrade.swift" \
+  "$project_dir/Tests/ColorGradeProbe.swift" \
+  -o "$project_dir/.build/FilmLabColorGradeProbe"
+"$project_dir/.build/FilmLabColorGradeProbe"
+DEVELOPER_DIR="$developer_dir" swiftc \
   "$project_dir/Sources/FilmLab/Framing.swift" \
   "$project_dir/Sources/FilmLab/FreeCrop.swift" \
   "$project_dir/Tests/FramingProbe.swift" \

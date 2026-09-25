@@ -62,6 +62,7 @@ private struct PhotoEdits: Codable, Equatable {
   var grainSize = 1.0
   var halation = 0.0
   var acutance = 0.0
+  var colorTimingVersion = 2
   var shadowHue = 210.0
   var shadowStrength = 0.0
   var midHue = 30.0
@@ -156,6 +157,7 @@ private struct PhotoEdits: Codable, Equatable {
     grainSize = try values.decodeIfPresent(Double.self, forKey: .grainSize) ?? 0
     halation = try values.decodeIfPresent(Double.self, forKey: .halation) ?? 0
     acutance = try values.decodeIfPresent(Double.self, forKey: .acutance) ?? 0
+    colorTimingVersion = try values.decodeIfPresent(Int.self, forKey: .colorTimingVersion) ?? 1
     shadowHue = try values.decodeIfPresent(Double.self, forKey: .shadowHue) ?? 210
     shadowStrength = try values.decodeIfPresent(Double.self, forKey: .shadowStrength) ?? 0
     midHue = try values.decodeIfPresent(Double.self, forKey: .midHue) ?? 30
@@ -272,6 +274,7 @@ final class PhotoEditor {
   var grainSize = 1.0
   var halation = 0.0
   var acutance = 0.0
+  var colorTimingVersion = 2
   var shadowHue = 210.0
   var shadowStrength = 0.0
   var midHue = 30.0
@@ -577,6 +580,7 @@ final class PhotoEditor {
     grainSize = saved.grainSize
     halation = saved.halation
     acutance = saved.acutance
+    colorTimingVersion = saved.colorTimingVersion
     shadowHue = saved.shadowHue
     shadowStrength = saved.shadowStrength
     midHue = saved.midHue
@@ -718,6 +722,7 @@ final class PhotoEditor {
     edits.grainSize = grainSize
     edits.halation = halation
     edits.acutance = acutance
+    edits.colorTimingVersion = colorTimingVersion
     edits.shadowHue = shadowHue
     edits.shadowStrength = shadowStrength
     edits.midHue = midHue
@@ -1029,6 +1034,7 @@ final class PhotoEditor {
     grainSize = defaults.grainSize
     halation = defaults.halation
     acutance = defaults.acutance
+    colorTimingVersion = defaults.colorTimingVersion
     shadowHue = defaults.shadowHue
     shadowStrength = defaults.shadowStrength
     midHue = defaults.midHue
@@ -1381,7 +1387,8 @@ final class PhotoEditor {
       to: temperature.outputImage ?? image,
       shadowHue: shadowHue, shadowStrength: shadowStrength,
       midHue: midHue, midStrength: midStrength,
-      highlightHue: highlightHue, highlightStrength: highlightStrength
+      highlightHue: highlightHue, highlightStrength: highlightStrength,
+      timingVersion: colorTimingVersion
     )
     var colored = graded
     if abs(vibrance) > 0.001 {
@@ -1548,6 +1555,12 @@ final class PhotoEditor {
     setPickingNeutralArea(false)
     inputNeutralBalance = InputNeutralBalance()
     neutralNotice = nil
+    editsChanged()
+  }
+
+  func useConsistentColorTiming() {
+    guard colorTimingVersion < 2 else { return }
+    colorTimingVersion = 2
     editsChanged()
   }
 
@@ -2733,6 +2746,14 @@ struct ContentView: View {
           .font(.caption).foregroundStyle(.secondary)
         case .color:
           Text("Master color").font(.headline)
+          if editor.colorTimingVersion < 2 {
+            Button("Use consistent color timing") { editor.useConsistentColorTiming() }
+            Text(
+              "Updates this older grade to hue timing that is consistent across Macs. Existing shadow, midtone, or highlight color may shift; Undo restores it."
+            )
+            .font(.caption).foregroundStyle(.secondary)
+            Divider()
+          }
           control("Vibrance", value: $editor.vibrance, range: -1...1)
           Text("Changes muted colors more than already saturated colors while retaining luminance.")
             .font(.caption).foregroundStyle(.secondary)
