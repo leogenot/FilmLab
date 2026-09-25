@@ -65,9 +65,9 @@ enum FilmKernels {
                   return log(1.0 + exp(clamp(x, -30.0, 30.0)));
               }
     [[stitchable]] float4 renderedInputTone(coreimage::sample_t pixel, float slope) {
-        float3 rgb = max(pixel.rgb, float3(0.0));
+        float3 rgb = pixel.rgb;
         float luminance = dot(rgb, float3(0.2126, 0.7152, 0.0722));
-        if (luminance <= 0.000001) return float4(rgb, pixel.a);
+        if (!all(isfinite(rgb)) || luminance <= 0.000001) return pixel;
         float relative = clamp(luminance / 0.18, 0.000001, 1000000.0);
         float target = 0.18 * pow(relative, slope);
         return float4(rgb * (target / luminance), pixel.a);
