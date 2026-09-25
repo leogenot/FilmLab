@@ -163,7 +163,12 @@ actor EditedThumbnailRenderer {
   func render(_ source: CIImage) -> CGImage? {
     guard !Task.isCancelled else { return nil }
     let scale = min(1, 320 / max(source.extent.width, source.extent.height))
-    let reduced = source.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+    let reduced =
+      scale < 1
+      ? source.applyingFilter(
+        "CILanczosScaleTransform",
+        parameters: [kCIInputScaleKey: scale, kCIInputAspectRatioKey: 1])
+      : source
     return context.createCGImage(
       reduced, from: reduced.extent, format: .RGBA8,
       colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
