@@ -345,13 +345,21 @@ private struct BatchSettingsResult {
   let applied: Int
   let skipped: Int
   let failures: [String]
+  let cancelled: Bool
 
   var summary: String {
     var parts = ["Applied settings to \(applied) photo\(applied == 1 ? "" : "s")."]
     if skipped > 0 { parts.append("Skipped \(skipped) unchanged or active photos.") }
+    if cancelled { parts.append("Batch paste stopped; completed edits can be undone.") }
     if !failures.isEmpty { parts.append("Could not update: \(failures.joined(separator: ", ")).") }
     return parts.joined(separator: " ")
   }
+}
+
+struct BatchPasteOutcome {
+  let summary: String
+  let changedPaths: [String]
+  let cancelled: Bool
 }
 
 private struct BatchExportResult {
@@ -1100,7 +1108,7 @@ final class PhotoEditor {
     applyTransferredSettings(copied)
   }
 
-  fileprivate func copyWorkspace(_ panel: EditorPanel) {
+  func copyWorkspace(_ panel: EditorPanel) {
     guard sourceURL != nil else { return }
     copiedWorkspace = (panel, currentEdits())
   }
@@ -1136,18 +1144,38 @@ final class PhotoEditor {
     return try? JSONDecoder().decode(PhotoEdits.self, from: data)
   }
 
-  func pasteSettings(to paths: [String], workspaceOnly: Bool = false) async -> String {
+  func pasteSettings(
+    to paths: [String], workspaceOnly: Bool = false,
+    progress: @MainActor (Int, Int) -> Void = { _, _ in }
+  ) async -> BatchPasteOutcome {
     let workspace = workspaceOnly ? copiedWorkspace : nil
-    if workspaceOnly && workspace == nil { return "Copy a workspace first." }
-    guard let copied = workspace?.edits ?? settingsForPaste() else {
-      return "Copy settings from a FilmLab photo first."
+    if workspaceOnly && workspace == nil {
+      return BatchPasteOutcome(
+        summary: "Copy a workspace first.", changedPaths: [], cancelled: false)
     }
-    guard !paths.isEmpty else { return "Select photos in the catalog first." }
+    guard let copied = workspace?.edits ?? settingsForPaste() else {
+      return BatchPasteOutcome(
+        summary: "Copy settings from a FilmLab photo first.", changedPaths: [], cancelled: false)
+    }
+    guard !paths.isEmpty else {
+      return BatchPasteOutcome(
+        summary: "Select photos in the catalog first.", changedPaths: [], cancelled: false)
+    }
     let decoder = ImageDecoder()
     var changes: [BatchSettingsChange] = []
     var skipped = 0
     var failures: [String] = []
-    for path in paths {
+    var cancelled = false
+    for (index, path) in paths.enumerated() {
+      if Task.isCancelled {
+        cancelled = true
+        break
+      }
+      progress(index + 1, paths.count)
+      if Task.isCancelled {
+        cancelled = true
+        break
+      }
       if sourceURL?.standardizedFileURL.path == path {
         skipped += 1
         continue
@@ -1159,6 +1187,11 @@ final class PhotoEditor {
       let url = URL(fileURLWithPath: path)
       let access = url.startAccessingSecurityScopedResource()
       let isRAW = await decoder.isRAWFile(url)
+      if Task.isCancelled {
+        if access { url.stopAccessingSecurityScopedResource() }
+        cancelled = true
+        break
+      }
       let location = EditRecordLocator.locate(sourceURL: url, directory: editsDirectory)
       let loaded = SavedEditStore.load(
         from: location.primaryURL, fallbackURL: location.pathURL,
@@ -1205,12 +1238,13 @@ final class PhotoEditor {
       lastBatchChanges = changes
     }
     var message = BatchSettingsResult(
-      applied: changes.count, skipped: skipped, failures: failures
+      applied: changes.count, skipped: skipped, failures: failures, cancelled: cancelled
     ).summary
     if !changes.isEmpty, !saveBatchHistory() {
       message += " Undo is available now but may not survive an app restart."
     }
-    return message
+    return BatchPasteOutcome(
+      summary: message, changedPaths: changes.map(\.path), cancelled: cancelled)
   }
 
   func undoLastBatch() -> String {
@@ -2456,6 +2490,8 @@ struct ContentView: View {
   @State private var captureDates: [String: Date] = [:]
   @State private var showFavoritesOnly = false
   @State private var applyingBatch = false
+  @State private var batchPasteProgress = ""
+  @State private var batchPasteTask: Task<Void, Never>?
   @State private var exportingBatch = false
   @State private var batchExportProgress = ""
   @State private var batchExportTask: Task<Void, Never>?
@@ -3222,14 +3258,24 @@ struct ContentView: View {
 
   private func applySettingsToSelection(workspaceOnly: Bool = false) {
     let paths = library.selectedCatalog?.photoPaths.filter { selectedPhotoPaths.contains($0) } ?? []
+    guard !paths.isEmpty, !applyingBatch else { return }
     applyingBatch = true
-    Task {
-      libraryNotice = await editor.pasteSettings(to: paths, workspaceOnly: workspaceOnly)
-      for path in paths { thumbnailRefresh[path, default: 0] += 1 }
+    batchPasteProgress = "Preparing settings…"
+    batchPasteTask = Task {
+      let outcome = await editor.pasteSettings(to: paths, workspaceOnly: workspaceOnly) {
+        current, total in
+        batchPasteProgress = "Applying to \(current) of \(total)…"
+      }
+      libraryNotice = outcome.summary
+      for path in outcome.changedPaths { thumbnailRefresh[path, default: 0] += 1 }
       applyingBatch = false
-      selectedPhotoPaths.removeAll()
-      selectionAnchor = nil
-      selectingPhotos = false
+      batchPasteProgress = ""
+      batchPasteTask = nil
+      if !outcome.cancelled {
+        selectedPhotoPaths.removeAll()
+        selectionAnchor = nil
+        selectingPhotos = false
+      }
     }
   }
 
@@ -3624,7 +3670,13 @@ struct ContentView: View {
             }
           }
         }
-        if applyingBatch { ProgressView("Applying copied settings…") }
+        if applyingBatch {
+          HStack {
+            ProgressView(batchPasteProgress)
+            Spacer()
+            Button("Cancel Paste") { batchPasteTask?.cancel() }
+          }
+        }
         if importingFolder {
           HStack {
             ProgressView("Scanning photo folders…")
