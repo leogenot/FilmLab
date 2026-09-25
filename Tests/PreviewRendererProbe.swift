@@ -29,6 +29,9 @@ struct PreviewRendererProbe {
     precondition(result?.histogram?.blueBins.count == 64)
     precondition(result?.histogram?.waveform.intensities.count == 64 * 64)
     precondition(result?.histogram?.waveform.intensities.contains(where: { $0 > 0 }) == true)
+    precondition(result?.histogram?.redWaveform.intensities.count == 64 * 64)
+    precondition(result?.histogram?.greenWaveform.intensities.count == 64 * 64)
+    precondition(result?.histogram?.blueWaveform.intensities.count == 64 * 64)
     let warning = await renderer.render(
       PreviewRequest(
         image: image, scale: 1, sourceURL: nil, originalImage: nil,
@@ -107,7 +110,8 @@ struct PreviewRendererProbe {
     precondition(
       floatMaximumDifference <= 2,
       "Float preview and TIFF export differ by \(floatMaximumDifference) levels")
-    print("RGB output histogram, luminance waveform, gamut diagnostic, and warning passed")
+    print(
+      "RGB output histogram, luminance waveform, RGB parade, gamut diagnostic, and warning passed")
     print("Preview and 16-bit sRGB TIFF agree within \(maximumDifference) 8-bit levels at 100%")
     print(
       "Float preview and 16-bit sRGB TIFF agree within \(floatMaximumDifference) 8-bit levels at 100%"

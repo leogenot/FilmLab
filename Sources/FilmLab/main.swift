@@ -2131,6 +2131,7 @@ private enum LibrarySort: String, CaseIterable, Identifiable {
 private enum OutputScopeKind: String, CaseIterable {
   case histogram = "Histogram"
   case waveform = "Waveform"
+  case rgbParade = "RGB"
 }
 
 struct ContentView: View {
@@ -3577,7 +3578,9 @@ struct ContentView: View {
             }
           }
           .pickerStyle(.segmented)
-          if outputScope == .histogram {
+          .labelsHidden()
+          switch outputScope {
+          case .histogram:
             OutputHistogram(
               bins: histogram.bins,
               redBins: histogram.redBins,
@@ -3590,8 +3593,13 @@ struct ContentView: View {
               blueNearWhiteFraction: histogram.blueNearWhiteFraction,
               outsideSRGBFraction: histogram.outsideSRGBFraction
             )
-          } else {
+          case .waveform:
             OutputWaveform(distribution: histogram.waveform)
+          case .rgbParade:
+            OutputRGBParade(
+              red: histogram.redWaveform,
+              green: histogram.greenWaveform,
+              blue: histogram.blueWaveform)
           }
         }
         Toggle("Float preview", isOn: $editor.highPrecisionPreview)

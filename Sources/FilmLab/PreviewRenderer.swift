@@ -39,6 +39,9 @@ struct PreviewHistogram: Sendable {
   let blueNearWhiteFraction: Double
   let outsideSRGBFraction: Double
   let waveform: WaveformDistribution
+  let redWaveform: WaveformDistribution
+  let greenWaveform: WaveformDistribution
+  let blueWaveform: WaveformDistribution
 }
 
 struct WaveformDistribution: Sendable {
@@ -46,18 +49,27 @@ struct WaveformDistribution: Sendable {
   static let levels = 64
   let intensities: [Double]
 
-  static func make(from pixels: [UInt8], width: Int, height: Int) -> WaveformDistribution {
+  static func make(
+    from pixels: [UInt8], width: Int, height: Int, component: Int? = nil
+  ) -> WaveformDistribution {
     var counts = [Int](repeating: 0, count: columns * levels)
-    guard width > 0, height > 0, pixels.count >= width * height * 4 else {
+    let validComponent = component.map { (0...2).contains($0) } ?? true
+    guard width > 0, height > 0, pixels.count >= width * height * 4, validComponent
+    else {
       return WaveformDistribution(intensities: counts.map { _ in 0 })
     }
     for index in 0..<(width * height) {
       let offset = index * 4
-      let luminance =
-        0.2126 * Double(pixels[offset]) + 0.7152 * Double(pixels[offset + 1])
-        + 0.0722 * Double(pixels[offset + 2])
+      let value: Double
+      if let component {
+        value = Double(pixels[offset + component])
+      } else {
+        value =
+          0.2126 * Double(pixels[offset]) + 0.7152 * Double(pixels[offset + 1])
+          + 0.0722 * Double(pixels[offset + 2])
+      }
       let column = min(columns - 1, index % width * columns / width)
-      let level = min(levels - 1, Int(luminance * Double(levels) / 256))
+      let level = min(levels - 1, Int(value * Double(levels) / 256))
       counts[level * columns + column] += 1
     }
     let peak = Double(max(1, counts.max() ?? 0))
@@ -179,7 +191,13 @@ actor PreviewRenderer {
       greenNearWhiteFraction: Double(greenNearWhite) / total,
       blueNearWhiteFraction: Double(blueNearWhite) / total,
       outsideSRGBFraction: Double(outside) / total,
-      waveform: WaveformDistribution.make(from: pixels, width: width, height: height)
+      waveform: WaveformDistribution.make(from: pixels, width: width, height: height),
+      redWaveform: WaveformDistribution.make(
+        from: pixels, width: width, height: height, component: 0),
+      greenWaveform: WaveformDistribution.make(
+        from: pixels, width: width, height: height, component: 1),
+      blueWaveform: WaveformDistribution.make(
+        from: pixels, width: width, height: height, component: 2)
     )
   }
 
