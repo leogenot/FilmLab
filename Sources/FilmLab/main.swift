@@ -1217,7 +1217,7 @@ final class PhotoEditor {
     beginExport(ExportRequest(image: image, url: url, format: .jpeg, sourceURL: sourceURL))
   }
 
-  func exportTIFF() {
+  func exportTIFF(format: ExportFormat) {
     guard canExport else { return }
     guard let image = developedImage() else { return }
     let panel = NSSavePanel()
@@ -1225,7 +1225,7 @@ final class PhotoEditor {
     panel.nameFieldStringValue =
       (sourceURL?.deletingPathExtension().lastPathComponent ?? "Photo") + "-FilmLab.tiff"
     guard panel.runModal() == .OK, let url = panel.url else { return }
-    beginExport(ExportRequest(image: image, url: url, format: .tiff16, sourceURL: sourceURL))
+    beginExport(ExportRequest(image: image, url: url, format: format, sourceURL: sourceURL))
   }
 
   private func beginExport(_ request: ExportRequest) {
@@ -1338,7 +1338,8 @@ struct ContentView: View {
       .help("Choose a photo or reopen a recent photo")
       Menu("Export…", systemImage: "square.and.arrow.up") {
         Button("JPEG (sRGB)…") { editor.exportJPEG() }
-        Button("16-bit TIFF (Display P3)…") { editor.exportTIFF() }
+        Button("16-bit TIFF (sRGB)…") { editor.exportTIFF(format: .tiff16SRGB) }
+        Button("16-bit TIFF (Display P3)…") { editor.exportTIFF(format: .tiff16DisplayP3) }
       }
       .accessibilityLabel("Export photo")
       .disabled(!editor.canExport)

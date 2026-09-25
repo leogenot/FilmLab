@@ -57,15 +57,17 @@ struct ExporterProbe {
 
     let tiffURL = directory.appendingPathComponent("output.tiff")
     try await exporter.export(
-      ExportRequest(image: image, url: tiffURL, format: .tiff16, sourceURL: sourceURL))
+      ExportRequest(image: image, url: tiffURL, format: .tiff16DisplayP3, sourceURL: sourceURL))
     try await exporter.export(
-      ExportRequest(image: image, url: tiffURL, format: .tiff16, sourceURL: sourceURL))
+      ExportRequest(image: image, url: tiffURL, format: .tiff16DisplayP3, sourceURL: sourceURL))
     guard let tiff = CGImageSourceCreateWithURL(tiffURL as CFURL, nil),
       let properties = CGImageSourceCopyPropertiesAtIndex(tiff, 0, nil) as? [String: Any],
       let tiffExif = properties[kCGImagePropertyExifDictionary as String] as? [String: Any],
       let tiffTIFF = properties[kCGImagePropertyTIFFDictionary as String] as? [String: Any]
     else { preconditionFailure("TIFF replacement is unreadable") }
     precondition(properties[kCGImagePropertyDepth as String] as? Int == 16)
+    let p3Image = CGImageSourceCreateImageAtIndex(tiff, 0, nil)
+    precondition(p3Image?.colorSpace?.name == CGColorSpace.displayP3)
     precondition(properties[kCGImagePropertyPixelWidth as String] as? Int == 32)
     precondition(properties[kCGImagePropertyPixelHeight as String] as? Int == 24)
     precondition(properties[kCGImagePropertyOrientation as String] as? Int == 1)
@@ -75,6 +77,18 @@ struct ExporterProbe {
     precondition(tiffExif[kCGImagePropertyExifPixelYDimension as String] as? Int == 24)
     precondition(
       tiffExif[kCGImagePropertyExifDateTimeOriginal as String] as? String == "2025:03:09 15:13:37")
+    let srgbURL = directory.appendingPathComponent("output-srgb.tiff")
+    try await exporter.export(
+      ExportRequest(image: image, url: srgbURL, format: .tiff16SRGB, sourceURL: sourceURL))
+    guard let srgb = CGImageSourceCreateWithURL(srgbURL as CFURL, nil),
+      let srgbImage = CGImageSourceCreateImageAtIndex(srgb, 0, nil),
+      let srgbProperties = CGImageSourceCopyPropertiesAtIndex(srgb, 0, nil) as? [String: Any]
+    else { preconditionFailure("sRGB TIFF is unreadable") }
+    precondition(srgbImage.colorSpace?.name == CGColorSpace.sRGB)
+    precondition(srgbProperties[kCGImagePropertyDepth as String] as? Int == 16)
+    precondition(srgbProperties[kCGImagePropertyPixelWidth as String] as? Int == 32)
+    precondition(srgbProperties[kCGImagePropertyPixelHeight as String] as? Int == 24)
+    precondition(srgbProperties[kCGImagePropertyOrientation as String] as? Int == 1)
     let savedSource = try Data(contentsOf: sourceURL)
     precondition(savedSource == original)
     print("Export source-protection, metadata and atomic TIFF checks passed")

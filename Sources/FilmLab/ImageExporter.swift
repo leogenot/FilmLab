@@ -2,9 +2,10 @@ import CoreImage
 import Foundation
 import ImageIO
 
-enum ExportFormat: Sendable {
+enum ExportFormat: Sendable, Equatable {
   case jpeg
-  case tiff16
+  case tiff16SRGB
+  case tiff16DisplayP3
 }
 
 struct ExportRequest: @unchecked Sendable {
@@ -44,13 +45,15 @@ actor ImageExporter {
         throw ExportError.renderFailed
       }
       try data.write(to: request.url, options: .atomic)
-    case .tiff16:
+    case .tiff16SRGB, .tiff16DisplayP3:
+      let outputSpaceName: CFString =
+        request.format == .tiff16SRGB ? CGColorSpace.sRGB : CGColorSpace.displayP3
       let temporaryURL = request.url.deletingLastPathComponent()
         .appendingPathComponent(".FilmLab-\(UUID().uuidString).tiff")
       defer { try? FileManager.default.removeItem(at: temporaryURL) }
       try context.writeTIFFRepresentation(
         of: image, to: temporaryURL, format: .RGBA16,
-        colorSpace: CGColorSpace(name: CGColorSpace.displayP3)!, options: [:]
+        colorSpace: CGColorSpace(name: outputSpaceName)!, options: [:]
       )
       if FileManager.default.fileExists(atPath: request.url.path) {
         _ = try FileManager.default.replaceItemAt(request.url, withItemAt: temporaryURL)
