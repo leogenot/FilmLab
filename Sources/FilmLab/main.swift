@@ -24,6 +24,9 @@ private struct PhotoEdits: Codable, Equatable {
   var contrast = 1.0
   var saturation = 1.0
   var warmth = 0.0
+  var curveShadow = 0.0
+  var curveMidtone = 0.0
+  var curveHighlight = 0.0
   var outputShoulder = 0.0
   var inputWarmth = 0.0
   var inputTint = 0.0
@@ -85,6 +88,9 @@ private struct PhotoEdits: Codable, Equatable {
     contrast = try values.decodeIfPresent(Double.self, forKey: .contrast) ?? 1
     saturation = try values.decodeIfPresent(Double.self, forKey: .saturation) ?? 1
     warmth = try values.decodeIfPresent(Double.self, forKey: .warmth) ?? 0
+    curveShadow = try values.decodeIfPresent(Double.self, forKey: .curveShadow) ?? 0
+    curveMidtone = try values.decodeIfPresent(Double.self, forKey: .curveMidtone) ?? 0
+    curveHighlight = try values.decodeIfPresent(Double.self, forKey: .curveHighlight) ?? 0
     outputShoulder = try values.decodeIfPresent(Double.self, forKey: .outputShoulder) ?? 0
     inputWarmth = try values.decodeIfPresent(Double.self, forKey: .inputWarmth) ?? 0
     inputTint = try values.decodeIfPresent(Double.self, forKey: .inputTint) ?? 0
@@ -158,6 +164,9 @@ final class PhotoEditor {
   var contrast = 1.0
   var saturation = 1.0
   var warmth = 0.0
+  var curveShadow = 0.0
+  var curveMidtone = 0.0
+  var curveHighlight = 0.0
   var outputShoulder = 0.0
   var inputWarmth = 0.0
   var inputTint = 0.0
@@ -257,6 +266,7 @@ final class PhotoEditor {
   private let portraPositiveKernel = FilmKernels.kernel("portraPositive")
   private let renderedInputToneKernel = FilmKernels.kernel("renderedInputTone")
   private let outputShoulderKernel = FilmKernels.kernel("outputShoulder")
+  private let outputToneCurveKernel = FilmKernels.kernel("outputToneCurve")
 
   func open(_ url: URL) {
     openTask?.cancel()
@@ -370,6 +380,9 @@ final class PhotoEditor {
     contrast = saved.contrast
     saturation = saved.saturation
     warmth = saved.warmth
+    curveShadow = saved.curveShadow
+    curveMidtone = saved.curveMidtone
+    curveHighlight = saved.curveHighlight
     outputShoulder = saved.outputShoulder
     inputWarmth = saved.inputWarmth
     inputTint = saved.inputTint
@@ -502,6 +515,9 @@ final class PhotoEditor {
     edits.contrast = contrast
     edits.saturation = saturation
     edits.warmth = warmth
+    edits.curveShadow = curveShadow
+    edits.curveMidtone = curveMidtone
+    edits.curveHighlight = curveHighlight
     edits.outputShoulder = outputShoulder
     edits.inputWarmth = inputWarmth
     edits.inputTint = inputTint
@@ -670,6 +686,9 @@ final class PhotoEditor {
     contrast = defaults.contrast
     saturation = defaults.saturation
     warmth = defaults.warmth
+    curveShadow = defaults.curveShadow
+    curveMidtone = defaults.curveMidtone
+    curveHighlight = defaults.curveHighlight
     outputShoulder = defaults.outputShoulder
     inputWarmth = defaults.inputWarmth
     inputTint = defaults.inputTint
@@ -995,6 +1014,19 @@ final class PhotoEditor {
         kCIInputContrastKey: contrast,
         kCIInputSaturationKey: saturation,
       ])
+    if abs(curveShadow) > 0.001 || abs(curveMidtone) > 0.001
+      || abs(curveHighlight) > 0.001
+    {
+      guard let outputToneCurveKernel,
+        let curved = outputToneCurveKernel.apply(
+          extent: image.extent,
+          arguments: [image, curveShadow, curveMidtone, curveHighlight])
+      else {
+        error = "The output tone curve could not be loaded."
+        return nil
+      }
+      image = curved
+    }
     let temperature = CIFilter.temperatureAndTint()
     temperature.inputImage = image
     temperature.neutral = CIVector(x: 6500, y: 0)
@@ -1226,6 +1258,9 @@ struct ContentView: View {
     .onChange(of: editor.contrast) { editor.editsChanged() }
     .onChange(of: editor.saturation) { editor.editsChanged() }
     .onChange(of: editor.warmth) { editor.editsChanged() }
+    .onChange(of: editor.curveShadow) { editor.editsChanged() }
+    .onChange(of: editor.curveMidtone) { editor.editsChanged() }
+    .onChange(of: editor.curveHighlight) { editor.editsChanged() }
     .onChange(of: editor.outputShoulder) { editor.editsChanged() }
     .onChange(of: editor.inputWarmth) { editor.editsChanged() }
     .onChange(of: editor.inputTint) { editor.editsChanged() }
@@ -1606,6 +1641,14 @@ struct ContentView: View {
           control("Contrast", value: $editor.contrast, range: 0.5...1.5)
           control("Saturation", value: $editor.saturation, range: 0...1.5)
           control("Warmth", value: $editor.warmth, range: -1...1)
+          Divider()
+          Text("Output tone curve").font(.headline)
+          control("Shadow point", value: $editor.curveShadow, range: -0.14...0.14)
+          control("Midtone point", value: $editor.curveMidtone, range: -0.14...0.14)
+          control("Highlight point", value: $editor.curveHighlight, range: -0.14...0.14)
+          Text("These points reshape output brightness after film processing while scaling RGB together.")
+            .font(.caption).foregroundStyle(.secondary)
+          Divider()
           control("Output shoulder", value: $editor.outputShoulder, range: 0...1)
           Text("Rolls bright output toward white while preserving linear RGB ratios. The film and paper models still respond before this finishing control.")
             .font(.caption).foregroundStyle(.secondary)

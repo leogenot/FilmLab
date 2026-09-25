@@ -13,6 +13,7 @@ enum FilmKernels {
           "grade", "selectiveColor", "colorMixerBand", "applyGrain",
           "highlightMask", "applyHalation", "applyAcutance", "renderedInputTone",
           "outputShoulder",
+          "outputToneCurve",
         ])
         guard required.isSubset(of: Set(names)) else {
           throw KernelLoadError.incompleteLibrary
@@ -60,6 +61,54 @@ enum FilmKernels {
         float rolledPeak = 1.0 - 0.25 * exp(-(peak - 0.75) / 0.25);
         float scale = mix(1.0, rolledPeak / peak, clamp(amount, 0.0, 1.0));
         return float4(pixel.rgb * scale, pixel.a);
+    }
+    inline float toneCurveTangent(float previous, float next,
+                                  float previousWidth, float nextWidth) {
+        if (previous <= 0.0 || next <= 0.0) return 0.0;
+        float a = 2.0 * nextWidth + previousWidth;
+        float b = nextWidth + 2.0 * previousWidth;
+        return (a + b) / (a / previous + b / next);
+    }
+    [[stitchable]] float4 outputToneCurve(coreimage::sample_t pixel,
+                                          float shadow, float midtone, float highlight) {
+        float luminance = dot(pixel.rgb, float3(0.2126, 0.7152, 0.0722));
+        if (luminance <= 0.000001) return pixel;
+        float position[5] = {0.0, 0.2, 0.5, 0.8, 1.0};
+        float value[5] = {
+            0.0,
+            0.2 + clamp(shadow, -0.14, 0.14),
+            0.5 + clamp(midtone, -0.14, 0.14),
+            0.8 + clamp(highlight, -0.14, 0.14),
+            1.0
+        };
+        float delta[4];
+        for (int i = 0; i < 4; i++) {
+            delta[i] = (value[i + 1] - value[i])
+                     / (position[i + 1] - position[i]);
+        }
+        float tangent[5] = {
+            delta[0],
+            toneCurveTangent(delta[0], delta[1], 0.2, 0.3),
+            toneCurveTangent(delta[1], delta[2], 0.3, 0.3),
+            toneCurveTangent(delta[2], delta[3], 0.3, 0.2),
+            delta[3]
+        };
+        float target;
+        if (luminance >= 1.0) {
+            target = 1.0 + tangent[4] * (luminance - 1.0);
+        } else {
+            int segment = luminance < 0.2 ? 0 : (luminance < 0.5 ? 1
+                         : (luminance < 0.8 ? 2 : 3));
+            float width = position[segment + 1] - position[segment];
+            float t = (luminance - position[segment]) / width;
+            float t2 = t * t;
+            float t3 = t2 * t;
+            target = (2.0 * t3 - 3.0 * t2 + 1.0) * value[segment]
+                   + (t3 - 2.0 * t2 + t) * width * tangent[segment]
+                   + (-2.0 * t3 + 3.0 * t2) * value[segment + 1]
+                   + (t3 - t2) * width * tangent[segment + 1];
+        }
+        return float4(pixel.rgb * (target / luminance), pixel.a);
     }
               inline float response(float light, float ev, float dev, float toe, float shoulder) {
                   float stops = log2(max(light, 0.000001) / 0.18) + ev;

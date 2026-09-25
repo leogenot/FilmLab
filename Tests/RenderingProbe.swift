@@ -22,6 +22,7 @@ struct RenderingProbe {
     let sceneLight = FilmKernels.kernel("shapeSceneLight")!
     let renderedInputTone = FilmKernels.kernel("renderedInputTone")!
     let outputShoulder = FilmKernels.kernel("outputShoulder")!
+    let outputToneCurve = FilmKernels.kernel("outputToneCurve")!
 
     func patch(_ value: Double) -> CIImage {
       CIImage(color: CIColor(red: value, green: value, blue: value, colorSpace: space)!)
@@ -94,6 +95,36 @@ struct RenderingProbe {
         format: .RGBAf, colorSpace: space)
     }
     precondition(zip(previewRGBA.prefix(3), rolledColor).allSatisfy { abs($0 - $1) < 0.002 })
+
+    func curved(_ light: Double, _ shadow: Double, _ midtone: Double, _ highlight: Double)
+      -> Float
+    {
+      let source = patch(light)
+      return channels(
+        outputToneCurve.apply(
+          extent: source.extent, arguments: [source, shadow, midtone, highlight])!)[0]
+    }
+    precondition(abs(curved(0.18, 0, 0, 0) - 0.18) < 0.001)
+    precondition(abs(curved(0.2, 0.1, 0, 0) - 0.3) < 0.001)
+    precondition(abs(curved(0.5, 0, -0.1, 0) - 0.4) < 0.001)
+    precondition(abs(curved(0.8, 0, 0, 0.1) - 0.9) < 0.001)
+    for settings in [(0.14, -0.14, 0.14), (-0.14, 0.14, -0.14)] {
+      var previous: Float = -1
+      for step in 0...24 {
+        let value = curved(Double(step) * 0.05, settings.0, settings.1, settings.2)
+        precondition(value >= previous, "Output tone curve reversed brightness")
+        previous = value
+      }
+    }
+    let colorCurveSource = CIImage(
+      color: CIColor(red: 0.6, green: 0.3, blue: 0.15, colorSpace: space)!
+    ).cropped(to: CGRect(x: 0, y: 0, width: 1, height: 1))
+    let curvedColor = channels(
+      outputToneCurve.apply(
+        extent: colorCurveSource.extent,
+        arguments: [colorCurveSource, 0.1, -0.05, 0.1])!)
+    precondition(abs(curvedColor[0] / curvedColor[1] - 2) < 0.002)
+    precondition(abs(curvedColor[1] / curvedColor[2] - 2) < 0.002)
 
     for stock in [1.0, 2.0] {
       let under = rendered(stock, -2)
