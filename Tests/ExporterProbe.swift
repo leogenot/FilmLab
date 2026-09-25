@@ -62,6 +62,46 @@ struct ExporterProbe {
     precondition(jpegTIFF[kCGImagePropertyTIFFMake as String] as? String == "FilmLab Test Camera")
     precondition(jpegProperties[kCGImagePropertyOrientation as String] as? Int == 1)
 
+    // A developed image often has no metadata left on its CIImage graph. The
+    // exporter must recover capture fields from its actual source photo.
+    let developed = image.settingProperties([:])
+    let recoveredJPEGURL = directory.appendingPathComponent("recovered.jpg")
+    try await exporter.export(
+      ExportRequest(image: developed, url: recoveredJPEGURL, format: .jpeg, sourceURL: jpegURL))
+    guard let recoveredJPEG = CGImageSourceCreateWithURL(recoveredJPEGURL as CFURL, nil),
+      let recoveredJPEGProperties = CGImageSourceCopyPropertiesAtIndex(
+        recoveredJPEG, 0, nil) as? [String: Any],
+      let recoveredJPEGExif = recoveredJPEGProperties[kCGImagePropertyExifDictionary as String]
+        as? [String: Any],
+      let recoveredJPEGTIFF = recoveredJPEGProperties[kCGImagePropertyTIFFDictionary as String]
+        as? [String: Any]
+    else { preconditionFailure("Recovered JPEG metadata is unreadable") }
+    precondition(
+      recoveredJPEGExif[kCGImagePropertyExifDateTimeOriginal as String] as? String
+        == "2025:03:09 15:13:37")
+    precondition(
+      recoveredJPEGTIFF[kCGImagePropertyTIFFMake as String] as? String == "FilmLab Test Camera")
+    precondition(recoveredJPEGProperties[kCGImagePropertyOrientation as String] as? Int == 1)
+    precondition(recoveredJPEGExif[kCGImagePropertyExifPixelXDimension as String] as? Int == 32)
+    precondition(recoveredJPEGExif[kCGImagePropertyExifPixelYDimension as String] as? Int == 24)
+
+    let recoveredTIFFURL = directory.appendingPathComponent("recovered.tiff")
+    try await exporter.export(
+      ExportRequest(
+        image: developed, url: recoveredTIFFURL, format: .tiff16SRGB,
+        sourceURL: jpegURL))
+    guard let recoveredTIFF = CGImageSourceCreateWithURL(recoveredTIFFURL as CFURL, nil),
+      let recoveredTIFFProperties = CGImageSourceCopyPropertiesAtIndex(
+        recoveredTIFF, 0, nil) as? [String: Any],
+      let recoveredTIFFExif = recoveredTIFFProperties[kCGImagePropertyExifDictionary as String]
+        as? [String: Any]
+    else { preconditionFailure("Recovered TIFF metadata is unreadable") }
+    precondition(
+      recoveredTIFFExif[kCGImagePropertyExifDateTimeOriginal as String] as? String
+        == "2025:03:09 15:13:37")
+    precondition(recoveredTIFFExif[kCGImagePropertyExifPixelXDimension as String] as? Int == 32)
+    precondition(recoveredTIFFExif[kCGImagePropertyExifPixelYDimension as String] as? Int == 24)
+
     let patternWidth = 128
     let patternHeight = 128
     var pattern = [UInt8](repeating: 255, count: patternWidth * patternHeight * 4)

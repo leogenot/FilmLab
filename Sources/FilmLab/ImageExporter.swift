@@ -74,7 +74,8 @@ actor ImageExporter {
     } else {
       outputImage = request.image
     }
-    let image = outputImage.settingProperties(normalizedOutputProperties(for: request.image))
+    let image = outputImage.settingProperties(
+      normalizedOutputProperties(for: request.image, sourceURL: request.sourceURL))
     switch request.format {
     case .jpeg:
       let quality = CIImageRepresentationOption(
@@ -120,9 +121,25 @@ actor ImageExporter {
     }
   }
 
-  private func normalizedOutputProperties(for image: CIImage) -> [String: Any] {
+  private func normalizedOutputProperties(for image: CIImage, sourceURL: URL?) -> [String: Any] {
     let extent = image.extent.integral
     var properties = image.properties
+    if let sourceURL,
+      let source = CGImageSourceCreateWithURL(sourceURL as CFURL, nil),
+      let sourceProperties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any]
+    {
+      // Processing may drop image properties. Recover descriptive metadata from the
+      // original, but never copy its old pixel dimensions, orientation, or profile.
+      for key in [
+        kCGImagePropertyExifDictionary, kCGImagePropertyTIFFDictionary,
+        kCGImagePropertyGPSDictionary, kCGImagePropertyIPTCDictionary,
+      ] {
+        let name = key as String
+        guard let sourceValues = sourceProperties[name] as? [String: Any] else { continue }
+        let imageValues = properties[name] as? [String: Any] ?? [:]
+        properties[name] = sourceValues.merging(imageValues) { _, imageValue in imageValue }
+      }
+    }
     var exif = properties[kCGImagePropertyExifDictionary as String] as? [String: Any] ?? [:]
     exif[kCGImagePropertyExifPixelXDimension as String] = Int(extent.width)
     exif[kCGImagePropertyExifPixelYDimension as String] = Int(extent.height)
