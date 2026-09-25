@@ -333,6 +333,42 @@ struct RenderingProbe {
       }
       return Array(rgba.prefix(3))
     }
+    func chartRows(_ filename: String) -> [(Double, [Float])] {
+      let root = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent()
+      let url = root.appendingPathComponent("Research/\(filename)")
+      let rows = try! String(contentsOf: url, encoding: .utf8)
+        .split(whereSeparator: \.isNewline).dropFirst()
+      return rows.map { row in
+        let values = row.split(separator: ",").compactMap { Double($0) }
+        precondition(values.count == 4, "Invalid density chart row in \(filename): \(row)")
+        return (values[0], [Float(values[3]), Float(values[2]), Float(values[1])])
+      }
+    }
+    for (stock, filename) in [
+      (1.0, "portra400-density.csv"), (2.0, "ektar100-density.csv"),
+    ] {
+      let rows = chartRows(filename)
+      precondition(rows.count == 9)
+      for (exposure, expected) in rows {
+        let actual = negativeDensity(stock, exposure)
+        for channel in 0..<3 {
+          precondition(
+            abs(actual[channel] - expected[channel]) < 0.0003,
+            "Stock \(stock) at log H \(exposure) differs from \(filename): \(actual), \(expected)")
+        }
+      }
+      for index in 0..<(rows.count - 1) {
+        let midpoint = (rows[index].0 + rows[index + 1].0) / 2
+        let actual = negativeDensity(stock, midpoint)
+        for channel in 0..<3 {
+          precondition(
+            actual[channel] >= rows[index].1[channel]
+              && actual[channel] <= rows[index + 1].1[channel],
+            "Stock \(stock) channel \(channel) reversed between chart samples")
+        }
+      }
+    }
     for (stock, upperEnd) in [(1.0, 0.5), (2.0, 1.0)] {
       let distance = 0.005
       let before = negativeDensity(stock, upperEnd - distance)
