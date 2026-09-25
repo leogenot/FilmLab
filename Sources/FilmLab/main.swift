@@ -44,6 +44,7 @@ struct PhotoEdits: Codable, Equatable {
   var inputNeutralBalance = InputNeutralBalance()
   var filmLightWarmth = 0.0
   var filmLightTint = 0.0
+  var filmInputVersion = 2
   var filmAmount = 1.0
   var stockIndex = 0
   var enduraPaperTone = false
@@ -171,6 +172,7 @@ struct PhotoEdits: Codable, Equatable {
       result.highlightLight = source.highlightLight
       result.filmLightWarmth = source.filmLightWarmth
       result.filmLightTint = source.filmLightTint
+      result.filmInputVersion = source.filmInputVersion
       result.exposure = source.exposure
       result.contrast = source.contrast
       result.saturation = source.saturation
@@ -243,6 +245,7 @@ struct PhotoEdits: Codable, Equatable {
       ?? InputNeutralBalance()
     filmLightWarmth = try values.decodeIfPresent(Double.self, forKey: .filmLightWarmth) ?? 0
     filmLightTint = try values.decodeIfPresent(Double.self, forKey: .filmLightTint) ?? 0
+    filmInputVersion = try values.decodeIfPresent(Int.self, forKey: .filmInputVersion) ?? 1
     filmAmount = try values.decodeIfPresent(Double.self, forKey: .filmAmount) ?? 1.0
     stockIndex = try values.decodeIfPresent(Int.self, forKey: .stockIndex) ?? 0
     enduraPaperTone = try values.decodeIfPresent(Bool.self, forKey: .enduraPaperTone) ?? false
@@ -418,6 +421,7 @@ final class PhotoEditor {
   var inputNeutralBalance = InputNeutralBalance()
   var filmLightWarmth = 0.0
   var filmLightTint = 0.0
+  var filmInputVersion = 2
   var filmAmount = 1.0
   var stockIndex = 0
   var enduraPaperTone = false
@@ -596,6 +600,7 @@ final class PhotoEditor {
   // This is a provisional response model, not a measured emulsion profile.
   private let filmKernel = FilmKernels.kernel("filmResponse")
   private let sceneLightKernel = FilmKernels.kernel("shapeSceneLight")
+  private let positiveFilmLightKernel = FilmKernels.kernel("positiveFilmLight")
   private let negativeGrainKernel = FilmKernels.kernel("applyNegativeGrain")
   private let measuredNegativeKernel = FilmKernels.kernel("measuredNegative")
   private let portraPositiveKernel = FilmKernels.kernel("portraPositive")
@@ -852,6 +857,7 @@ final class PhotoEditor {
     inputNeutralBalance = saved.inputNeutralBalance
     filmLightWarmth = saved.filmLightWarmth
     filmLightTint = saved.filmLightTint
+    filmInputVersion = saved.filmInputVersion
     filmAmount = saved.filmAmount
     stockIndex = saved.stockIndex
     enduraPaperTone = saved.enduraPaperTone
@@ -1030,6 +1036,7 @@ final class PhotoEditor {
     edits.inputNeutralBalance = inputNeutralBalance
     edits.filmLightWarmth = filmLightWarmth
     edits.filmLightTint = filmLightTint
+    edits.filmInputVersion = filmInputVersion
     edits.filmAmount = filmAmount
     edits.stockIndex = stockIndex
     edits.enduraPaperTone = enduraPaperTone
@@ -1450,6 +1457,7 @@ final class PhotoEditor {
     inputNeutralBalance = defaults.inputNeutralBalance
     filmLightWarmth = defaults.filmLightWarmth
     filmLightTint = defaults.filmLightTint
+    filmInputVersion = defaults.filmInputVersion
     filmAmount = defaults.filmAmount
     stockIndex = defaults.stockIndex
     enduraPaperTone = defaults.enduraPaperTone
@@ -1817,6 +1825,16 @@ final class PhotoEditor {
       image = balanced
     }
     if abs(shadowLight) > 0.001 || abs(highlightLight) > 0.001 {
+      if filmInputVersion >= 2 {
+        guard let positiveFilmLightKernel,
+          let normalized = positiveFilmLightKernel.apply(
+            extent: image.extent, arguments: [image])
+        else {
+          error = "The film input normalization stage could not be loaded."
+          return nil
+        }
+        image = normalized
+      }
       guard let sceneLightKernel,
         let shaped = sceneLightKernel.apply(
           extent: image.extent, arguments: [image, shadowLight, highlightLight]
@@ -1844,7 +1862,8 @@ final class PhotoEditor {
         toneRangeEnabled: area.toneRangeEnabled, toneCenter: area.toneCenter,
         toneWidth: area.toneWidth, toneFeather: area.toneFeather,
         hueRangeEnabled: area.hueRangeEnabled, hueCenter: area.hueCenter,
-        hueWidth: area.hueWidth, hueFeather: area.hueFeather)
+        hueWidth: area.hueWidth, hueFeather: area.hueFeather,
+        lightVersion: filmInputVersion)
     }
     return image
   }
@@ -1853,6 +1872,17 @@ final class PhotoEditor {
     _ startingImage: CIImage, previewUncropped: Bool, shotExposureEV: Double
   ) -> CIImage? {
     var image = startingImage
+    if filmInputVersion >= 2 {
+      guard let positiveFilmLightKernel,
+        let normalized = positiveFilmLightKernel.apply(
+          extent: image.extent, arguments: [image])
+      else {
+        error = "The film input normalization stage could not be loaded."
+        return nil
+      }
+      image = normalized
+    }
+    let imageBeforeFilm = image
     if stockIndex == 1 || stockIndex == 2 {
       guard let measuredNegativeKernel,
         let portraPositiveKernel,
@@ -1970,7 +2000,8 @@ final class PhotoEditor {
       to: channelAdjusted,
       grain: stockIndex > 0 && grainVersion >= 2 ? 0 : grain * thumbnailSpatialScale,
       grainSize: grainSize * thumbnailSpatialScale, grainSeed: grainSeed,
-      halation: halation, halationSource: startingImage, halationExposureEV: shotExposureEV,
+      halation: halation, halationSource: imageBeforeFilm,
+      halationExposureEV: shotExposureEV,
       halationVersion: halationVersion,
       acutance: acutance, spatialScale: thumbnailSpatialScale)
     if outputShoulder > 0.001 {
@@ -2318,6 +2349,12 @@ final class PhotoEditor {
   func useNonnegativeOutputSaturation() {
     guard outputSaturationVersion < 2 else { return }
     outputSaturationVersion = 2
+    editsChanged()
+  }
+
+  func useLuminancePreservingFilmInput() {
+    guard filmInputVersion < 2 else { return }
+    filmInputVersion = 2
     editsChanged()
   }
 
@@ -4631,6 +4668,15 @@ struct ContentView: View {
             Divider()
           }
           Text("Scene light before film").font(.headline)
+          if editor.filmInputVersion == 1 {
+            Button("Use luminance-preserving film input") {
+              editor.useLuminancePreservingFilmInput()
+            }
+            Text(
+              "This changes the rendering of this saved grade. Undo restores its earlier channel clipping."
+            )
+            .font(.caption).foregroundStyle(.secondary)
+          }
           control("Shadow light (EV)", value: $editor.shadowLight, range: -2...2)
           control("Highlight light (EV)", value: $editor.highlightLight, range: -2...2)
           Text("Changes the light reaching the film model in each tonal region.")

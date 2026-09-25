@@ -170,7 +170,8 @@ enum LocalExposure {
     toneRangeEnabled: Bool = false, toneCenter: Double = 0,
     toneWidth: Double = 4, toneFeather: Double = 1,
     hueRangeEnabled: Bool = false, hueCenter: Double = 210,
-    hueWidth: Double = 45, hueFeather: Double = 20
+    hueWidth: Double = 45, hueFeather: Double = 20,
+    lightVersion: Int = 1
   ) -> CIImage {
     guard
       abs(ev) > 0.001 || abs(shadowLight) > 0.001 || abs(highlightLight) > 0.001
@@ -195,7 +196,14 @@ enum LocalExposure {
       adjusted = adjusted.applyingFilter("CIExposureAdjust", parameters: [kCIInputEVKey: ev])
     }
     if abs(shadowLight) > 0.001 || abs(highlightLight) > 0.001 {
-      guard let kernel = FilmKernels.kernel("shapeSceneLight"),
+      if lightVersion >= 2 {
+        guard let normalizer = FilmKernels.kernel("positiveFilmLight"),
+          let normalized = normalizer.apply(extent: image.extent, arguments: [adjusted])
+        else { return image }
+        adjusted = normalized
+      }
+      guard
+        let kernel = FilmKernels.kernel("shapeSceneLight"),
         let shaped = kernel.apply(
           extent: image.extent, arguments: [adjusted, shadowLight, highlightLight])
       else { return image }

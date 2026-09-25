@@ -9,7 +9,8 @@ enum FilmKernels {
         let data = try Data(contentsOf: libraryURL)
         let names = CIKernel.kernelNames(fromMetalLibraryData: data)
         let required = Set([
-          "filmResponse", "shapeSceneLight", "measuredNegative", "portraPositive",
+          "filmResponse", "shapeSceneLight", "positiveFilmLight",
+          "measuredNegative", "portraPositive",
           "grade", "selectiveColor", "colorMixerBand", "colorMixerBandV2", "applyGrain",
           "applyNegativeGrain",
           "preservingSelectiveColor",
@@ -294,6 +295,20 @@ enum FilmKernels {
         float highlightWeight = smoothstep(0.5, 4.0, stops);
         float shift = shadowEV * shadowWeight + highlightEV * highlightWeight;
         return float4(light * exp2(shift), pixel.a);
+    }
+
+    [[stitchable]] float4 positiveFilmLight(coreimage::sample_t pixel) {
+        float3 rgb = pixel.rgb;
+        if (!all(isfinite(rgb))) return float4(0.0, 0.0, 0.0, pixel.a);
+        if (all(rgb >= float3(0.0))) return pixel;
+        float luminance = dot(rgb, float3(0.2126, 0.7152, 0.0722));
+        if (luminance <= 0.0) return float4(0.0, 0.0, 0.0, pixel.a);
+        float3 chroma = rgb - luminance;
+        float scale = 1.0;
+        if (chroma.r < 0.0) scale = min(scale, luminance / -chroma.r);
+        if (chroma.g < 0.0) scale = min(scale, luminance / -chroma.g);
+        if (chroma.b < 0.0) scale = min(scale, luminance / -chroma.b);
+        return float4(max(luminance + chroma * scale, float3(0.0)), pixel.a);
     }
 
     // Kodak E-4050 chart samples: Status M negative density, stored in R/G/B order.
