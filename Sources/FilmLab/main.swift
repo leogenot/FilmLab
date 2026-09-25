@@ -76,6 +76,7 @@ struct PhotoEdits: Codable, Equatable {
   var selectiveSaturation = 0.0
   var mixer = Array(repeating: ColorMix(), count: 8)
   var mixerVersion = 2
+  var channelCurves = Array(repeating: ChannelCurve(), count: 3)
   var frameRotation = 0
   var frameStraighten = 0.0
   var frameAspect = 0
@@ -174,6 +175,7 @@ struct PhotoEdits: Codable, Equatable {
       result.selectiveShift = source.selectiveShift
       result.selectiveSaturation = source.selectiveSaturation
       result.mixer = source.mixer
+      result.channelCurves = source.channelCurves
     case .local:
       result.radialLights = source.radialLights
     case .texture:
@@ -257,6 +259,8 @@ struct PhotoEdits: Codable, Equatable {
     let savedMixer = try values.decodeIfPresent([ColorMix].self, forKey: .mixer) ?? []
     mixer = Array((savedMixer + Array(repeating: ColorMix(), count: 8)).prefix(8))
     mixerVersion = try values.decodeIfPresent(Int.self, forKey: .mixerVersion) ?? 1
+    let savedCurves = try values.decodeIfPresent([ChannelCurve].self, forKey: .channelCurves) ?? []
+    channelCurves = Array((savedCurves + Array(repeating: ChannelCurve(), count: 3)).prefix(3))
     frameRotation = try values.decodeIfPresent(Int.self, forKey: .frameRotation) ?? 0
     frameStraighten = try values.decodeIfPresent(Double.self, forKey: .frameStraighten) ?? 0
     frameAspect = try values.decodeIfPresent(Int.self, forKey: .frameAspect) ?? 0
@@ -392,6 +396,7 @@ final class PhotoEditor {
   var selectiveSaturation = 0.0
   var mixer = Array(repeating: ColorMix(), count: 8)
   var mixerVersion = 2
+  var channelCurves = Array(repeating: ChannelCurve(), count: 3)
   var frameRotation = 0
   var frameStraighten = 0.0
   var frameAspect = 0
@@ -779,6 +784,7 @@ final class PhotoEditor {
     selectiveSaturation = saved.selectiveSaturation
     mixer = saved.mixer
     mixerVersion = saved.mixerVersion
+    channelCurves = saved.channelCurves
     frameRotation = saved.frameRotation
     frameStraighten = saved.frameStraighten
     frameAspect = saved.frameAspect
@@ -923,6 +929,7 @@ final class PhotoEditor {
     edits.selectiveSaturation = selectiveSaturation
     edits.mixer = mixer
     edits.mixerVersion = mixerVersion
+    edits.channelCurves = channelCurves
     edits.frameRotation = frameRotation
     edits.frameStraighten = frameStraighten
     edits.frameAspect = frameAspect
@@ -1278,6 +1285,7 @@ final class PhotoEditor {
     selectiveSaturation = defaults.selectiveSaturation
     mixer = defaults.mixer
     mixerVersion = defaults.mixerVersion
+    channelCurves = defaults.channelCurves
     frameRotation = defaults.frameRotation
     frameStraighten = defaults.frameStraighten
     frameAspect = defaults.frameAspect
@@ -1693,8 +1701,13 @@ final class PhotoEditor {
       hueShift: selectiveShift, saturation: selectiveSaturation
     )
     let mixed = ColorMixer.apply(to: selected, adjustments: mixer, version: mixerVersion)
+    guard let channelAdjusted = ChannelCurves.apply(to: mixed, curves: channelCurves) else {
+      error = "The channel curves could not be loaded."
+      return nil
+    }
     var finished = FilmEffects.apply(
-      to: mixed, grain: grain, grainSize: grainSize, grainSeed: grainSeed, halation: halation,
+      to: channelAdjusted, grain: grain, grainSize: grainSize, grainSeed: grainSeed,
+      halation: halation,
       acutance: acutance)
     if outputShoulder > 0.001 {
       guard let outputShoulderKernel,
@@ -2181,6 +2194,7 @@ struct ContentView: View {
   @State private var panel: EditorPanel = .film
   @State private var outputScope: OutputScopeKind = .histogram
   @State private var selectedColorBand = 0
+  @State private var selectedCurveChannel = 0
   @State private var cropDragOrigin: FreeCrop?
   @State private var paintDragPoints: [CGPoint] = []
   @Environment(\.displayScale) private var displayScale
@@ -3954,6 +3968,26 @@ struct ContentView: View {
           Text("The eight soft color ranges use the source pixel's hue.")
             .font(.caption).foregroundStyle(.secondary)
           Divider()
+          Text("Channel curves").font(.headline)
+          Picker("Channel", selection: $selectedCurveChannel) {
+            ForEach(0..<ChannelCurves.names.count, id: \.self) { index in
+              Text(ChannelCurves.names[index]).tag(index)
+            }
+          }
+          .pickerStyle(.segmented)
+          Button("Reset Channel") {
+            editor.channelCurves[selectedCurveChannel] = ChannelCurve()
+            editor.editsChanged()
+          }
+          .disabled(editor.channelCurves[selectedCurveChannel].isNeutral)
+          control("Shadow point", value: channelCurveBinding(\.shadow), range: -0.14...0.14)
+          control("Midtone point", value: channelCurveBinding(\.midtone), range: -0.14...0.14)
+          control("Highlight point", value: channelCurveBinding(\.highlight), range: -0.14...0.14)
+          Text(
+            "Shapes each output RGB channel after the stock and color adjustments. Zero leaves it unchanged."
+          )
+          .font(.caption).foregroundStyle(.secondary)
+          Divider()
           Text("Shadows").font(.headline)
           control("Hue", value: $editor.shadowHue, range: 0...360)
           control("Strength", value: $editor.shadowStrength, range: 0...1)
@@ -4190,6 +4224,18 @@ struct ContentView: View {
       get: { editor.mixer[selectedColorBand][keyPath: keyPath] },
       set: { value in
         editor.mixer[selectedColorBand][keyPath: keyPath] = value
+        editor.editsChanged()
+      }
+    )
+  }
+
+  private func channelCurveBinding(_ keyPath: WritableKeyPath<ChannelCurve, Double>)
+    -> Binding<Double>
+  {
+    Binding(
+      get: { editor.channelCurves[selectedCurveChannel][keyPath: keyPath] },
+      set: { value in
+        editor.channelCurves[selectedCurveChannel][keyPath: keyPath] = value
         editor.editsChanged()
       }
     )

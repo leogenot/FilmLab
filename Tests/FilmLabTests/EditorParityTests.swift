@@ -65,6 +65,8 @@ final class EditorParityTests: XCTestCase {
       editor.shadowStrength = 0.12
       editor.selectiveShift = 0.1
       editor.mixer[3].saturation = 0.12
+      editor.channelCurves[0].midtone = 0.08
+      editor.channelCurves[2].shadow = -0.05
       editor.grain = 0.12
       editor.grainSize = 1
       editor.halation = 0.2

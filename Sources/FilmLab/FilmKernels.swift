@@ -13,7 +13,7 @@ enum FilmKernels {
           "grade", "selectiveColor", "colorMixerBand", "colorMixerBandV2", "applyGrain",
           "highlightMask", "applyHalation", "applyAcutance", "renderedInputTone",
           "outputShoulder",
-          "outputToneCurve",
+          "outputToneCurve", "channelToneCurves",
           "vibrance",
           "outputGamutWarning",
           "localLuminanceMask",
@@ -171,6 +171,49 @@ enum FilmKernels {
                    + (t3 - t2) * width * tangent[segment + 1];
         }
         return float4(pixel.rgb * (target / luminance), pixel.a);
+    }
+    inline float channelCurveAt(float input, float shadow, float midtone, float highlight) {
+        if (input <= 0.0) return input;
+        float position[5] = {0.0, 0.2, 0.5, 0.8, 1.0};
+        float value[5] = {
+            0.0,
+            0.2 + clamp(shadow, -0.14, 0.14),
+            0.5 + clamp(midtone, -0.14, 0.14),
+            0.8 + clamp(highlight, -0.14, 0.14),
+            1.0
+        };
+        float delta[4];
+        for (int i = 0; i < 4; i++) {
+            delta[i] = (value[i + 1] - value[i])
+                     / (position[i + 1] - position[i]);
+        }
+        float tangent[5] = {
+            delta[0],
+            toneCurveTangent(delta[0], delta[1], 0.2, 0.3),
+            toneCurveTangent(delta[1], delta[2], 0.3, 0.3),
+            toneCurveTangent(delta[2], delta[3], 0.3, 0.2),
+            delta[3]
+        };
+        if (input >= 1.0) return 1.0 + tangent[4] * (input - 1.0);
+        int segment = input < 0.2 ? 0 : (input < 0.5 ? 1 : (input < 0.8 ? 2 : 3));
+        float width = position[segment + 1] - position[segment];
+        float t = (input - position[segment]) / width;
+        float t2 = t * t;
+        float t3 = t2 * t;
+        return (2.0 * t3 - 3.0 * t2 + 1.0) * value[segment]
+             + (t3 - 2.0 * t2 + t) * width * tangent[segment]
+             + (-2.0 * t3 + 3.0 * t2) * value[segment + 1]
+             + (t3 - t2) * width * tangent[segment + 1];
+    }
+    [[stitchable]] float4 channelToneCurves(coreimage::sample_t pixel,
+                                            float4 shadow, float4 midtone,
+                                            float4 highlight) {
+        return float4(
+            channelCurveAt(pixel.r, shadow.r, midtone.r, highlight.r),
+            channelCurveAt(pixel.g, shadow.g, midtone.g, highlight.g),
+            channelCurveAt(pixel.b, shadow.b, midtone.b, highlight.b),
+            pixel.a
+        );
     }
               inline float response(float light, float ev, float dev, float toe, float shoulder) {
                   float stops = log2(max(light, 0.000001) / 0.18) + ev;

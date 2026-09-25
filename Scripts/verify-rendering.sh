@@ -8,6 +8,7 @@ bash "$project_dir/Scripts/build-kernels.sh" "$project_dir/.build"
 DEVELOPER_DIR="$developer_dir" swiftc \
   "$project_dir/Sources/FilmLab/FilmKernels.swift" \
   "$project_dir/Sources/FilmLab/ColorMixer.swift" \
+  "$project_dir/Sources/FilmLab/ChannelCurves.swift" \
   "$project_dir/Tests/RenderingProbe.swift" \
   -o "$project_dir/.build/FilmLabRenderingProbe"
 "$project_dir/.build/FilmLabRenderingProbe"

@@ -300,6 +300,24 @@ struct RenderingProbe {
     precondition(
       abs(shiftedBlue[0] - 0.08) > 0.01 || abs(shiftedBlue[1] - 0.2) > 0.01,
       "Blue mixer hue did not affect blue pixels")
+    var channelCurves = Array(repeating: ChannelCurve(), count: 3)
+    let neutralCurve = channels(
+      ChannelCurves.apply(to: colorPatch(0.5, 0.5, 0.5), curves: channelCurves)!)
+    precondition(
+      neutralCurve.allSatisfy { abs($0 - 0.5) < 0.001 },
+      "Neutral channel curves changed a pixel")
+    channelCurves[0].midtone = 0.1
+    let redCurve = channels(
+      ChannelCurves.apply(to: colorPatch(0.5, 0.5, 0.5), curves: channelCurves)!)
+    precondition(
+      abs(redCurve[0] - 0.6) < 0.001 && abs(redCurve[1] - 0.5) < 0.001
+        && abs(redCurve[2] - 0.5) < 0.001,
+      "Red midtone curve did not isolate the red channel")
+    let brightCurve = channels(
+      ChannelCurves.apply(to: colorPatch(1.4, 0.5, 0.5), curves: channelCurves)!)
+    precondition(
+      brightCurve[0] > 1.0 && abs(brightCurve[1] - 0.5) < 0.001,
+      "Channel curve lost extended highlight headroom")
     func negativeDensity(_ stock: Double, _ logH: Double) -> [Float] {
       let anchor = stock == 1 ? -1.44 : -0.84
       let source = patch(0.18)
