@@ -1,9 +1,26 @@
 import CoreImage
+import Foundation
 
 /// Metal Core Image kernels shared by preview and full-resolution export.
 enum FilmKernels {
   private static let kernels: [String: CIColorKernel] = {
     do {
+      if let libraryURL = Bundle.main.url(forResource: "FilmKernels", withExtension: "metallib") {
+        let data = try Data(contentsOf: libraryURL)
+        let names = CIKernel.kernelNames(fromMetalLibraryData: data)
+        let required = Set([
+          "filmResponse", "shapeSceneLight", "measuredNegative", "portraPositive",
+          "grade", "selectiveColor", "colorMixerBand", "applyGrain",
+          "highlightMask", "applyHalation",
+        ])
+        guard required.isSubset(of: Set(names)) else {
+          throw KernelLoadError.incompleteLibrary
+        }
+        return try Dictionary(
+          uniqueKeysWithValues: required.map { name in
+            (name, try CIColorKernel(functionName: name, fromMetalLibraryData: data))
+          })
+      }
       let compiled = try CIKernel.kernels(withMetalString: source)
       return Dictionary(
         uniqueKeysWithValues: compiled.compactMap { kernel in
@@ -16,6 +33,10 @@ enum FilmKernels {
   }()
 
   static func kernel(_ name: String) -> CIColorKernel? { kernels[name] }
+
+  private enum KernelLoadError: Error {
+    case incompleteLibrary
+  }
 
   private static let source = #"""
     #include <CoreImage/CoreImage.h>
