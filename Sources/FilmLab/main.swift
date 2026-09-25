@@ -25,7 +25,7 @@ struct FilmLabApp: App {
   }
 }
 
-private struct PhotoEdits: Codable, Equatable {
+struct PhotoEdits: Codable, Equatable {
   var exposure = 0.0
   var contrast = 1.0
   var saturation = 1.0
@@ -75,6 +75,7 @@ private struct PhotoEdits: Codable, Equatable {
   var selectiveShift = 0.0
   var selectiveSaturation = 0.0
   var mixer = Array(repeating: ColorMix(), count: 8)
+  var mixerVersion = 2
   var frameRotation = 0
   var frameStraighten = 0.0
   var frameAspect = 0
@@ -115,7 +116,10 @@ private struct PhotoEdits: Codable, Equatable {
   ) -> PhotoEdits {
     let safeSource = transferring(copied, onto: destination)
     var result = destination.replacing(panel, with: safeSource)
-    if panel == .color { result.colorTimingVersion = copied.colorTimingVersion }
+    if panel == .color {
+      result.colorTimingVersion = copied.colorTimingVersion
+      result.mixerVersion = copied.mixerVersion
+    }
     return result
   }
 
@@ -252,6 +256,7 @@ private struct PhotoEdits: Codable, Equatable {
     selectiveSaturation = try values.decodeIfPresent(Double.self, forKey: .selectiveSaturation) ?? 0
     let savedMixer = try values.decodeIfPresent([ColorMix].self, forKey: .mixer) ?? []
     mixer = Array((savedMixer + Array(repeating: ColorMix(), count: 8)).prefix(8))
+    mixerVersion = try values.decodeIfPresent(Int.self, forKey: .mixerVersion) ?? 1
     frameRotation = try values.decodeIfPresent(Int.self, forKey: .frameRotation) ?? 0
     frameStraighten = try values.decodeIfPresent(Double.self, forKey: .frameStraighten) ?? 0
     frameAspect = try values.decodeIfPresent(Int.self, forKey: .frameAspect) ?? 0
@@ -386,6 +391,7 @@ final class PhotoEditor {
   var selectiveShift = 0.0
   var selectiveSaturation = 0.0
   var mixer = Array(repeating: ColorMix(), count: 8)
+  var mixerVersion = 2
   var frameRotation = 0
   var frameStraighten = 0.0
   var frameAspect = 0
@@ -772,6 +778,7 @@ final class PhotoEditor {
     selectiveShift = saved.selectiveShift
     selectiveSaturation = saved.selectiveSaturation
     mixer = saved.mixer
+    mixerVersion = saved.mixerVersion
     frameRotation = saved.frameRotation
     frameStraighten = saved.frameStraighten
     frameAspect = saved.frameAspect
@@ -915,6 +922,7 @@ final class PhotoEditor {
     edits.selectiveShift = selectiveShift
     edits.selectiveSaturation = selectiveSaturation
     edits.mixer = mixer
+    edits.mixerVersion = mixerVersion
     edits.frameRotation = frameRotation
     edits.frameStraighten = frameStraighten
     edits.frameAspect = frameAspect
@@ -1269,6 +1277,7 @@ final class PhotoEditor {
     selectiveShift = defaults.selectiveShift
     selectiveSaturation = defaults.selectiveSaturation
     mixer = defaults.mixer
+    mixerVersion = defaults.mixerVersion
     frameRotation = defaults.frameRotation
     frameStraighten = defaults.frameStraighten
     frameAspect = defaults.frameAspect
@@ -1683,7 +1692,7 @@ final class PhotoEditor {
       to: colored, targetHue: selectiveHue, range: selectiveRange,
       hueShift: selectiveShift, saturation: selectiveSaturation
     )
-    let mixed = ColorMixer.apply(to: selected, adjustments: mixer)
+    let mixed = ColorMixer.apply(to: selected, adjustments: mixer, version: mixerVersion)
     var finished = FilmEffects.apply(
       to: mixed, grain: grain, grainSize: grainSize, grainSeed: grainSeed, halation: halation,
       acutance: acutance)
@@ -1958,6 +1967,12 @@ final class PhotoEditor {
     editsChanged()
   }
 
+  func useLuminancePreservingMixer() {
+    guard mixerVersion < 2 else { return }
+    mixerVersion = 2
+    editsChanged()
+  }
+
   func usePhotoGrainPattern() {
     guard grainSeed == 0, let sourceURL else { return }
     grainSeed = EditRecordLocator.grainSeed(for: sourceURL)
@@ -2099,7 +2114,7 @@ enum EditorError: LocalizedError {
   var errorDescription: String? { "This image format is not supported by this Mac's decoder." }
 }
 
-private enum EditorPanel: String, CaseIterable, Identifiable {
+enum EditorPanel: String, CaseIterable, Identifiable {
   case film = "Film"
   case develop = "Develop"
   case color = "Color"
@@ -3805,6 +3820,15 @@ struct ContentView: View {
             .font(.caption).foregroundStyle(.secondary)
           Divider()
           Text("Color mixer").font(.headline)
+          if editor.mixerVersion < 2 {
+            Button("Use luminance-preserving mixer") {
+              editor.useLuminancePreservingMixer()
+            }
+            Text(
+              "Updates this older grade's Color Mixer. Active hue or saturation adjustments may shift; Undo restores the previous rendering."
+            )
+            .font(.caption).foregroundStyle(.secondary)
+          }
           Picker("Color family", selection: $selectedColorBand) {
             ForEach(0..<ColorMixer.names.count, id: \.self) { index in
               Text(ColorMixer.names[index]).tag(index)

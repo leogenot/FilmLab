@@ -264,8 +264,15 @@ struct RenderingProbe {
     let bluePatch = colorPatch(0.08, 0.2, 0.8)
     let grayPatch = patch(0.18)
     let redMixed = channels(ColorMixer.apply(to: redPatch, adjustments: bands))
+    let legacyRedMixed = channels(ColorMixer.apply(to: redPatch, adjustments: bands, version: 1))
     let blueMixed = channels(ColorMixer.apply(to: bluePatch, adjustments: bands))
     let grayMixed = channels(ColorMixer.apply(to: grayPatch, adjustments: bands))
+    precondition(
+      abs(luminance(redMixed) - luminance([0.8, 0.1, 0.08])) < 0.001,
+      "Luminance-preserving mixer changed brightness with only saturation active")
+    precondition(
+      legacyRedMixed != redMixed,
+      "Legacy mixer was not retained as a distinct rendering path")
     precondition(
       redMixed[0] - redMixed[2] < 0.8 - 0.08,
       "Red mixer saturation did not affect red pixels")
@@ -287,6 +294,9 @@ struct RenderingProbe {
     bands[0] = ColorMix()
     bands[5].hue = 30
     let shiftedBlue = channels(ColorMixer.apply(to: bluePatch, adjustments: bands))
+    precondition(
+      abs(luminance(shiftedBlue) - luminance([0.08, 0.2, 0.8])) < 0.001,
+      "Luminance-preserving mixer changed brightness with only hue active")
     precondition(
       abs(shiftedBlue[0] - 0.08) > 0.01 || abs(shiftedBlue[1] - 0.2) > 0.01,
       "Blue mixer hue did not affect blue pixels")
