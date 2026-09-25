@@ -107,6 +107,72 @@ private struct PhotoEdits: Codable, Equatable {
     return result
   }
 
+  func resetting(_ panel: EditorPanel, isRAW: Bool) -> PhotoEdits {
+    let defaults = PhotoEdits.defaults(forRAW: isRAW)
+    var result = self
+    switch panel {
+    case .film:
+      result.stockIndex = defaults.stockIndex
+      result.enduraPaperTone = defaults.enduraPaperTone
+      result.premierPaperTone = defaults.premierPaperTone
+      result.paperStrength = defaults.paperStrength
+      result.paperExposure = defaults.paperExposure
+      result.shotExposure = defaults.shotExposure
+      result.development = defaults.development
+      result.filmAmount = defaults.filmAmount
+    case .develop:
+      result.inputNeutralBalance = defaults.inputNeutralBalance
+      result.flatRAW = defaults.flatRAW
+      result.rawHighlightRecovery = defaults.rawHighlightRecovery
+      result.rawTemperature = nil
+      result.rawTint = nil
+      result.inputTone = defaults.inputTone
+      result.inputWarmth = defaults.inputWarmth
+      result.inputTint = defaults.inputTint
+      result.shadowLight = defaults.shadowLight
+      result.highlightLight = defaults.highlightLight
+      result.filmLightWarmth = defaults.filmLightWarmth
+      result.filmLightTint = defaults.filmLightTint
+      result.exposure = defaults.exposure
+      result.contrast = defaults.contrast
+      result.saturation = defaults.saturation
+      result.warmth = defaults.warmth
+      result.tint = defaults.tint
+      result.curveShadow = defaults.curveShadow
+      result.curveMidtone = defaults.curveMidtone
+      result.curveHighlight = defaults.curveHighlight
+      result.outputShoulder = defaults.outputShoulder
+    case .color:
+      result.vibrance = defaults.vibrance
+      result.shadowHue = defaults.shadowHue
+      result.shadowStrength = defaults.shadowStrength
+      result.midHue = defaults.midHue
+      result.midStrength = defaults.midStrength
+      result.highlightHue = defaults.highlightHue
+      result.highlightStrength = defaults.highlightStrength
+      result.selectiveHue = defaults.selectiveHue
+      result.selectiveRange = defaults.selectiveRange
+      result.selectiveShift = defaults.selectiveShift
+      result.selectiveSaturation = defaults.selectiveSaturation
+      result.mixer = defaults.mixer
+    case .local:
+      result.radialLights = defaults.radialLights
+    case .texture:
+      result.grain = defaults.grain
+      result.grainSize = defaults.grainSize
+      result.halation = defaults.halation
+      result.acutance = defaults.acutance
+    case .framing:
+      result.frameRotation = defaults.frameRotation
+      result.frameStraighten = defaults.frameStraighten
+      result.frameAspect = defaults.frameAspect
+      result.frameOffsetX = defaults.frameOffsetX
+      result.frameOffsetY = defaults.frameOffsetY
+      result.frameFreeCrop = defaults.frameFreeCrop
+    }
+    return result
+  }
+
   init(from decoder: Decoder) throws {
     let values = try decoder.container(keyedBy: CodingKeys.self)
     exposure = try values.decodeIfPresent(Double.self, forKey: .exposure) ?? 0
@@ -1081,6 +1147,34 @@ final class PhotoEditor {
     showLocalMask = false
     compareEnabled = false
     editsChanged()
+  }
+
+  fileprivate func panelNeedsReset(_ panel: EditorPanel) -> Bool {
+    let current = currentEdits()
+    var reset = current.resetting(panel, isRAW: isRAWSource)
+    if panel == .develop && isRAWSource {
+      reset.rawTemperature = cameraRawTemperature
+      reset.rawTint = cameraRawTint
+    }
+    return reset != current
+  }
+
+  fileprivate func resetPanel(_ panel: EditorPanel) {
+    guard sourceURL != nil, panelNeedsReset(panel) else { return }
+    historyTask?.cancel()
+    historyOpen = false
+    restoreEdits(currentEdits().resetting(panel, isRAW: isRAWSource))
+    if panel == .local {
+      selectedLocalIndex = 0
+      showLocalMask = false
+      placingLocalArea = false
+      paintingLocalArea = false
+      erasingLocalArea = false
+    }
+    if panel == .framing { showCropBounds = false }
+    if panel == .develop { setPickingNeutralArea(false) }
+    editsChanged()
+    if panel == .develop { rawModeChanged() }
   }
 
   func toggleBeforeAfter() {
@@ -2765,7 +2859,16 @@ struct ContentView: View {
   private var inspector: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 20) {
-        Text(panel.rawValue).font(.title2.weight(.semibold))
+        HStack {
+          Text(panel.rawValue).font(.title2.weight(.semibold))
+          Spacer()
+          Button("Reset \(panel.rawValue)", systemImage: "arrow.counterclockwise") {
+            editor.resetPanel(panel)
+          }
+          .labelStyle(.iconOnly)
+          .help("Reset \(panel.rawValue) controls; Undo restores them")
+          .disabled(editor.preview == nil || !editor.panelNeedsReset(panel))
+        }
         if let notice = editor.editRecoveryNotice {
           VStack(alignment: .leading, spacing: 6) {
             Text(notice).font(.caption).foregroundStyle(.orange)
