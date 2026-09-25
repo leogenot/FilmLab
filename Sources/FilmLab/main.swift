@@ -536,11 +536,52 @@ final class PhotoEditor {
   func pasteSettings() {
     guard sourceURL != nil else { return }
     guard let data = NSPasteboard.general.data(forType: settingsPasteboardType),
-      var copied = try? JSONDecoder().decode(PhotoEdits.self, from: data)
+      let copied = try? JSONDecoder().decode(PhotoEdits.self, from: data)
     else {
       error = "Copy settings from a FilmLab photo first."
       return
     }
+    applyTransferredSettings(copied)
+  }
+
+  func saveLook() {
+    guard sourceURL != nil else { return }
+    let panel = NSSavePanel()
+    panel.allowedContentTypes = [.json]
+    panel.nameFieldStringValue = "FilmLab Look.json"
+    guard panel.runModal() == .OK, let url = panel.url else { return }
+    var settings = currentEdits()
+    settings.flatRAW = false
+    settings.rawHighlightRecovery = true
+    settings.rawTemperature = nil
+    settings.rawTint = nil
+    do {
+      try LookFile(settings: settings).write(to: url)
+      error = nil
+    } catch {
+      self.error = "Could not save look: \(error.localizedDescription)"
+    }
+  }
+
+  func applyLook() {
+    guard sourceURL != nil else { return }
+    let panel = NSOpenPanel()
+    panel.allowedContentTypes = [.json]
+    panel.allowsMultipleSelection = false
+    guard panel.runModal() == .OK, let url = panel.url else { return }
+    let accessing = url.startAccessingSecurityScopedResource()
+    defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+    do {
+      let settings: PhotoEdits = try LookFile.read(from: url)
+      applyTransferredSettings(settings)
+      error = nil
+    } catch {
+      self.error = "Could not apply look: \(error.localizedDescription)"
+    }
+  }
+
+  private func applyTransferredSettings(_ transferred: PhotoEdits) {
+    var copied = transferred
     let current = currentEdits()
     copied.flatRAW = current.flatRAW
     copied.rawHighlightRecovery = current.rawHighlightRecovery
@@ -1053,9 +1094,12 @@ struct ContentView: View {
           .keyboardShortcut("c", modifiers: [.command, .shift])
         Button("Paste Settings") { editor.pasteSettings() }
           .keyboardShortcut("v", modifiers: [.command, .shift])
+        Divider()
+        Button("Save Look…") { editor.saveLook() }
+        Button("Apply Look…") { editor.applyLook() }
       }
       .accessibilityLabel("Settings")
-      .help("Copy or paste FilmLab edit settings")
+      .help("Copy, save, or apply FilmLab edit settings")
       .disabled(editor.preview == nil)
       Button("Reset Edits", systemImage: "arrow.counterclockwise") { editor.resetEdits() }
         .disabled(editor.preview == nil)
