@@ -56,7 +56,7 @@ final class EditorParityTests: XCTestCase {
       XCTAssertNil(editor.selectedPixel)
       editor.setCropBoundsPreview(false)
       editor.frameAspect = 0
-      editor.highPrecisionPreview = false
+      editor.highPrecisionPreview = true
       if kind == "JPEG" {
         editor.inputTone = 1.15
         editor.inputWarmth = 0.1

@@ -498,7 +498,8 @@ final class PhotoEditor {
   var editRecoveryURL: URL?
   var showOriginal = false
   var showGamutWarning = false
-  var highPrecisionPreview = UserDefaults.standard.bool(forKey: "FilmLab.highPrecisionPreview")
+  var highPrecisionPreview =
+    UserDefaults.standard.object(forKey: "FilmLab.highPrecisionPreview") as? Bool ?? true
   var displayP3Preview = UserDefaults.standard.bool(forKey: "FilmLab.displayP3Preview")
   var inspectPixel = false
   var pixelReadout: PixelReadout?
