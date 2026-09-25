@@ -82,8 +82,21 @@ final class EditorParityTests: XCTestCase {
           hueRangeEnabled: true, hueCenter: 210,
           hueWidth: 60, hueFeather: 20)
       ]
-      for scenario in ["rotatedPortrait", "darkFreeCrop", "brightWideCrop", "tallPortrait"] {
+      for scenario in [
+        "rotatedPortrait", "darkFreeCrop", "brightWideCrop", "tallPortrait", "mirroredCrop",
+      ] {
+        editor.frameFlipHorizontal = false
+        editor.frameFlipVertical = false
         switch scenario {
+        case "mirroredCrop":
+          editor.shotExposure = 0.4
+          editor.frameRotation = 1
+          editor.frameFlipHorizontal = true
+          editor.frameFlipVertical = true
+          editor.frameStraighten = 5
+          editor.frameAspect = 2
+          editor.frameOffsetX = -0.2
+          editor.frameOffsetY = 0.3
         case "darkFreeCrop":
           editor.shotExposure = -1.5
           editor.shadowLight = 0.6
@@ -156,6 +169,8 @@ final class EditorParityTests: XCTestCase {
       XCTAssertEqual(area["saturation"] as? Double, -0.2)
       XCTAssertEqual(area["shadowLight"] as? Double, 0.2)
       XCTAssertEqual(area["highlightLight"] as? Double, -0.1)
+      XCTAssertEqual(saved["frameFlipHorizontal"] as? Bool, true)
+      XCTAssertEqual(saved["frameFlipVertical"] as? Bool, true)
     }
   }
 

@@ -19,6 +19,26 @@ struct FramingProbe {
     precondition(unchanged.extent.width == 300 && unchanged.extent.height == 450)
     let rotated = framed(1)
     precondition(rotated.extent.width == 450 && rotated.extent.height == 300)
+    let splitSource = CIImage(color: CIColor(red: 1, green: 0, blue: 0))
+      .cropped(to: CGRect(x: 0, y: 0, width: 150, height: 450))
+      .composited(
+        over: CIImage(color: CIColor(red: 0, green: 0, blue: 1))
+          .cropped(to: source.extent))
+    let mirrored = Framing.apply(
+      to: splitSource, quarterTurns: 0, straightenDegrees: 0,
+      aspect: 0, offsetX: 0, offsetY: 0, flipHorizontal: true)
+    func pixel(at x: Int, y: Int, in image: CIImage) -> [Float] {
+      var values = [Float](repeating: 0, count: 4)
+      values.withUnsafeMutableBytes { bytes in
+        context.render(
+          image, toBitmap: bytes.baseAddress!, rowBytes: 16,
+          bounds: CGRect(x: x, y: y, width: 1, height: 1), format: .RGBAf,
+          colorSpace: space)
+      }
+      return values
+    }
+    precondition(pixel(at: 25, y: 225, in: mirrored)[2] > 0.9)
+    precondition(pixel(at: 275, y: 225, in: mirrored)[0] > 0.9)
 
     for degrees in [-15.0, -7.5, 7.5, 15.0] {
       let result = framed(0, degrees)
@@ -72,6 +92,18 @@ struct FramingProbe {
     let turnedPoint = sourceLocation(0.25, 0.3, turns: 1)
     precondition(abs(turnedPoint.x - 0.7) < 0.001)
     precondition(abs(turnedPoint.y - 0.75) < 0.001)
+    let mirroredLocation = Framing.sourceLocation(
+      displayX: 0.2, displayY: 0.3, sourceExtent: source.extent,
+      quarterTurns: 0, straightenDegrees: 0, aspect: 0,
+      offsetX: 0, offsetY: 0, flipHorizontal: true, flipVertical: true)!
+    precondition(abs(mirroredLocation.x - 0.8) < 0.001)
+    precondition(abs(mirroredLocation.y - 0.3) < 0.001)
+    let rotatedMirror = Framing.sourceLocation(
+      displayX: 0.25, displayY: 0.3, sourceExtent: source.extent,
+      quarterTurns: 1, straightenDegrees: 0, aspect: 0,
+      offsetX: 0, offsetY: 0, flipHorizontal: true)!
+    precondition(abs(rotatedMirror.x - 0.7) < 0.001)
+    precondition(abs(rotatedMirror.y - 0.25) < 0.001)
     let flippedPoint = sourceLocation(0.2, 0.3, turns: 2)
     precondition(abs(flippedPoint.x - 0.8) < 0.001)
     precondition(abs(flippedPoint.y - 0.3) < 0.001)

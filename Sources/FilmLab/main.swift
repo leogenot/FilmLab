@@ -81,6 +81,8 @@ struct PhotoEdits: Codable, Equatable {
   var mixerVersion = 2
   var channelCurves = Array(repeating: ChannelCurve(), count: 3)
   var frameRotation = 0
+  var frameFlipHorizontal = false
+  var frameFlipVertical = false
   var frameStraighten = 0.0
   var frameAspect = 0
   var frameOffsetX = 0.0
@@ -201,6 +203,8 @@ struct PhotoEdits: Codable, Equatable {
       result.acutance = source.acutance
     case .framing:
       result.frameRotation = source.frameRotation
+      result.frameFlipHorizontal = source.frameFlipHorizontal
+      result.frameFlipVertical = source.frameFlipVertical
       result.frameStraighten = source.frameStraighten
       result.frameAspect = source.frameAspect
       result.frameOffsetX = source.frameOffsetX
@@ -284,6 +288,9 @@ struct PhotoEdits: Codable, Equatable {
     let savedCurves = try values.decodeIfPresent([ChannelCurve].self, forKey: .channelCurves) ?? []
     channelCurves = Array((savedCurves + Array(repeating: ChannelCurve(), count: 3)).prefix(3))
     frameRotation = try values.decodeIfPresent(Int.self, forKey: .frameRotation) ?? 0
+    frameFlipHorizontal =
+      try values.decodeIfPresent(Bool.self, forKey: .frameFlipHorizontal) ?? false
+    frameFlipVertical = try values.decodeIfPresent(Bool.self, forKey: .frameFlipVertical) ?? false
     frameStraighten = try values.decodeIfPresent(Double.self, forKey: .frameStraighten) ?? 0
     frameAspect = try values.decodeIfPresent(Int.self, forKey: .frameAspect) ?? 0
     frameOffsetX = try values.decodeIfPresent(Double.self, forKey: .frameOffsetX) ?? 0
@@ -438,6 +445,8 @@ final class PhotoEditor {
   var mixerVersion = 2
   var channelCurves = Array(repeating: ChannelCurve(), count: 3)
   var frameRotation = 0
+  var frameFlipHorizontal = false
+  var frameFlipVertical = false
   var frameStraighten = 0.0
   var frameAspect = 0
   var frameOffsetX = 0.0
@@ -857,6 +866,8 @@ final class PhotoEditor {
     mixerVersion = saved.mixerVersion
     channelCurves = saved.channelCurves
     frameRotation = saved.frameRotation
+    frameFlipHorizontal = saved.frameFlipHorizontal
+    frameFlipVertical = saved.frameFlipVertical
     frameStraighten = saved.frameStraighten
     frameAspect = saved.frameAspect
     frameOffsetX = saved.frameOffsetX
@@ -1030,6 +1041,8 @@ final class PhotoEditor {
     edits.mixerVersion = mixerVersion
     edits.channelCurves = channelCurves
     edits.frameRotation = frameRotation
+    edits.frameFlipHorizontal = frameFlipHorizontal
+    edits.frameFlipVertical = frameFlipVertical
     edits.frameStraighten = frameStraighten
     edits.frameAspect = frameAspect
     edits.frameOffsetX = frameOffsetX
@@ -1395,6 +1408,8 @@ final class PhotoEditor {
     mixerVersion = defaults.mixerVersion
     channelCurves = defaults.channelCurves
     frameRotation = defaults.frameRotation
+    frameFlipHorizontal = defaults.frameFlipHorizontal
+    frameFlipVertical = defaults.frameFlipVertical
     frameStraighten = defaults.frameStraighten
     frameAspect = defaults.frameAspect
     frameOffsetX = defaults.frameOffsetX
@@ -1616,7 +1631,8 @@ final class PhotoEditor {
           displayX: (point.x - left) / width, displayY: (point.y - top) / height,
           sourceExtent: source.extent, quarterTurns: frameRotation,
           straightenDegrees: frameStraighten, aspect: frameAspect,
-          offsetX: frameOffsetX, offsetY: frameOffsetY, freeCrop: frameFreeCrop)
+          offsetX: frameOffsetX, offsetY: frameOffsetY, freeCrop: frameFreeCrop,
+          flipHorizontal: frameFlipHorizontal, flipVertical: frameFlipVertical)
       else { return nil }
       return BrushPoint(x: Double(sourcePoint.x), y: Double(sourcePoint.y))
     }
@@ -1640,7 +1656,8 @@ final class PhotoEditor {
         displayX: displayX, displayY: displayY, sourceExtent: source.extent,
         quarterTurns: frameRotation, straightenDegrees: frameStraighten,
         aspect: frameAspect, offsetX: frameOffsetX, offsetY: frameOffsetY,
-        freeCrop: frameFreeCrop)
+        freeCrop: frameFreeCrop,
+        flipHorizontal: frameFlipHorizontal, flipVertical: frameFlipVertical)
     else { return }
     radialLights[selectedLocalIndex].centerX = Double(location.x)
     radialLights[selectedLocalIndex].centerY = Double(location.y)
@@ -1870,7 +1887,8 @@ final class PhotoEditor {
     let framed = Framing.apply(
       to: image, quarterTurns: frameRotation, straightenDegrees: frameStraighten,
       aspect: aspectOverride ?? frameAspect, offsetX: frameOffsetX, offsetY: frameOffsetY,
-      freeCrop: frameFreeCrop)
+      freeCrop: frameFreeCrop,
+      flipHorizontal: frameFlipHorizontal, flipVertical: frameFlipVertical)
     return framed.transformed(
       by: CGAffineTransform(translationX: -framed.extent.minX, y: -framed.extent.minY))
   }
@@ -1992,7 +2010,8 @@ final class PhotoEditor {
         displayX: displayX, displayY: displayY, sourceExtent: source.extent,
         quarterTurns: frameRotation, straightenDegrees: frameStraighten,
         aspect: frameAspect, offsetX: frameOffsetX, offsetY: frameOffsetY,
-        freeCrop: frameFreeCrop),
+        freeCrop: frameFreeCrop,
+        flipHorizontal: frameFlipHorizontal, flipVertical: frameFlipVertical),
       let output = developedImage()
     else { return }
     selectedPixel = CGPoint(x: displayX, y: displayY)
@@ -2083,7 +2102,8 @@ final class PhotoEditor {
         displayX: displayX, displayY: displayY, sourceExtent: source.extent,
         quarterTurns: frameRotation, straightenDegrees: frameStraighten,
         aspect: frameAspect, offsetX: frameOffsetX, offsetY: frameOffsetY,
-        freeCrop: frameFreeCrop),
+        freeCrop: frameFreeCrop,
+        flipHorizontal: frameFlipHorizontal, flipVertical: frameFlipVertical),
       let input = imageBeforeLocalArea(selectedLocalIndex)
     else { return }
     pickingLocalTone = false
@@ -2115,7 +2135,8 @@ final class PhotoEditor {
         displayX: displayX, displayY: displayY, sourceExtent: source.extent,
         quarterTurns: frameRotation, straightenDegrees: frameStraighten,
         aspect: frameAspect, offsetX: frameOffsetX, offsetY: frameOffsetY,
-        freeCrop: frameFreeCrop),
+        freeCrop: frameFreeCrop,
+        flipHorizontal: frameFlipHorizontal, flipVertical: frameFlipVertical),
       let input = imageBeforeLocalArea(selectedLocalIndex)
     else { return }
     pickingLocalHue = false
@@ -2147,7 +2168,8 @@ final class PhotoEditor {
         displayX: displayX, displayY: displayY, sourceExtent: source.extent,
         quarterTurns: frameRotation, straightenDegrees: frameStraighten,
         aspect: frameAspect, offsetX: frameOffsetX, offsetY: frameOffsetY,
-        freeCrop: frameFreeCrop)
+        freeCrop: frameFreeCrop,
+        flipHorizontal: frameFlipHorizontal, flipVertical: frameFlipVertical)
     else { return }
     pickingNeutralArea = false
     neutralTask?.cancel()
@@ -2785,6 +2807,8 @@ struct ContentView: View {
     .onChange(of: editor.selectiveRange) { editor.editsChanged() }
     .onChange(of: editor.selectiveShift) { editor.editsChanged() }
     .onChange(of: editor.selectiveSaturation) { editor.editsChanged() }
+    .onChange(of: editor.frameFlipHorizontal) { editor.editsChanged() }
+    .onChange(of: editor.frameFlipVertical) { editor.editsChanged() }
     .onChange(of: editor.frameAspect) {
       if editor.frameAspect != 5 && editor.showCropBounds { editor.setCropBoundsPreview(false) }
       editor.editsChanged()
@@ -4624,6 +4648,11 @@ struct ContentView: View {
             Button("Rotate left", systemImage: "rotate.left") { editor.rotateFrame(-1) }
             Button("Rotate right", systemImage: "rotate.right") { editor.rotateFrame(1) }
           }
+          HStack(spacing: 12) {
+            Toggle("Flip horizontally", isOn: $editor.frameFlipHorizontal)
+            Toggle("Flip vertically", isOn: $editor.frameFlipVertical)
+          }
+          .toggleStyle(.button)
           control("Straighten (°)", value: $editor.frameStraighten, range: -15...15)
           Picker("Crop ratio", selection: $editor.frameAspect) {
             Text("Original").tag(0)

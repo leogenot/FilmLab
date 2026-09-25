@@ -5,7 +5,8 @@ enum Framing {
   static func sourceLocation(
     displayX: Double, displayY: Double, sourceExtent: CGRect,
     quarterTurns: Int, straightenDegrees: Double,
-    aspect: Int, offsetX: Double, offsetY: Double, freeCrop: FreeCrop = FreeCrop()
+    aspect: Int, offsetX: Double, offsetY: Double, freeCrop: FreeCrop = FreeCrop(),
+    flipHorizontal: Bool = false, flipVertical: Bool = false
   ) -> CGPoint? {
     guard (0...1).contains(displayX), (0...1).contains(displayY),
       sourceExtent.width > 0, sourceExtent.height > 0
@@ -19,6 +20,14 @@ enum Framing {
       quarter = rotation.concatenating(
         CGAffineTransform(translationX: -rotated.minX, y: -rotated.minY))
       extent = extent.applying(quarter)
+    }
+
+    var flip = CGAffineTransform.identity
+    if flipHorizontal || flipVertical {
+      flip = CGAffineTransform(
+        a: flipHorizontal ? -1 : 1, b: 0, c: 0, d: flipVertical ? -1 : 1,
+        tx: flipHorizontal ? extent.minX + extent.maxX : 0,
+        ty: flipVertical ? extent.minY + extent.maxY : 0)
     }
 
     let degrees = min(max(straightenDegrees, -15), 15)
@@ -66,7 +75,8 @@ enum Framing {
     let displayed = CGPoint(
       x: extent.minX + extent.width * displayX,
       y: extent.maxY - extent.height * displayY)
-    let sourcePoint = displayed.applying(straight.inverted()).applying(quarter.inverted())
+    let sourcePoint = displayed.applying(straight.inverted()).applying(flip.inverted())
+      .applying(quarter.inverted())
     let x = (sourcePoint.x - sourceExtent.minX) / sourceExtent.width
     let y = (sourcePoint.y - sourceExtent.minY) / sourceExtent.height
     guard x.isFinite, y.isFinite, x >= -0.001, x <= 1.001, y >= -0.001, y <= 1.001 else {
@@ -77,7 +87,8 @@ enum Framing {
 
   static func apply(
     to image: CIImage, quarterTurns: Int, straightenDegrees: Double,
-    aspect: Int, offsetX: Double, offsetY: Double, freeCrop: FreeCrop = FreeCrop()
+    aspect: Int, offsetX: Double, offsetY: Double, freeCrop: FreeCrop = FreeCrop(),
+    flipHorizontal: Bool = false, flipVertical: Bool = false
   ) -> CIImage {
     let turns = ((quarterTurns % 4) + 4) % 4
     var result = image
@@ -85,6 +96,15 @@ enum Framing {
       result = result.transformed(by: CGAffineTransform(rotationAngle: CGFloat(turns) * .pi / 2))
       result = result.transformed(
         by: CGAffineTransform(translationX: -result.extent.minX, y: -result.extent.minY))
+    }
+
+    if flipHorizontal || flipVertical {
+      let extent = result.extent
+      result = result.transformed(
+        by: CGAffineTransform(
+          a: flipHorizontal ? -1 : 1, b: 0, c: 0, d: flipVertical ? -1 : 1,
+          tx: flipHorizontal ? extent.minX + extent.maxX : 0,
+          ty: flipVertical ? extent.minY + extent.maxY : 0))
     }
 
     let degrees = min(max(straightenDegrees, -15), 15)
