@@ -2161,9 +2161,15 @@ enum EditorPanel: String, CaseIterable, Identifiable {
 private enum LibrarySort: String, CaseIterable, Identifiable {
   case importOrder = "Import order"
   case newestFirst = "Newest imported first"
+  case captureDate = "Date taken (newest)"
   case name = "Name"
 
   var id: Self { self }
+}
+
+private struct CaptureDateRequest: Equatable {
+  let enabled: Bool
+  let paths: [String]
 }
 
 private enum OutputScopeKind: String, CaseIterable {
@@ -2196,6 +2202,7 @@ struct ContentView: View {
   @State private var lastPhotoByCatalog = CatalogPhotoMemory.load()
   @State private var librarySearch = ""
   @State private var librarySort: LibrarySort = .importOrder
+  @State private var captureDates: [String: Date] = [:]
   @State private var showFavoritesOnly = false
   @State private var applyingBatch = false
   @State private var exportingBatch = false
@@ -2234,6 +2241,7 @@ struct ContentView: View {
     switch librarySort {
     case .importOrder: return filtered
     case .newestFirst: return filtered.reversed()
+    case .captureDate: return CaptureDateSort.newestFirst(filtered, dates: captureDates)
     case .name:
       return filtered.sorted {
         let comparison = URL(fileURLWithPath: $0).lastPathComponent.localizedStandardCompare(
@@ -2429,6 +2437,23 @@ struct ContentView: View {
       editor.resumeLastPhoto(
         in: availableCatalogPaths,
         remembered: lastPhotoByCatalog[library.selectedCatalogID])
+    }
+    .task(
+      id: CaptureDateRequest(
+        enabled: librarySort == .captureDate,
+        paths: library.selectedCatalog?.photoPaths ?? [])
+    ) {
+      guard librarySort == .captureDate else { return }
+      captureDates = [:]
+      let paths = library.selectedCatalog?.photoPaths ?? []
+      let work = Task.detached(priority: .utility) { CaptureDateSort.dates(for: paths) }
+      let dates = await withTaskCancellationHandler {
+        await work.value
+      } onCancel: {
+        work.cancel()
+      }
+      guard !Task.isCancelled else { return }
+      captureDates = dates
     }
     .onDisappear { editor.flushEdits() }
     .onChange(of: panel) {
