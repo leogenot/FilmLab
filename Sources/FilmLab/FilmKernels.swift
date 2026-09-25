@@ -14,6 +14,7 @@ enum FilmKernels {
           "highlightMask", "applyHalation", "applyAcutance", "renderedInputTone",
           "outputShoulder",
           "outputToneCurve",
+          "vibrance",
         ])
         guard required.isSubset(of: Set(names)) else {
           throw KernelLoadError.incompleteLibrary
@@ -61,6 +62,20 @@ enum FilmKernels {
         float rolledPeak = 1.0 - 0.25 * exp(-(peak - 0.75) / 0.25);
         float scale = mix(1.0, rolledPeak / peak, clamp(amount, 0.0, 1.0));
         return float4(pixel.rgb * scale, pixel.a);
+    }
+    [[stitchable]] float4 vibrance(coreimage::sample_t pixel, float amount) {
+        float3 rgb = pixel.rgb;
+        float peak = max(rgb.r, max(rgb.g, rgb.b));
+        float floor = min(rgb.r, min(rgb.g, rgb.b));
+        if (floor < 0.0 || peak <= 0.000001 || peak - floor <= 0.000001) return pixel;
+        float saturation = (peak - floor) / peak;
+        float selectivity = 1.0 - smoothstep(0.0, 1.0, saturation);
+        float luminance = dot(rgb, float3(0.2126, 0.7152, 0.0722));
+        float scale = max(0.0, 1.0 + clamp(amount, -1.0, 1.0) * selectivity);
+        if (scale > 1.0) {
+            scale = min(scale, luminance / max(luminance - floor, 0.000001));
+        }
+        return float4(luminance + (rgb - luminance) * scale, pixel.a);
     }
     inline float toneCurveTangent(float previous, float next,
                                   float previousWidth, float nextWidth) {

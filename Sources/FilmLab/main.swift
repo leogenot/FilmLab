@@ -23,6 +23,7 @@ private struct PhotoEdits: Codable, Equatable {
   var exposure = 0.0
   var contrast = 1.0
   var saturation = 1.0
+  var vibrance = 0.0
   var warmth = 0.0
   var curveShadow = 0.0
   var curveMidtone = 0.0
@@ -87,6 +88,7 @@ private struct PhotoEdits: Codable, Equatable {
     exposure = try values.decodeIfPresent(Double.self, forKey: .exposure) ?? 0
     contrast = try values.decodeIfPresent(Double.self, forKey: .contrast) ?? 1
     saturation = try values.decodeIfPresent(Double.self, forKey: .saturation) ?? 1
+    vibrance = try values.decodeIfPresent(Double.self, forKey: .vibrance) ?? 0
     warmth = try values.decodeIfPresent(Double.self, forKey: .warmth) ?? 0
     curveShadow = try values.decodeIfPresent(Double.self, forKey: .curveShadow) ?? 0
     curveMidtone = try values.decodeIfPresent(Double.self, forKey: .curveMidtone) ?? 0
@@ -163,6 +165,7 @@ final class PhotoEditor {
   var exposure = 0.0
   var contrast = 1.0
   var saturation = 1.0
+  var vibrance = 0.0
   var warmth = 0.0
   var curveShadow = 0.0
   var curveMidtone = 0.0
@@ -267,6 +270,7 @@ final class PhotoEditor {
   private let renderedInputToneKernel = FilmKernels.kernel("renderedInputTone")
   private let outputShoulderKernel = FilmKernels.kernel("outputShoulder")
   private let outputToneCurveKernel = FilmKernels.kernel("outputToneCurve")
+  private let vibranceKernel = FilmKernels.kernel("vibrance")
 
   func open(_ url: URL) {
     openTask?.cancel()
@@ -379,6 +383,7 @@ final class PhotoEditor {
     exposure = saved.exposure
     contrast = saved.contrast
     saturation = saved.saturation
+    vibrance = saved.vibrance
     warmth = saved.warmth
     curveShadow = saved.curveShadow
     curveMidtone = saved.curveMidtone
@@ -514,6 +519,7 @@ final class PhotoEditor {
     edits.exposure = exposure
     edits.contrast = contrast
     edits.saturation = saturation
+    edits.vibrance = vibrance
     edits.warmth = warmth
     edits.curveShadow = curveShadow
     edits.curveMidtone = curveMidtone
@@ -685,6 +691,7 @@ final class PhotoEditor {
     exposure = defaults.exposure
     contrast = defaults.contrast
     saturation = defaults.saturation
+    vibrance = defaults.vibrance
     warmth = defaults.warmth
     curveShadow = defaults.curveShadow
     curveMidtone = defaults.curveMidtone
@@ -1037,8 +1044,18 @@ final class PhotoEditor {
       midHue: midHue, midStrength: midStrength,
       highlightHue: highlightHue, highlightStrength: highlightStrength
     )
+    var colored = graded
+    if abs(vibrance) > 0.001 {
+      guard let vibranceKernel,
+        let adjusted = vibranceKernel.apply(extent: colored.extent, arguments: [colored, vibrance])
+      else {
+        error = "The vibrance stage could not be loaded."
+        return nil
+      }
+      colored = adjusted
+    }
     let selected = SelectiveColor.apply(
-      to: graded, targetHue: selectiveHue, range: selectiveRange,
+      to: colored, targetHue: selectiveHue, range: selectiveRange,
       hueShift: selectiveShift, saturation: selectiveSaturation
     )
     let mixed = ColorMixer.apply(to: selected, adjustments: mixer)
@@ -1257,6 +1274,7 @@ struct ContentView: View {
     .onChange(of: editor.exposure) { editor.editsChanged() }
     .onChange(of: editor.contrast) { editor.editsChanged() }
     .onChange(of: editor.saturation) { editor.editsChanged() }
+    .onChange(of: editor.vibrance) { editor.editsChanged() }
     .onChange(of: editor.warmth) { editor.editsChanged() }
     .onChange(of: editor.curveShadow) { editor.editsChanged() }
     .onChange(of: editor.curveMidtone) { editor.editsChanged() }
@@ -1653,6 +1671,11 @@ struct ContentView: View {
           Text("Rolls bright output toward white while preserving linear RGB ratios. The film and paper models still respond before this finishing control.")
             .font(.caption).foregroundStyle(.secondary)
         case .color:
+          Text("Master color").font(.headline)
+          control("Vibrance", value: $editor.vibrance, range: -1...1)
+          Text("Changes muted colors more than already saturated colors while retaining luminance.")
+            .font(.caption).foregroundStyle(.secondary)
+          Divider()
           Text("Color mixer").font(.headline)
           Picker("Color family", selection: $selectedColorBand) {
             ForEach(0..<ColorMixer.names.count, id: \.self) { index in

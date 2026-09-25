@@ -23,6 +23,7 @@ struct RenderingProbe {
     let renderedInputTone = FilmKernels.kernel("renderedInputTone")!
     let outputShoulder = FilmKernels.kernel("outputShoulder")!
     let outputToneCurve = FilmKernels.kernel("outputToneCurve")!
+    let vibrance = FilmKernels.kernel("vibrance")!
 
     func patch(_ value: Double) -> CIImage {
       CIImage(color: CIColor(red: value, green: value, blue: value, colorSpace: space)!)
@@ -125,6 +126,36 @@ struct RenderingProbe {
         arguments: [colorCurveSource, 0.1, -0.05, 0.1])!)
     precondition(abs(curvedColor[0] / curvedColor[1] - 2) < 0.002)
     precondition(abs(curvedColor[1] / curvedColor[2] - 2) < 0.002)
+
+    func vibrant(_ red: Double, _ green: Double, _ blue: Double, _ amount: Double) -> [Float] {
+      let source = CIImage(
+        color: CIColor(red: red, green: green, blue: blue, colorSpace: space)!
+      ).cropped(to: CGRect(x: 0, y: 0, width: 1, height: 1))
+      return channels(vibrance.apply(extent: source.extent, arguments: [source, amount])!)
+    }
+    func luminance(_ color: [Float]) -> Float {
+      color[0] * 0.2126 + color[1] * 0.7152 + color[2] * 0.0722
+    }
+    func chroma(_ color: [Float]) -> Float {
+      color.max()! - color.min()!
+    }
+    let muted = vibrant(0.45, 0.35, 0.30, 0)
+    let strong = vibrant(0.65, 0.20, 0.08, 0)
+    let mutedRaised = vibrant(0.45, 0.35, 0.30, 1)
+    let strongRaised = vibrant(0.65, 0.20, 0.08, 1)
+    let mutedLowered = vibrant(0.45, 0.35, 0.30, -1)
+    precondition(abs(vibrant(0.18, 0.18, 0.18, 1)[0] - 0.18) < 0.001)
+    precondition(abs(luminance(mutedRaised) - luminance(muted)) < 0.001)
+    precondition(abs(luminance(mutedLowered) - luminance(muted)) < 0.001)
+    precondition(chroma(mutedRaised) > chroma(muted))
+    precondition(chroma(mutedLowered) < chroma(muted))
+    precondition(
+      chroma(mutedRaised) / chroma(muted) > chroma(strongRaised) / chroma(strong) + 0.1,
+      "Vibrance did not favor muted color")
+    precondition(mutedRaised.min()! >= 0)
+    let extendedColor = vibrant(1.4, 0.2, -0.1, 1)
+    precondition(abs(extendedColor[0] - 1.4) < 0.001)
+    precondition(abs(extendedColor[2] + 0.1) < 0.001)
 
     for stock in [1.0, 2.0] {
       let under = rendered(stock, -2)
