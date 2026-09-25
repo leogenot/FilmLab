@@ -69,20 +69,27 @@ actor NeutralPatchSampler {
       }
     }
     guard !Task.isCancelled else { return nil }
-    var red = 0.0
-    var green = 0.0
-    var blue = 0.0
-    var count = 0
+    var reds = [Double]()
+    var greens = [Double]()
+    var blues = [Double]()
+    reds.reserveCapacity(width * height)
+    greens.reserveCapacity(width * height)
+    blues.reserveCapacity(width * height)
     for offset in stride(from: 0, to: pixels.count, by: 4) {
       let channels = pixels[offset..<(offset + 3)]
       guard channels.allSatisfy(\.isFinite), pixels[offset + 3] > 0.5 else { continue }
-      red += Double(pixels[offset])
-      green += Double(pixels[offset + 1])
-      blue += Double(pixels[offset + 2])
-      count += 1
+      reds.append(Double(pixels[offset]))
+      greens.append(Double(pixels[offset + 1]))
+      blues.append(Double(pixels[offset + 2]))
     }
-    guard count > 0 else { return nil }
+    guard !reds.isEmpty else { return nil }
+    func median(_ values: inout [Double]) -> Double {
+      values.sort()
+      let middle = values.count / 2
+      return values.count.isMultiple(of: 2)
+        ? (values[middle - 1] + values[middle]) / 2 : values[middle]
+    }
     return InputNeutralBalance.fromSample(
-      red: red / Double(count), green: green / Double(count), blue: blue / Double(count))
+      red: median(&reds), green: median(&greens), blue: median(&blues))
   }
 }

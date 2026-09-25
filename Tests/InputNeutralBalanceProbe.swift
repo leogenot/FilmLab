@@ -39,6 +39,22 @@ enum InputNeutralBalanceProbe {
     precondition(InputNeutralBalance.fromSample(red: 0.001, green: 0.002, blue: 0.001) == nil)
     precondition(InputNeutralBalance.fromSample(red: 0.99, green: 0.99, blue: 0.99) == nil)
     precondition(InputNeutralBalance.fromSample(red: 0.01, green: 0.5, blue: 0.01) == nil)
-    print("Neutral patch balance retained luminance and rejected unstable samples")
+    let mixed =
+      Array(repeating: sourcePixel, count: 48)
+      + Array(repeating: [Float(0.9), 0.05, 0.05, 1], count: 16)
+    let mixedPixels = mixed.flatMap { $0 }
+    let mixedImage = mixedPixels.withUnsafeBytes { bytes in
+      CIImage(
+        bitmapData: Data(bytes), bytesPerRow: 8 * 4 * MemoryLayout<Float>.size,
+        size: CGSize(width: 8, height: 8), format: .RGBAf,
+        colorSpace: CGColorSpace(name: CGColorSpace.extendedLinearSRGB)!)
+    }
+    let robust = await NeutralPatchSampler().sample(
+      NeutralSampleRequest(image: mixedImage, location: CGPoint(x: 0.5, y: 0.5), sourceURL: nil))
+    guard let robust else { fatalError("Dominant neutral patch was rejected") }
+    precondition(abs(robust.red - balance.red) < 0.0001)
+    precondition(abs(robust.green - balance.green) < 0.0001)
+    precondition(abs(robust.blue - balance.blue) < 0.0001)
+    print("Neutral patch balance resisted colored contamination and rejected unstable samples")
   }
 }
