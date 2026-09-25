@@ -62,6 +62,37 @@ struct ExporterProbe {
     precondition(jpegTIFF[kCGImagePropertyTIFFMake as String] as? String == "FilmLab Test Camera")
     precondition(jpegProperties[kCGImagePropertyOrientation as String] as? Int == 1)
 
+    let patternWidth = 128
+    let patternHeight = 128
+    var pattern = [UInt8](repeating: 255, count: patternWidth * patternHeight * 4)
+    for y in 0..<patternHeight {
+      for x in 0..<patternWidth {
+        let offset = (y * patternWidth + x) * 4
+        pattern[offset] = UInt8((x * 37 + y * 19 + x * y) % 256)
+        pattern[offset + 1] = UInt8((x * 11 + y * 53 + x * y * 3) % 256)
+        pattern[offset + 2] = UInt8((x * 71 + y * 7 + x * y * 5) % 256)
+      }
+    }
+    let detailed = CIImage(
+      bitmapData: Data(pattern), bytesPerRow: patternWidth * 4,
+      size: CGSize(width: patternWidth, height: patternHeight), format: .RGBA8,
+      colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
+    let compactURL = directory.appendingPathComponent("compact.jpg")
+    let maximumURL = directory.appendingPathComponent("maximum.jpg")
+    try await exporter.export(
+      ExportRequest(
+        image: detailed, url: compactURL, format: .jpeg, sourceURL: nil,
+        jpegQuality: 0.8))
+    try await exporter.export(
+      ExportRequest(
+        image: detailed, url: maximumURL, format: .jpeg, sourceURL: nil,
+        jpegQuality: 1.0))
+    let compactBytes = try Data(contentsOf: compactURL).count
+    let maximumBytes = try Data(contentsOf: maximumURL).count
+    precondition(maximumBytes > compactBytes * 12 / 10)
+    precondition(CGImageSourceCreateWithURL(compactURL as CFURL, nil) != nil)
+    precondition(CGImageSourceCreateWithURL(maximumURL as CFURL, nil) != nil)
+
     let tiffURL = directory.appendingPathComponent("output.tiff")
     try await exporter.export(
       ExportRequest(image: image, url: tiffURL, format: .tiff16DisplayP3, sourceURL: sourceURL))

@@ -34,16 +34,18 @@ struct ExportRequest: @unchecked Sendable {
   let format: ExportFormat
   let sourceURL: URL?
   let compressSRGBGamut: Bool
+  let jpegQuality: Double
 
   init(
     image: CIImage, url: URL, format: ExportFormat, sourceURL: URL?,
-    compressSRGBGamut: Bool = false
+    compressSRGBGamut: Bool = false, jpegQuality: Double = 0.95
   ) {
     self.image = image
     self.url = url
     self.format = format
     self.sourceURL = sourceURL
     self.compressSRGBGamut = compressSRGBGamut
+    self.jpegQuality = jpegQuality.isFinite ? min(1, max(0.05, jpegQuality)) : 0.95
   }
 }
 
@@ -80,7 +82,8 @@ actor ImageExporter {
       guard
         let data = context.jpegRepresentation(
           of: image,
-          colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!, options: [quality: 0.95]
+          colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!,
+          options: [quality: request.jpegQuality]
         )
       else {
         throw ExportError.renderFailed

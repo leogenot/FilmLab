@@ -2396,7 +2396,7 @@ final class PhotoEditor {
     editsChanged()
   }
 
-  func exportJPEG() {
+  func exportJPEG(quality: Double = 0.95) {
     guard canExport else { return }
     guard let image = developedImage() else { return }
     let panel = NSSavePanel()
@@ -2407,7 +2407,7 @@ final class PhotoEditor {
     beginExport(
       ExportRequest(
         image: image, url: url, format: .jpeg, sourceURL: sourceURL,
-        compressSRGBGamut: compressSRGBGamut))
+        compressSRGBGamut: compressSRGBGamut, jpegQuality: quality))
   }
 
   func exportTIFF(format: ExportFormat) {
@@ -2484,6 +2484,7 @@ final class PhotoEditor {
 
   func exportBatch(
     _ paths: [String], to directory: URL, format: ExportFormat,
+    jpegQuality: Double = 0.95,
     progress: @MainActor (Int, Int) -> Void
   ) async -> String {
     let activePathAtStart = sourceURL?.standardizedFileURL.path
@@ -2559,7 +2560,7 @@ final class PhotoEditor {
         try await exporter.export(
           ExportRequest(
             image: image, url: output, format: format, sourceURL: url,
-            compressSRGBGamut: edits.compressSRGBGamut))
+            compressSRGBGamut: edits.compressSRGBGamut, jpegQuality: jpegQuality))
         result.exported += 1
       } catch is CancellationError {
         result.cancelled = true
@@ -2657,6 +2658,7 @@ struct ContentView: View {
   @State private var exportingBatch = false
   @State private var batchExportProgress = ""
   @State private var batchExportTask: Task<Void, Never>?
+  @AppStorage("FilmLab.jpegQualityPercent") private var jpegQualityPercent = 95
   @State private var panel: EditorPanel = .film
   @State private var outputScope: OutputScopeKind = .histogram
   @State private var selectedColorBand = 0
@@ -2806,11 +2808,19 @@ struct ContentView: View {
       .accessibilityLabel("Open photos")
       .help("Choose a photo or reopen a recent photo")
       Menu("Export…", systemImage: "square.and.arrow.up") {
-        Button("JPEG (sRGB)…") { editor.exportJPEG() }
+        Button("JPEG (sRGB, \(jpegQualityPercent)%)…") {
+          editor.exportJPEG(quality: Double(jpegQualityPercent) / 100)
+        }
         Button("16-bit TIFF (sRGB)…") { editor.exportTIFF(format: .tiff16SRGB) }
         Button("16-bit TIFF (Display P3)…") { editor.exportTIFF(format: .tiff16DisplayP3) }
         Button("32-bit float TIFF (extended linear sRGB)…") {
           editor.exportTIFF(format: .tiff32Linear)
+        }
+        Divider()
+        Picker("JPEG quality", selection: $jpegQualityPercent) {
+          ForEach([80, 90, 95, 100], id: \.self) { quality in
+            Text("\(quality)%").tag(quality)
+          }
         }
       }
       .accessibilityLabel("Export photo")
@@ -3584,7 +3594,10 @@ struct ContentView: View {
     exportingBatch = true
     batchExportProgress = "Preparing exports…"
     batchExportTask = Task {
-      libraryNotice = await editor.exportBatch(paths, to: directory, format: format) {
+      libraryNotice = await editor.exportBatch(
+        paths, to: directory, format: format,
+        jpegQuality: Double(jpegQualityPercent) / 100
+      ) {
         current, total in
         batchExportProgress = "Exporting \(current) of \(total)…"
       }
@@ -3968,13 +3981,21 @@ struct ContentView: View {
                 .disabled(selectedPhotoPaths.isEmpty || applyingBatch || exportingBatch)
               }
               Menu("Export Selected…") {
-                Button("JPEG (sRGB)") { exportSelection(format: .jpeg) }
+                Button("JPEG (sRGB, \(jpegQualityPercent)%)") {
+                  exportSelection(format: .jpeg)
+                }
                 Button("16-bit TIFF (sRGB)") { exportSelection(format: .tiff16SRGB) }
                 Button("16-bit TIFF (Display P3)") {
                   exportSelection(format: .tiff16DisplayP3)
                 }
                 Button("32-bit float TIFF (extended linear sRGB)") {
                   exportSelection(format: .tiff32Linear)
+                }
+                Divider()
+                Picker("JPEG quality", selection: $jpegQualityPercent) {
+                  ForEach([80, 90, 95, 100], id: \.self) { quality in
+                    Text("\(quality)%").tag(quality)
+                  }
                 }
               }
               .disabled(
