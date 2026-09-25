@@ -3245,6 +3245,13 @@ struct ContentView: View {
     referenceUnavailable = false
   }
 
+  private func followReferenceRelinks(_ replacements: [String: String]) {
+    guard let referencePhotoPath, let replacement = replacements[referencePhotoPath] else { return }
+    self.referencePhotoPath = replacement
+    referencePreview = nil
+    referenceUnavailable = false
+  }
+
   private func openRecentPhoto(_ path: String) {
     guard FileManager.default.fileExists(atPath: path) else {
       libraryNotice = "Photo is missing: \(path)"
@@ -3541,6 +3548,10 @@ struct ContentView: View {
           folderImportTask = nil
           return
         }
+        followReferenceRelinks(
+          Dictionary(
+            relinked.map { ($0.0, $0.1.standardizedFileURL.path) },
+            uniquingKeysWith: { _, replacement in replacement }))
         selectedPhotoPaths.subtract(relinked.map(\.0))
         if let selectionAnchor, relinked.contains(where: { $0.0 == selectionAnchor }) {
           self.selectionAnchor = nil
@@ -3788,6 +3799,10 @@ struct ContentView: View {
       library = previousLibrary
       return
     }
+    followReferenceRelinks(
+      Dictionary(
+        relinked.map { ($0.0, $0.1.standardizedFileURL.path) },
+        uniquingKeysWith: { _, replacement in replacement }))
     for (previousPath, replacementURL) in relinked {
       for catalogID in Array(lastPhotoByCatalog.keys)
       where lastPhotoByCatalog[catalogID] == previousPath {
@@ -3850,6 +3865,7 @@ struct ContentView: View {
           uniqueKeysWithValues: result.relinked.map {
             ($0.oldPath, $0.newURL.standardizedFileURL.path)
           })
+        followReferenceRelinks(replacements)
         for catalogID in Array(lastPhotoByCatalog.keys) {
           if let oldPath = lastPhotoByCatalog[catalogID], let newPath = replacements[oldPath] {
             lastPhotoByCatalog[catalogID] = newPath
@@ -4373,9 +4389,19 @@ struct ContentView: View {
             .resizable()
             .scaledToFit()
         } else if referenceUnavailable {
-          ContentUnavailableView(
-            "Reference unavailable", systemImage: "photo.badge.exclamationmark",
-            description: Text("Check its original photo and saved grade."))
+          VStack(spacing: 12) {
+            ContentUnavailableView(
+              "Reference unavailable", systemImage: "photo.badge.exclamationmark",
+              description: Text("Check its original photo and saved grade."))
+            if !FileManager.default.fileExists(atPath: path),
+              library.catalogs.contains(where: { $0.photoPaths.contains(path) })
+            {
+              Button("Locate Original…") {
+                pathToRelink = path
+                showingRelinkImporter = true
+              }
+            }
+          }
         } else {
           ProgressView("Rendering reference…")
         }
