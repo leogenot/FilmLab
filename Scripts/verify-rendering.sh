@@ -52,6 +52,16 @@ DEVELOPER_DIR="$developer_dir" swiftc \
   "$project_dir/Tests/PreviewRendererProbe.swift" \
   -o "$project_dir/.build/FilmLabPreviewRendererProbe"
 "$project_dir/.build/FilmLabPreviewRendererProbe"
+if [[ -n "${FILMLAB_TEST_RAW:-}" && -n "${FILMLAB_TEST_JPEG:-}" ]]; then
+  DEVELOPER_DIR="$developer_dir" swiftc \
+    "$project_dir/Sources/FilmLab/FilmKernels.swift" \
+    "$project_dir/Sources/FilmLab/PreviewRenderer.swift" \
+    "$project_dir/Sources/FilmLab/ImageExporter.swift" \
+    "$project_dir/Sources/FilmLab/ImageDecoder.swift" \
+    "$project_dir/Tests/OutputParityProbe.swift" \
+    -o "$project_dir/.build/FilmLabOutputParityProbe"
+  "$project_dir/.build/FilmLabOutputParityProbe" "$FILMLAB_TEST_RAW" "$FILMLAB_TEST_JPEG"
+fi
 DEVELOPER_DIR="$developer_dir" swiftc \
   "$project_dir/Sources/FilmLab/PixelSampler.swift" \
   "$project_dir/Tests/PixelSamplerProbe.swift" \
