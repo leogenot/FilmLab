@@ -30,7 +30,7 @@ struct ImageDecoderProbe {
 
     let decoded = try await ImageDecoder().decode(
       from: url, isRAW: false, flatRAW: false, highlightRecovery: false,
-      temperature: nil, tint: nil)
+      temperature: nil, tint: nil, includeDiagnostics: true)
     precondition(decoded.image.extent.size == CGSize(width: 2, height: 1))
     var pixels = [Float](repeating: 0, count: 8)
     pixels.withUnsafeMutableBytes { bytes in
@@ -42,6 +42,10 @@ struct ImageDecoderProbe {
     let difference = pixels[4] - pixels[0]
     precondition(difference > 0.0002 && difference < 0.001, "16-bit input was quantized")
     precondition(decoded.jpegChannelNearWhiteFraction == nil, "TIFF reported JPEG headroom")
+    guard let tiffRange = decoded.inputExposureRange else {
+      preconditionFailure("TIFF input exposure range was not reported")
+    }
+    precondition((1.4...1.6).contains(tiffRange.medianEV), "TIFF input range lost linear light")
     print("File-backed 16-bit TIFF decode retained sub-8-bit detail: \(difference)")
 
     let gray = CIImage(color: CIColor(red: 0.5, green: 0.5, blue: 0.5, colorSpace: linear)!)
@@ -58,11 +62,17 @@ struct ImageDecoderProbe {
     try jpegData.write(to: jpegURL)
     let jpeg = try await ImageDecoder().decode(
       from: jpegURL, isRAW: false, flatRAW: false, highlightRecovery: false,
-      temperature: nil, tint: nil)
+      temperature: nil, tint: nil, includeDiagnostics: true)
     guard let fraction = jpeg.jpegChannelNearWhiteFraction else {
       preconditionFailure("JPEG headroom was not reported")
     }
     precondition((0.45...0.55).contains(fraction), "JPEG bright fraction did not reflect input")
+    guard let jpegRange = jpeg.inputExposureRange else {
+      preconditionFailure("JPEG input exposure range was not reported")
+    }
+    precondition(
+      jpegRange.highEV > jpegRange.lowEV + 0.8,
+      "JPEG input exposure range did not distinguish gray and white")
     print("JPEG source channel headroom check passed: \(fraction)")
   }
 }

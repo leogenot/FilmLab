@@ -339,6 +339,7 @@ final class PhotoEditor {
   var comparisonPreview: NSImage?
   var histogram: PreviewHistogram?
   var jpegChannelNearWhiteFraction: Double?
+  var inputExposureRange: InputExposureRange?
   var compareEnabled = false
   var compareFraction = 0.5
   var exposure = 0.0
@@ -553,7 +554,7 @@ final class PhotoEditor {
         let decoded = try await imageDecoder.decode(
           from: url, isRAW: isRAW, flatRAW: saved.flatRAW,
           highlightRecovery: saved.rawHighlightRecovery, temperature: saved.rawTemperature,
-          tint: saved.rawTint)
+          tint: saved.rawTint, includeDiagnostics: true)
         try Task.checkCancellation()
         guard version == openVersion else { return }
         let image = decoded.image
@@ -598,6 +599,7 @@ final class PhotoEditor {
         sourceURL = url
         sourceEditLocation = editLocation
         jpegChannelNearWhiteFraction = decoded.jpegChannelNearWhiteFraction
+        inputExposureRange = decoded.inputExposureRange
         editRecoveryNotice = notices.isEmpty ? nil : notices.joined(separator: " ")
         editRecoveryURL = loaded.backupURL
         editSavingBlocked = !loaded.canSave
@@ -690,6 +692,7 @@ final class PhotoEditor {
     comparisonPreview = nil
     histogram = nil
     jpegChannelNearWhiteFraction = nil
+    inputExposureRange = nil
     pixelReadout = nil
     selectedPixel = nil
     editRecoveryNotice = nil
@@ -832,12 +835,13 @@ final class PhotoEditor {
         let decoded = try await imageDecoder.decode(
           from: url, isRAW: true, flatRAW: requestedFlatRAW,
           highlightRecovery: requestedHighlightRecovery, temperature: requestedTemperature,
-          tint: requestedTint
+          tint: requestedTint, includeDiagnostics: true
         )
         guard !Task.isCancelled, version == rawDecodeVersion, sourceURL == url else { return }
         previewTask?.cancel()
         renderVersion += 1
         source = decoded.image
+        inputExposureRange = decoded.inputExposureRange
         decodedFlatRAW = requestedFlatRAW
         decodedHighlightRecovery = requestedHighlightRecovery
         decodedRawTemperature = requestedTemperature
@@ -3850,6 +3854,18 @@ struct ContentView: View {
           )
           .font(.caption).foregroundStyle(.secondary)
         case .develop:
+          if let range = editor.inputExposureRange {
+            Text("Decoded input light").font(.headline)
+            Text(
+              "1%: \(range.lowEV.formatted(.number.precision(.fractionLength(1)))) EV   Median: \(range.medianEV.formatted(.number.precision(.fractionLength(1)))) EV   99%: \(range.highEV.formatted(.number.precision(.fractionLength(1)))) EV"
+            )
+            .font(.caption.monospacedDigit())
+            Text(
+              "Sampled luminance relative to 18% linear gray before FilmLab's input controls. This reflects the RAW decoder or the JPEG's baked tone, not sensor dynamic range."
+            )
+            .font(.caption).foregroundStyle(.secondary)
+            Divider()
+          }
           Text("Input neutral correction").font(.headline)
           HStack {
             Button(editor.pickingNeutralArea ? "Cancel pick" : "Pick neutral area") {
