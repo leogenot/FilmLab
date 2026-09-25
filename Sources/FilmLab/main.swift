@@ -4813,7 +4813,11 @@ struct ContentView: View {
             )
             .font(.caption.monospacedDigit())
             Text(
-              "Sampled luminance relative to 18% linear gray before FilmLab's input controls. This reflects the RAW decoder or the JPEG's baked tone, not sensor dynamic range."
+              "Deep shadow (<1/256): \(range.deepShadowFraction.formatted(.percent.precision(.fractionLength(1))))   Above display white (>1): \(range.aboveWhiteFraction.formatted(.percent.precision(.fractionLength(1))))"
+            )
+            .font(.caption.monospacedDigit())
+            Text(
+              "Sampled luminance before FilmLab's input controls. EV is relative to 18% linear gray. The fractions measure decoded light, not clipped pixels or sensor dynamic range."
             )
             .font(.caption).foregroundStyle(.secondary)
             Divider()
