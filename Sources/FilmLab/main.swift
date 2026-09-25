@@ -2478,7 +2478,9 @@ final class PhotoEditor {
     _ paths: [String], to directory: URL, format: ExportFormat,
     progress: @MainActor (Int, Int) -> Void
   ) async -> String {
+    let activePathAtStart = sourceURL?.standardizedFileURL.path
     let currentPhotoSaved = flushEdits()
+    let activeEditsAtStart = activePathAtStart != nil && currentPhotoSaved ? currentEdits() : nil
     var result = BatchExportResult()
     for (index, path) in paths.enumerated() {
       if Task.isCancelled {
@@ -2490,7 +2492,7 @@ final class PhotoEditor {
       let access = url.startAccessingSecurityScopedResource()
       do {
         defer { if access { url.stopAccessingSecurityScopedResource() } }
-        if !currentPhotoSaved, url.standardizedFileURL == sourceURL?.standardizedFileURL {
+        if path == activePathAtStart && activeEditsAtStart == nil {
           result.failed.append(url.lastPathComponent + " (current edits could not be saved)")
           continue
         }
@@ -2499,27 +2501,47 @@ final class PhotoEditor {
           continue
         }
         let isRAW = await imageDecoder.isRAWFile(url)
-        let location = EditRecordLocator.locate(sourceURL: url, directory: editsDirectory)
-        let loaded = SavedEditStore.load(
-          from: location.primaryURL, fallbackURL: location.pathURL,
-          defaultValue: PhotoEdits.defaults(
-            forRAW: isRAW, grainSeed: EditRecordLocator.grainSeed(for: url)))
-        guard loaded.notice == nil else {
-          result.failed.append(url.lastPathComponent + " (saved edits need review)")
-          continue
+        let edits: PhotoEdits
+        let capturedWhileOpen: Bool
+        if path == activePathAtStart, let activeEditsAtStart {
+          edits = activeEditsAtStart
+          capturedWhileOpen = true
+        } else if sourceURL?.standardizedFileURL.path == path {
+          guard flushEdits() else {
+            result.failed.append(url.lastPathComponent + " (current edits could not be saved)")
+            continue
+          }
+          edits = currentEdits()
+          capturedWhileOpen = true
+        } else {
+          let location = EditRecordLocator.locate(sourceURL: url, directory: editsDirectory)
+          let loaded = SavedEditStore.load(
+            from: location.primaryURL, fallbackURL: location.pathURL,
+            defaultValue: PhotoEdits.defaults(
+              forRAW: isRAW, grainSeed: EditRecordLocator.grainSeed(for: url)))
+          guard loaded.notice == nil else {
+            result.failed.append(url.lastPathComponent + " (saved edits need review)")
+            continue
+          }
+          edits = loaded.value
+          capturedWhileOpen = false
         }
         let decoded = try await imageDecoder.decode(
-          from: url, isRAW: isRAW, flatRAW: loaded.value.flatRAW,
-          highlightRecovery: loaded.value.rawHighlightRecovery,
-          decoderSharpening: loaded.value.rawDecoderSharpening,
-          luminanceNoiseReduction: loaded.value.rawLuminanceNoiseReduction,
-          colorNoiseReduction: loaded.value.rawColorNoiseReduction,
-          temperature: loaded.value.rawTemperature, tint: loaded.value.rawTint)
+          from: url, isRAW: isRAW, flatRAW: edits.flatRAW,
+          highlightRecovery: edits.rawHighlightRecovery,
+          decoderSharpening: edits.rawDecoderSharpening,
+          luminanceNoiseReduction: edits.rawLuminanceNoiseReduction,
+          colorNoiseReduction: edits.rawColorNoiseReduction,
+          temperature: edits.rawTemperature, tint: edits.rawTint)
         try Task.checkCancellation()
+        if sourceURL?.standardizedFileURL.path == path && !capturedWhileOpen {
+          result.failed.append(url.lastPathComponent + " (opened during export; retry this photo)")
+          continue
+        }
         let worker = PhotoEditor()
         worker.source = decoded.image
         worker.sourceIsRAW = isRAW
-        worker.restoreEdits(loaded.value)
+        worker.restoreEdits(edits)
         guard let image = worker.developedImage() else {
           result.failed.append(url.lastPathComponent + " (render failed)")
           continue
@@ -2529,7 +2551,7 @@ final class PhotoEditor {
         try await exporter.export(
           ExportRequest(
             image: image, url: output, format: format, sourceURL: url,
-            compressSRGBGamut: loaded.value.compressSRGBGamut))
+            compressSRGBGamut: edits.compressSRGBGamut))
         result.exported += 1
       } catch is CancellationError {
         result.cancelled = true
