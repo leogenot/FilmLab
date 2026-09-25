@@ -68,6 +68,15 @@ struct OutputParityProbe {
             originalImage: nil, showGamutWarning: false))
         guard let previewImage = preview?.image else { throw ProbeError.unreadable }
         let previewPixels = pixels(CIImage(cgImage: previewImage))
+        let widePreview = await previewRenderer.render(
+          PreviewRequest(
+            image: developed, scale: 0.5, sourceURL: url,
+            originalImage: nil, showGamutWarning: false,
+            highPrecision: true, displayP3: true))
+        guard let widePreviewImage = widePreview?.image else { throw ProbeError.unreadable }
+        precondition(widePreviewImage.bitsPerComponent == 16)
+        precondition(widePreviewImage.colorSpace?.name == CGColorSpace.displayP3)
+        let widePreviewPixels = pixels(CIImage(cgImage: widePreviewImage))
 
         for format in [ExportFormat.tiff16SRGB, .tiff16DisplayP3, .jpeg] {
           let formatName =
@@ -97,10 +106,11 @@ struct OutputParityProbe {
           let exportedPixels = pixels(reduced)
           var absoluteSum = 0
           var maximum = 0
-          for index in stride(from: 0, to: previewPixels.count, by: 4) {
+          let comparisonPixels = format == .tiff16DisplayP3 ? widePreviewPixels : previewPixels
+          for index in stride(from: 0, to: comparisonPixels.count, by: 4) {
             for channel in 0..<3 {
               let difference = abs(
-                Int(previewPixels[index + channel]) - Int(exportedPixels[index + channel]))
+                Int(comparisonPixels[index + channel]) - Int(exportedPixels[index + channel]))
               absoluteSum += difference
               maximum = max(maximum, difference)
             }

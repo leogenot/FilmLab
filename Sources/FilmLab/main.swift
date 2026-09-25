@@ -3863,7 +3863,7 @@ struct ContentView: View {
         Toggle("Float preview", isOn: $editor.highPrecisionPreview)
           .font(.caption)
           .help(
-            "Develop previews with the 32-bit float working format used for export. Full-size previews use more memory."
+            "Develop previews in 32-bit float and render the canvas at 16 bits per channel. Full-size previews use more memory."
           )
           .disabled(editor.preview == nil)
         Toggle("Display P3 canvas", isOn: $editor.displayP3Preview)

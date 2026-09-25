@@ -53,12 +53,13 @@ struct PreviewRendererProbe {
     let p3Canvas = await renderer.render(
       PreviewRequest(
         image: wideGreen, scale: 1, sourceURL: nil, originalImage: wideGreen,
-        showGamutWarning: false, displayP3: true))
+        showGamutWarning: false, highPrecision: true, displayP3: true))
     guard let srgbImage = srgbCanvas?.image, let p3Image = p3Canvas?.image else {
       preconditionFailure("Wide-gamut canvas previews are unreadable")
     }
     precondition(srgbImage.colorSpace?.name == CGColorSpace.sRGB)
     precondition(p3Image.colorSpace?.name == CGColorSpace.displayP3)
+    precondition(p3Image.bitsPerComponent == 16)
     precondition(p3Canvas?.original?.colorSpace?.name == CGColorSpace.displayP3)
     precondition(srgbCanvas?.histogram?.greenBins == p3Canvas?.histogram?.greenBins)
     let p3Context = CIContext(options: [
@@ -76,6 +77,36 @@ struct PreviewRendererProbe {
       return pixel[1]
     }
     precondition(p3Green(p3Image) > p3Green(srgbImage) + 0.01)
+    func neutralPatch(_ value: CGFloat) -> CIImage {
+      CIImage(
+        color: CIColor(
+          red: value, green: value, blue: value,
+          colorSpace: CGColorSpace(name: CGColorSpace.extendedLinearSRGB)!)!
+      ).cropped(to: CGRect(x: 0, y: 0, width: 1, height: 1))
+    }
+    let closeValues = [CGFloat(0.25), CGFloat(0.2505)]
+    var precisePreviews = [PreviewResult?]()
+    for value in closeValues {
+      precisePreviews.append(
+        await renderer.render(
+          PreviewRequest(
+            image: neutralPatch(value), scale: 1, sourceURL: nil, originalImage: nil,
+            showGamutWarning: false, highPrecision: true)))
+    }
+    guard let firstPrecise = precisePreviews[0]?.image,
+      let secondPrecise = precisePreviews[1]?.image
+    else { preconditionFailure("16-bit canvas samples are unreadable") }
+    func redLinear(_ image: CGImage) -> Float {
+      var pixel = [Float](repeating: 0, count: 4)
+      pixel.withUnsafeMutableBytes { bytes in
+        p3Context.render(
+          CIImage(cgImage: image), toBitmap: bytes.baseAddress!, rowBytes: 16,
+          bounds: CGRect(x: 0, y: 0, width: 1, height: 1), format: .RGBAf,
+          colorSpace: CGColorSpace(name: CGColorSpace.extendedLinearSRGB)!)
+      }
+      return pixel[0]
+    }
+    precondition(redLinear(secondPrecise) > redLinear(firstPrecise) + 0.0003)
     let directory = FileManager.default.temporaryDirectory
       .appendingPathComponent("FilmLab-preview-parity-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -107,6 +138,9 @@ struct PreviewRendererProbe {
         image: gradientImage, scale: 1, sourceURL: nil, originalImage: image,
         showGamutWarning: false, highPrecision: true))
     precondition(floatPreview?.original?.width == 2)
+    precondition(floatPreview?.image.bitsPerComponent == 16)
+    precondition(floatPreview?.original?.bitsPerComponent == 16)
+    precondition(preview?.image.bitsPerComponent == 8)
     precondition(floatPreview?.histogram?.redBins.count == 64)
     let exportURL = directory.appendingPathComponent("parity.tiff")
     try await ImageExporter().export(

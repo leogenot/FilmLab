@@ -112,12 +112,15 @@ actor PreviewRenderer {
       name: request.displayP3 ? CGColorSpace.displayP3 : CGColorSpace.sRGB)!
     guard
       let image = renderImage(
-        displayImage, scale: request.scale, context: context, colorSpace: canvasSpace)
+        displayImage, scale: request.scale, context: context, colorSpace: canvasSpace,
+        highPrecision: request.highPrecision)
     else {
       return nil
     }
     let original = request.originalImage.flatMap {
-      renderImage($0, scale: request.scale, context: context, colorSpace: canvasSpace)
+      renderImage(
+        $0, scale: request.scale, context: context, colorSpace: canvasSpace,
+        highPrecision: request.highPrecision)
     }
     guard !Task.isCancelled, request.originalImage == nil || original != nil else { return nil }
     return PreviewResult(
@@ -209,12 +212,13 @@ actor PreviewRenderer {
   }
 
   private func renderImage(
-    _ source: CIImage, scale: CGFloat, context: CIContext, colorSpace: CGColorSpace
+    _ source: CIImage, scale: CGFloat, context: CIContext, colorSpace: CGColorSpace,
+    highPrecision: Bool
   ) -> CGImage? {
     let reduced = downsampled(source, scale: scale)
     guard !Task.isCancelled else { return nil }
     return context.createCGImage(
-      reduced, from: reduced.extent, format: .RGBA8,
+      reduced, from: reduced.extent, format: highPrecision ? .RGBA16 : .RGBA8,
       colorSpace: colorSpace)
   }
 
