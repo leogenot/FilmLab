@@ -176,11 +176,30 @@ private struct PhotoEdits: Codable, Equatable {
   }
 }
 
-private struct BatchSettingsChange {
+private struct BatchSettingsChange: Codable {
   let path: String
   let location: EditRecordLocation
   let before: PhotoEdits
   let after: PhotoEdits
+}
+
+private struct BatchSettingsHistory: Codable {
+  var version = 1
+  var changes: [BatchSettingsChange] = []
+
+  init(changes: [BatchSettingsChange] = []) {
+    self.changes = changes
+  }
+
+  init(from decoder: Decoder) throws {
+    let values = try decoder.container(keyedBy: CodingKeys.self)
+    version = try values.decode(Int.self, forKey: .version)
+    guard version == 1 else {
+      throw DecodingError.dataCorruptedError(
+        forKey: .version, in: values, debugDescription: "Unsupported batch history version")
+    }
+    changes = try values.decode([BatchSettingsChange].self, forKey: .changes)
+  }
 }
 
 private struct BatchSettingsBackup: Codable {
@@ -290,6 +309,7 @@ final class PhotoEditor {
   private let lastPhotoKey = "FilmLab.lastPhotoPath"
   private let recentPhotosKey = "FilmLab.recentPhotos"
   private let settingsPasteboardType = NSPasteboard.PasteboardType("app.filmlab.edits+json")
+  private var copiedSettings: PhotoEdits?
   private var decodedFlatRAW = false
   private var decodedHighlightRecovery = true
   private var decodedRawTemperature = 6500.0
@@ -299,6 +319,8 @@ final class PhotoEditor {
   private var sourceIsRAW = false
   private var editSavingBlocked = false
   private var lastBatchChanges: [BatchSettingsChange] = []
+  private var batchHistorySavingBlocked = false
+  var batchHistoryNotice: String?
   var canUndoBatch: Bool { !lastBatchChanges.isEmpty }
   var isRAWSource: Bool { sourceURL != nil && sourceIsRAW }
   var canExport: Bool {
@@ -328,6 +350,35 @@ final class PhotoEditor {
   private var pixelVersion = 0
   private var neutralVersion = 0
   private let exporter = ImageExporter()
+
+  private static var batchHistoryURL: URL {
+    FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+      .appendingPathComponent("FilmLab/BatchHistory.json")
+  }
+
+  init() {
+    let loaded = SavedEditStore.load(
+      from: Self.batchHistoryURL, defaultValue: BatchSettingsHistory())
+    lastBatchChanges = loaded.value.changes
+    batchHistorySavingBlocked = !loaded.canSave
+    batchHistoryNotice = loaded.notice
+  }
+
+  private func saveBatchHistory() -> Bool {
+    guard !batchHistorySavingBlocked else {
+      batchHistoryNotice = "Batch undo history could not be read. Saving it is paused."
+      return false
+    }
+    do {
+      try SavedEditStore.save(
+        BatchSettingsHistory(changes: lastBatchChanges), to: Self.batchHistoryURL)
+      batchHistoryNotice = nil
+      return true
+    } catch {
+      batchHistoryNotice = "Could not save batch undo history: \(error.localizedDescription)"
+      return false
+    }
+  }
 
   // Scene-linear RGB enters this kernel in the context's extended linear working space.
   // This is a provisional response model, not a measured emulsion profile.
@@ -695,7 +746,9 @@ final class PhotoEditor {
   func copySettings() {
     guard sourceURL != nil else { return }
     do {
-      let data = try JSONEncoder().encode(currentEdits())
+      let settings = currentEdits()
+      let data = try JSONEncoder().encode(settings)
+      copiedSettings = settings
       NSPasteboard.general.clearContents()
       NSPasteboard.general.setData(data, forType: settingsPasteboardType)
       error = nil
@@ -706,19 +759,23 @@ final class PhotoEditor {
 
   func pasteSettings() {
     guard sourceURL != nil else { return }
-    guard let data = NSPasteboard.general.data(forType: settingsPasteboardType),
-      let copied = try? JSONDecoder().decode(PhotoEdits.self, from: data)
-    else {
+    guard let copied = settingsForPaste() else {
       error = "Copy settings from a FilmLab photo first."
       return
     }
     applyTransferredSettings(copied)
   }
 
+  private func settingsForPaste() -> PhotoEdits? {
+    if let copiedSettings { return copiedSettings }
+    guard let data = NSPasteboard.general.data(forType: settingsPasteboardType) else { return nil }
+    return try? JSONDecoder().decode(PhotoEdits.self, from: data)
+  }
+
   func pasteSettings(to paths: [String]) async -> String {
-    guard let data = NSPasteboard.general.data(forType: settingsPasteboardType),
-      let copied = try? JSONDecoder().decode(PhotoEdits.self, from: data)
-    else { return "Copy settings from a FilmLab photo first." }
+    guard let copied = settingsForPaste() else {
+      return "Copy settings from a FilmLab photo first."
+    }
     guard !paths.isEmpty else { return "Select photos in the catalog first." }
     let decoder = ImageDecoder()
     var changes: [BatchSettingsChange] = []
@@ -772,10 +829,16 @@ final class PhotoEditor {
       if access { url.stopAccessingSecurityScopedResource() }
       await Task.yield()
     }
-    if !changes.isEmpty { lastBatchChanges = changes }
-    return BatchSettingsResult(
+    if !changes.isEmpty {
+      lastBatchChanges = changes
+    }
+    var message = BatchSettingsResult(
       applied: changes.count, skipped: skipped, failures: failures
     ).summary
+    if !changes.isEmpty, !saveBatchHistory() {
+      message += " Undo is available now but may not survive an app restart."
+    }
+    return message
   }
 
   func undoLastBatch() -> String {
@@ -832,10 +895,12 @@ final class PhotoEditor {
       }
     }
     lastBatchChanges = remaining
+    let historySaved = saveBatchHistory()
     var message = "Restored settings on \(restored) photo\(restored == 1 ? "" : "s")."
     if !failures.isEmpty {
       message += " Could not restore: \(failures.joined(separator: ", "))."
     }
+    if !historySaved { message += " Undo history could not be saved." }
     return message
   }
 
@@ -1983,6 +2048,11 @@ struct ContentView: View {
         }
         if applyingBatch { ProgressView("Applying copied settings…") }
         if let notice = libraryLoad.notice {
+          Text(notice)
+            .font(.caption)
+            .foregroundStyle(.orange)
+        }
+        if let notice = editor.batchHistoryNotice {
           Text(notice)
             .font(.caption)
             .foregroundStyle(.orange)

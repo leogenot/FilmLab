@@ -13,6 +13,10 @@ struct EditRecordLocatorProbe {
     try Data("source".utf8).write(to: original)
     let first = EditRecordLocator.locate(sourceURL: original, directory: edits)
     precondition(first.primaryURL != first.pathURL)
+    let storedLocation = try JSONEncoder().encode(first)
+    let reopenedLocation = try JSONDecoder().decode(EditRecordLocation.self, from: storedLocation)
+    precondition(reopenedLocation.primaryURL == first.primaryURL)
+    precondition(reopenedLocation.pathURL == first.pathURL)
     try FileManager.default.createDirectory(
       at: first.primaryURL.deletingLastPathComponent(), withIntermediateDirectories: true)
     try Data("grade 1".utf8).write(to: first.primaryURL, options: .atomic)

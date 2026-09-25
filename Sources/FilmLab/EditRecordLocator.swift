@@ -1,7 +1,7 @@
 import CryptoKit
 import Foundation
 
-struct EditRecordLocation {
+struct EditRecordLocation: Codable {
   let primaryURL: URL
   let pathURL: URL
   let migrationNotice: String?
