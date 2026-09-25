@@ -1796,6 +1796,16 @@ struct ContentView: View {
       }
     }
     .toolbar {
+      Button("Previous Photo", systemImage: "chevron.left") {
+        if let path = adjacentPhoto(step: -1) { selectPhoto(path) }
+      }
+      .keyboardShortcut(.leftArrow, modifiers: [.command, .option])
+      .disabled(adjacentPhoto(step: -1) == nil || !editor.canBatchExport)
+      Button("Next Photo", systemImage: "chevron.right") {
+        if let path = adjacentPhoto(step: 1) { selectPhoto(path) }
+      }
+      .keyboardShortcut(.rightArrow, modifiers: [.command, .option])
+      .disabled(adjacentPhoto(step: 1) == nil || !editor.canBatchExport)
       Button(editor.zoom100 ? "Fit" : "100%", systemImage: "plus.magnifyingglass") {
         editor.toggleZoom()
       }
@@ -2089,6 +2099,18 @@ struct ContentView: View {
     }
     showingLibrary = false
     editor.open(URL(fileURLWithPath: path))
+  }
+
+  private func adjacentPhoto(step: Int) -> String? {
+    let paths = library.selectedCatalog?.photoPaths ?? []
+    guard !paths.isEmpty else { return nil }
+    let current = editor.sourceURL?.standardizedFileURL.path
+    var index = paths.firstIndex(of: current ?? "") ?? (step > 0 ? -1 : paths.count)
+    while true {
+      index += step
+      guard paths.indices.contains(index) else { return nil }
+      if FileManager.default.fileExists(atPath: paths[index]) { return paths[index] }
+    }
   }
 
   private func selectOrOpenPhoto(_ path: String) {
@@ -2455,31 +2477,42 @@ struct ContentView: View {
           .labelStyle(.iconOnly)
           .help("Import photos into this catalog")
       }
-      ScrollView(.horizontal) {
-        HStack(spacing: 8) {
-          ForEach(library.selectedCatalog?.photoPaths ?? [], id: \.self) { path in
-            Button {
-              selectPhoto(path)
-            } label: {
-              VStack(alignment: .leading, spacing: 5) {
-                PhotoThumbnail(path: path)
-                  .frame(width: 90, height: 62)
-                  .background(Color(white: 0.14))
-                  .clipShape(RoundedRectangle(cornerRadius: 5))
-                  .overlay {
-                    RoundedRectangle(cornerRadius: 5)
-                      .strokeBorder(
-                        editor.sourceURL?.standardizedFileURL.path == path
-                          ? Color.white.opacity(0.8) : .clear, lineWidth: 1.5)
-                  }
-                Text(URL(fileURLWithPath: path).lastPathComponent)
-                  .font(.caption2)
-                  .lineLimit(1)
-                  .frame(width: 90, alignment: .leading)
+      ScrollViewReader { proxy in
+        ScrollView(.horizontal) {
+          HStack(spacing: 8) {
+            ForEach(library.selectedCatalog?.photoPaths ?? [], id: \.self) { path in
+              Button {
+                selectPhoto(path)
+              } label: {
+                VStack(alignment: .leading, spacing: 5) {
+                  PhotoThumbnail(path: path)
+                    .frame(width: 90, height: 62)
+                    .background(Color(white: 0.14))
+                    .clipShape(RoundedRectangle(cornerRadius: 5))
+                    .overlay {
+                      RoundedRectangle(cornerRadius: 5)
+                        .strokeBorder(
+                          editor.sourceURL?.standardizedFileURL.path == path
+                            ? Color.white.opacity(0.8) : .clear, lineWidth: 1.5)
+                    }
+                  Text(URL(fileURLWithPath: path).lastPathComponent)
+                    .font(.caption2)
+                    .lineLimit(1)
+                    .frame(width: 90, alignment: .leading)
+                }
               }
+              .buttonStyle(.plain)
+              .help(path)
+              .id(path)
             }
-            .buttonStyle(.plain)
-            .help(path)
+          }
+        }
+        .onChange(of: editor.sourceURL?.standardizedFileURL.path) { _, path in
+          if let path { proxy.scrollTo(path, anchor: .center) }
+        }
+        .onAppear {
+          if let path = editor.sourceURL?.standardizedFileURL.path {
+            proxy.scrollTo(path, anchor: .center)
           }
         }
       }
