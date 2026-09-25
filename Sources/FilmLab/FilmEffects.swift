@@ -11,7 +11,10 @@ enum FilmEffects {
 
   private static let acutanceKernel = FilmKernels.kernel("applyAcutance")
 
-  static func apply(to image: CIImage, grain: Double, halation: Double, acutance: Double = 0)
+  static func apply(
+    to image: CIImage, grain: Double, grainSize: Double = 1,
+    halation: Double, acutance: Double = 0
+  )
     -> CIImage
   {
     var result = image
@@ -47,7 +50,7 @@ enum FilmEffects {
         grainKernel.apply(
           extent: image.extent,
           arguments: [
-            result, grain,
+            result, grain, grainSize,
           ]) ?? result
     }
     return result

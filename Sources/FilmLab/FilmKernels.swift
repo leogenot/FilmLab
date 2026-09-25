@@ -403,20 +403,44 @@ enum FilmKernels {
                   return float4(max(adjusted, float3(0.0)), pixel.a);
               }
 
-    [[stitchable]] float4 applyGrain(coreimage::sample_t pixel,
-                                    float amount, coreimage::destination destination) {
-                  int2 location = int2(floor(destination.coord()));
+    inline float grainHash(int2 location, uint seed) {
                   uint hash = uint(location.x) * 0x8da6b343u
-                            ^ uint(location.y) * 0xd8163841u ^ 0xcb1ab31fu;
+                            ^ uint(location.y) * 0xd8163841u ^ seed;
                   hash ^= hash >> 16;
                   hash *= 0x7feb352du;
                   hash ^= hash >> 15;
                   hash *= 0x846ca68bu;
                   hash ^= hash >> 16;
-                  float noise = float(hash & 0x00ffffffu) / 16777216.0;
+                  return float(hash & 0x00ffffffu) / 16777216.0 - 0.5;
+              }
+    [[stitchable]] float4 applyGrain(coreimage::sample_t pixel,
+                                    float amount, float size,
+                                    coreimage::destination destination) {
+                  float2 coord = destination.coord();
+                  float fine = grainHash(int2(floor(coord)), 0xcb1ab31fu);
+                  float noise = fine;
+                  if (size > 0.001) {
+                      float2 lattice = coord / (2.5 * size);
+                      int2 cell = int2(floor(lattice));
+                      float2 fraction = fract(lattice);
+                      float2 blend = fraction * fraction * (3.0 - 2.0 * fraction);
+                      float4 weights = float4(
+                          (1.0 - blend.x) * (1.0 - blend.y),
+                          blend.x * (1.0 - blend.y),
+                          (1.0 - blend.x) * blend.y,
+                          blend.x * blend.y);
+                      float4 samples = float4(
+                          grainHash(cell, 0x61c88647u),
+                          grainHash(cell + int2(1, 0), 0x61c88647u),
+                          grainHash(cell + int2(0, 1), 0x61c88647u),
+                          grainHash(cell + int2(1, 1), 0x61c88647u));
+                      float coarse = dot(weights, samples)
+                          / sqrt(max(dot(weights, weights), 0.000001));
+                      noise = (coarse * 0.9 + fine * 0.1) / sqrt(0.82);
+                  }
                   float luminance = dot(pixel.rgb, float3(0.2126, 0.7152, 0.0722));
                   float weight = sqrt(clamp(luminance, 0.02, 1.0));
-                  float grain = (noise - 0.5) * amount * 0.14 * weight;
+                  float grain = noise * amount * 0.14 * weight;
                   return float4(max(pixel.rgb + float3(grain), float3(0.0)), pixel.a);
               }
 

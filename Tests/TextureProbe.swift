@@ -29,7 +29,29 @@ struct TextureProbe {
     precondition(values.max()! - values.min()! > 0.01, "Grain lacks spatial variation")
     let difference = zip(first, full).map { abs($0 - $1) }.max()!
     precondition(difference < 0.002, "Preview and export grain disagree")
-    print("Deterministic grain checks passed; maximum working-format difference \(difference)")
+    let fine = pixels(
+      FilmEffects.apply(to: source, grain: 0.75, grainSize: 0, halation: 0), context: export)
+    func horizontalCorrelation(_ pixels: [Float], distance: Int) -> Double {
+      var covariance = 0.0
+      var variance = 0.0
+      for y in 8..<56 {
+        for x in 8..<(56 - distance) {
+          let a = Double(pixels[(y * 64 + x) * 4] - 0.18)
+          let b = Double(pixels[(y * 64 + x + distance) * 4] - 0.18)
+          covariance += a * b
+          variance += a * a
+        }
+      }
+      return covariance / variance
+    }
+    let neighbor = horizontalCorrelation(full, distance: 1)
+    let secondNeighbor = horizontalCorrelation(full, distance: 2)
+    let oldNeighbor = horizontalCorrelation(fine, distance: 1)
+    precondition(neighbor > 0.5 && secondNeighbor > 0.15)
+    precondition(abs(oldNeighbor) < 0.15, "Legacy fine grain changed its spatial character")
+    print(
+      "Deterministic grain checks passed; adjacent correlations \(neighbor), \(secondNeighbor), legacy \(oldNeighbor); maximum working-format difference \(difference)"
+    )
 
     let dark = CIImage(color: CIColor(red: 0.12, green: 0.12, blue: 0.12, colorSpace: space)!)
       .cropped(to: CGRect(x: 0, y: 0, width: 32, height: 64))
