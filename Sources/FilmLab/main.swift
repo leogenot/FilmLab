@@ -549,11 +549,11 @@ final class PhotoEditor {
         guard image.extent.width.isFinite, image.extent.height.isFinite,
           image.extent.width > 0, image.extent.height > 0
         else { throw EditorError.unsupported }
+        saveTask?.cancel()
+        guard sourceURL == nil || saveEdits() else { return }
         rawDecodeTask?.cancel()
         rawDecodeTask = nil
         rawDecodeVersion += 1
-        saveTask?.cancel()
-        if sourceURL != nil { saveEdits() }
         previewTask?.cancel()
         renderVersion += 1
         pixelTask?.cancel()
@@ -628,13 +628,76 @@ final class PhotoEditor {
     }
   }
 
-  func resumeLastPhoto() {
+  func resumeLastPhoto(in availablePaths: [String]) {
     guard !didAttemptResume else { return }
     didAttemptResume = true
-    guard let path = UserDefaults.standard.string(forKey: lastPhotoKey),
-      FileManager.default.fileExists(atPath: path)
-    else { return }
-    open(URL(fileURLWithPath: path))
+    guard let lastPath = UserDefaults.standard.string(forKey: lastPhotoKey) else {
+      closePhoto()
+      return
+    }
+    let selected = CatalogPhotoSelection.preferredPath(
+      in: availablePaths, current: nil, remembered: lastPath)
+    if let selected {
+      open(URL(fileURLWithPath: selected))
+    } else {
+      closePhoto()
+    }
+  }
+
+  @discardableResult
+  func closePhoto() -> Bool {
+    saveTask?.cancel()
+    guard flushEdits() else { return false }
+    openTask?.cancel()
+    openTask = nil
+    openVersion += 1
+    rawDecodeTask?.cancel()
+    rawDecodeTask = nil
+    rawDecodeVersion += 1
+    previewTask?.cancel()
+    previewTask = nil
+    renderVersion += 1
+    historyTask?.cancel()
+    historyOpen = false
+    undoStack.removeAll()
+    redoStack.removeAll()
+    pixelTask?.cancel()
+    pixelVersion += 1
+    neutralTask?.cancel()
+    neutralVersion += 1
+    localHueTask?.cancel()
+    localHueVersion += 1
+    localToneTask?.cancel()
+    localToneVersion += 1
+    if let scopedURL { scopedURL.stopAccessingSecurityScopedResource() }
+    scopedURL = nil
+    source = nil
+    sourceURL = nil
+    sourceEditLocation = nil
+    preview = nil
+    comparisonPreview = nil
+    histogram = nil
+    jpegChannelNearWhiteFraction = nil
+    pixelReadout = nil
+    selectedPixel = nil
+    editRecoveryNotice = nil
+    editRecoveryURL = nil
+    editSavingBlocked = false
+    isOpening = false
+    isRendering = false
+    compareEnabled = false
+    showOriginal = false
+    showLocalMask = false
+    showCropBounds = false
+    zoom100 = false
+    placingLocalArea = false
+    paintingLocalArea = false
+    erasingLocalArea = false
+    pickingNeutralArea = false
+    pickingLocalHue = false
+    pickingLocalTone = false
+    error = nil
+    return true
   }
 
   private func rememberRecentPhoto(_ url: URL) {
@@ -2085,6 +2148,7 @@ struct ContentView: View {
   @State private var selectionAnchor: String?
   @State private var thumbnailRefresh: [String: Int] = [:]
   @State private var lastActiveThumbnailPath: String?
+  @State private var lastPhotoByCatalog: [UUID: String] = [:]
   @State private var librarySearch = ""
   @State private var librarySort: LibrarySort = .importOrder
   @State private var showFavoritesOnly = false
@@ -2131,6 +2195,11 @@ struct ContentView: View {
       }
     }
   }
+  private var availableCatalogPaths: [String] {
+    (library.selectedCatalog?.photoPaths ?? []).filter {
+      FileManager.default.fileExists(atPath: $0)
+    }
+  }
   private var library: PhotoLibrary {
     get { libraryLoad.value }
     nonmutating set { libraryLoad.value = newValue }
@@ -2145,7 +2214,7 @@ struct ContentView: View {
         VStack(spacing: 0) {
           HStack(spacing: 0) {
             photoCanvas
-            inspector
+            if editor.sourceURL != nil { inspector }
           }
           photoStrip
         }
@@ -2207,7 +2276,7 @@ struct ContentView: View {
           Divider()
           ForEach(editor.recentPaths, id: \.self) { path in
             Button(URL(fileURLWithPath: path).lastPathComponent) {
-              editor.open(URL(fileURLWithPath: path))
+              openRecentPhoto(path)
             }
             .help(path)
           }
@@ -2286,7 +2355,11 @@ struct ContentView: View {
     ) {
       Button("Remove Catalog", role: .destructive) {
         if let catalogToDelete {
-          updateLibrary { $0.deleteCatalog(catalogToDelete.id) }
+          if library.selectedCatalogID != catalogToDelete.id || editor.flushEdits() {
+            updateLibrary { $0.deleteCatalog(catalogToDelete.id) }
+          } else {
+            libraryNotice = "Current edits could not be saved. The catalog was kept."
+          }
         }
         catalogToDelete = nil
       }
@@ -2296,7 +2369,7 @@ struct ContentView: View {
         "This removes the catalog and its photo references. Original photos and edits stay in place."
       )
     }
-    .onAppear { editor.resumeLastPhoto() }
+    .onAppear { editor.resumeLastPhoto(in: availableCatalogPaths) }
     .onDisappear { editor.flushEdits() }
     .onChange(of: panel) {
       if panel != .develop { editor.setPickingNeutralArea(false) }
@@ -2307,11 +2380,14 @@ struct ContentView: View {
       }
       if panel != .framing && editor.showCropBounds { editor.setCropBoundsPreview(false) }
     }
-    .onChange(of: library.selectedCatalogID) {
+    .onChange(of: library.selectedCatalogID) { oldCatalogID, _ in
       selectedPhotoPaths.removeAll()
       selectionAnchor = nil
       selectingPhotos = false
-      libraryNotice = nil
+      if !alignEditorToCatalog() {
+        updateLibrary { $0.selectedCatalogID = oldCatalogID }
+        libraryNotice = "Current edits could not be saved. The previous catalog is still selected."
+      }
     }
     .onChange(of: editor.paintingLocalArea) {
       if !editor.paintingLocalArea { paintDragPoints.removeAll() }
@@ -2321,6 +2397,11 @@ struct ContentView: View {
         thumbnailRefresh[lastActiveThumbnailPath, default: 0] += 1
       }
       lastActiveThumbnailPath = editor.sourceURL?.standardizedFileURL.path
+      if let path = lastActiveThumbnailPath,
+        library.selectedCatalog?.photoPaths.contains(path) == true
+      {
+        lastPhotoByCatalog[library.selectedCatalogID] = path
+      }
     }
     .onChange(of: scenePhase) {
       if scenePhase != .active { editor.flushEdits() }
@@ -2467,7 +2548,9 @@ struct ContentView: View {
       return false
     }
     do {
-      library = try PhotoLibraryStore.updating(library, at: libraryURL, change: change)
+      let updated = try PhotoLibraryStore.updating(library, at: libraryURL, change: change)
+      libraryNotice = nil
+      library = updated
       return true
     } catch {
       libraryNotice = "Could not save library: \(error.localizedDescription)"
@@ -2482,6 +2565,37 @@ struct ContentView: View {
     }
     showingLibrary = false
     editor.open(URL(fileURLWithPath: path))
+  }
+
+  private func openRecentPhoto(_ path: String) {
+    guard FileManager.default.fileExists(atPath: path) else {
+      libraryNotice = "Photo is missing: \(path)"
+      return
+    }
+    if let catalog = library.catalogs.first(where: { $0.photoPaths.contains(path) }),
+      catalog.id != library.selectedCatalogID
+    {
+      lastPhotoByCatalog[catalog.id] = path
+      if updateLibrary({ $0.selectedCatalogID = catalog.id }) { showingLibrary = false }
+    } else {
+      let url = URL(fileURLWithPath: path)
+      if updateLibrary({ $0.importPhotos([url]) }) { selectPhoto(path) }
+    }
+  }
+
+  @discardableResult
+  private func alignEditorToCatalog() -> Bool {
+    let currentPath = editor.sourceURL?.standardizedFileURL.path
+    let selectedPath = CatalogPhotoSelection.preferredPath(
+      in: availableCatalogPaths, current: currentPath,
+      remembered: lastPhotoByCatalog[library.selectedCatalogID])
+    if selectedPath == currentPath, !editor.isOpening { return true }
+    guard editor.closePhoto() else {
+      libraryNotice = "Current edits could not be saved. The previous photo is still open."
+      return false
+    }
+    if let selectedPath { editor.open(URL(fileURLWithPath: selectedPath)) }
+    return true
   }
 
   private func importFolder() {
@@ -2611,6 +2725,12 @@ struct ContentView: View {
   }
 
   private func transferPhotos(_ paths: [String], to destination: PhotoCatalog, move: Bool) {
+    if move, let openPath = editor.sourceURL?.standardizedFileURL.path,
+      paths.contains(openPath), !editor.flushEdits()
+    {
+      libraryNotice = "Current edits could not be saved. The photo was not moved."
+      return
+    }
     let previousLibrary = library
     let transferred = library.transferPhotos(paths, to: destination.id, removeFromSource: move)
     guard transferred > 0 else {
@@ -2619,6 +2739,7 @@ struct ContentView: View {
     }
     if saveLibrary() {
       selectedPhotoPaths.subtract(paths)
+      if move { alignEditorToCatalog() }
       libraryNotice =
         "\(move ? "Moved" : "Copied") \(transferred) photo reference\(transferred == 1 ? "" : "s") to \(destination.name)."
     } else {
@@ -2934,7 +3055,13 @@ struct ContentView: View {
                       }
                     }
                     Button("Remove from Catalog") {
-                      updateLibrary { $0.removePhoto(path) }
+                      if editor.sourceURL?.standardizedFileURL.path == path,
+                        !editor.flushEdits()
+                      {
+                        libraryNotice = "Current edits could not be saved. The photo was kept."
+                      } else if updateLibrary({ $0.removePhoto(path) }) {
+                        alignEditorToCatalog()
+                      }
                     }
                   }
                   Button {

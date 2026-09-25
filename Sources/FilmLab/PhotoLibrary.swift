@@ -18,6 +18,16 @@ enum LibrarySelection {
   }
 }
 
+enum CatalogPhotoSelection {
+  static func preferredPath(
+    in availablePaths: [String], current: String?, remembered: String?
+  ) -> String? {
+    if let remembered, availablePaths.contains(remembered) { return remembered }
+    if let current, availablePaths.contains(current) { return current }
+    return availablePaths.first
+  }
+}
+
 struct PhotoLibrary: Codable, Equatable {
   var catalogs: [PhotoCatalog]
   var selectedCatalogID: UUID
