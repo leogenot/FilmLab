@@ -360,12 +360,20 @@ private struct BatchExportResult {
   }
 }
 
+struct ExposureStudyFrame: Identifiable {
+  let ev: Double
+  let image: NSImage
+  var id: Double { ev }
+}
+
 @MainActor @Observable
 final class PhotoEditor {
   var sourceURL: URL?
   var preview: NSImage?
   var comparisonPreview: NSImage?
   var histogram: PreviewHistogram?
+  var exposureStudyFrames: [ExposureStudyFrame] = []
+  var isBuildingExposureStudy = false
   var jpegChannelNearWhiteFraction: Double?
   var inputExposureRange: InputExposureRange?
   var compareEnabled = false
@@ -512,6 +520,9 @@ final class PhotoEditor {
   private var rawDecodeVersion = 0
   private var renderVersion = 0
   private let previewRenderer = PreviewRenderer()
+  private let exposureStudyRenderer = PreviewRenderer()
+  private var exposureStudyTask: Task<Void, Never>?
+  private var exposureStudyVersion = 0
   private let pixelSampler = PixelSampler()
   private let neutralPatchSampler = NeutralPatchSampler()
   private var pixelTask: Task<Void, Never>?
@@ -567,6 +578,7 @@ final class PhotoEditor {
   private let vibranceKernel = FilmKernels.kernel("vibrance")
 
   func open(_ url: URL) {
+    clearExposureStudy()
     didAttemptResume = true
     openTask?.cancel()
     openVersion += 1
@@ -714,6 +726,7 @@ final class PhotoEditor {
   func closePhoto() -> Bool {
     saveTask?.cancel()
     guard flushEdits() else { return false }
+    clearExposureStudy()
     openTask?.cancel()
     openTask = nil
     openVersion += 1
@@ -887,6 +900,7 @@ final class PhotoEditor {
       }
       return
     }
+    clearExposureStudy()
     rawDecodeTask?.cancel()
     rawDecodeVersion += 1
     neutralTask?.cancel()
@@ -938,6 +952,7 @@ final class PhotoEditor {
   }
 
   func editsChanged() {
+    clearExposureStudy()
     let latest = currentEdits()
     if latest != historyBaseline {
       if !historyOpen {
@@ -1650,7 +1665,9 @@ final class PhotoEditor {
     return framedImage(mask)
   }
 
-  private func developedImage(previewUncropped: Bool = false) -> CIImage? {
+  private func developedImage(
+    previewUncropped: Bool = false, shotExposureOverride: Double? = nil
+  ) -> CIImage? {
     guard var image = imageBeforeLocalArea(radialLights.count) else { return nil }
     if abs(filmLightWarmth) > 0.001 || abs(filmLightTint) > 0.001 {
       let balance = CIFilter.temperatureAndTint()
@@ -1664,7 +1681,9 @@ final class PhotoEditor {
       }
       image = balanced
     }
-    return finishDeveloping(image, previewUncropped: previewUncropped)
+    return finishDeveloping(
+      image, previewUncropped: previewUncropped,
+      shotExposureEV: shotExposureOverride ?? shotExposure)
   }
 
   private func imageBeforeLocalArea(_ index: Int) -> CIImage? {
@@ -1725,13 +1744,15 @@ final class PhotoEditor {
     return image
   }
 
-  private func finishDeveloping(_ startingImage: CIImage, previewUncropped: Bool) -> CIImage? {
+  private func finishDeveloping(
+    _ startingImage: CIImage, previewUncropped: Bool, shotExposureEV: Double
+  ) -> CIImage? {
     var image = startingImage
     if stockIndex == 1 || stockIndex == 2 {
       guard let measuredNegativeKernel,
         let portraPositiveKernel,
         let negative = measuredNegativeKernel.apply(
-          extent: image.extent, arguments: [image, shotExposure, development, Double(stockIndex)]
+          extent: image.extent, arguments: [image, shotExposureEV, development, Double(stockIndex)]
         )
       else {
         error = "The measured film density study could not be loaded."
@@ -1753,7 +1774,7 @@ final class PhotoEditor {
         let positive = portraPositiveKernel.apply(
           extent: image.extent,
           arguments: [
-            texturedNegative, image, shotExposure, filmAmount,
+            texturedNegative, image, shotExposureEV, filmAmount,
             (stockIndex == 1 && enduraPaperTone) || (stockIndex == 2 && premierPaperTone)
               ? paperStrength : 0.0, paperExposure,
             Double(stockIndex),
@@ -1767,7 +1788,7 @@ final class PhotoEditor {
     } else if let filmKernel,
       let film = filmKernel.apply(
         extent: image.extent,
-        arguments: [image, shotExposure, development, filmAmount]
+        arguments: [image, shotExposureEV, development, filmAmount]
       )
     {
       image = film
@@ -1856,6 +1877,65 @@ final class PhotoEditor {
 
   func rotateFrame(_ steps: Int) {
     frameRotation = ((frameRotation + steps) % 4 + 4) % 4
+    editsChanged()
+  }
+
+  func clearExposureStudy() {
+    exposureStudyVersion += 1
+    exposureStudyTask?.cancel()
+    exposureStudyTask = nil
+    isBuildingExposureStudy = false
+    exposureStudyFrames = []
+  }
+
+  func buildExposureStudy() {
+    guard sourceURL != nil, !isOpening, rawDecodeTask == nil else { return }
+    clearExposureStudy()
+    let steps = [-2.0, -1.0, 0.0, 1.0, 2.0]
+    let images = steps.compactMap { ev in
+      developedImage(shotExposureOverride: ev).map { (ev, $0) }
+    }
+    guard images.count == steps.count else { return }
+    let version = exposureStudyVersion
+    let sourceURL = scopedURL
+    let displayP3 = displayP3Preview
+    let compress = compressSRGBGamut
+    isBuildingExposureStudy = true
+    exposureStudyTask = Task { @MainActor in
+      defer {
+        if version == exposureStudyVersion {
+          isBuildingExposureStudy = false
+          exposureStudyTask = nil
+        }
+      }
+      for (ev, image) in images {
+        guard !Task.isCancelled, version == exposureStudyVersion else { return }
+        let scale = min(1, 280 / max(image.extent.width, image.extent.height))
+        let result = await exposureStudyRenderer.render(
+          PreviewRequest(
+            image: image, scale: scale, sourceURL: sourceURL, originalImage: nil,
+            showGamutWarning: false, displayP3: displayP3,
+            compressSRGBGamut: compress))
+        guard !Task.isCancelled, version == exposureStudyVersion else { return }
+        guard let rendered = result?.image else {
+          exposureStudyFrames = []
+          error = "Could not render the exposure study."
+          return
+        }
+        exposureStudyFrames.append(
+          ExposureStudyFrame(
+            ev: ev,
+            image: NSImage(
+              cgImage: rendered,
+              size: NSSize(
+                width: rendered.width, height: rendered.height))))
+      }
+    }
+  }
+
+  func chooseExposureStudy(_ ev: Double) {
+    guard exposureStudyFrames.contains(where: { $0.ev == ev }) else { return }
+    shotExposure = ev
     editsChanged()
   }
 
@@ -2653,6 +2733,7 @@ struct ContentView: View {
     }
     .onChange(of: editor.displayP3Preview) {
       UserDefaults.standard.set(editor.displayP3Preview, forKey: "FilmLab.displayP3Preview")
+      editor.clearExposureStudy()
       editor.renderPreview()
     }
     .onChange(of: editor.compressSRGBGamut) {
@@ -4069,6 +4150,49 @@ struct ContentView: View {
               .font(.caption).foregroundStyle(.secondary)
           }
           control("Shot exposure (EV)", value: $editor.shotExposure, range: -3...3)
+          HStack {
+            Text("EXPOSURE STUDY")
+              .font(.caption2.weight(.medium))
+              .tracking(1)
+              .foregroundStyle(.secondary)
+            Spacer()
+            if editor.isBuildingExposureStudy {
+              Button("Cancel") { editor.clearExposureStudy() }
+                .font(.caption)
+            } else {
+              Button("Compare -2 to +2 EV") { editor.buildExposureStudy() }
+                .font(.caption)
+                .disabled(editor.sourceURL == nil || editor.isOpening)
+            }
+          }
+          if editor.isBuildingExposureStudy {
+            ProgressView("Rendering exposure study…")
+              .font(.caption)
+          }
+          ForEach(editor.exposureStudyFrames) { frame in
+            Button {
+              editor.chooseExposureStudy(frame.ev)
+            } label: {
+              HStack(spacing: 10) {
+                Image(nsImage: frame.image)
+                  .resizable()
+                  .aspectRatio(contentMode: .fit)
+                  .frame(width: 100, height: 68)
+                  .background(Color.white.opacity(0.04))
+                Text(
+                  "\(frame.ev.formatted(.number.sign(strategy: .always()).precision(.fractionLength(0)))) EV"
+                )
+                .font(.caption.monospacedDigit())
+                Spacer()
+              }
+            }
+            .buttonStyle(.plain)
+            .disabled(editor.isBuildingExposureStudy)
+          }
+          Text(
+            "Each frame runs through the current stock and grade at the labeled Shot Exposure. Click a frame to use it. Other edits clear this comparison."
+          )
+          .font(.caption2).foregroundStyle(.secondary)
           control("Development", value: $editor.development, range: -2...2)
           control("Stock amount", value: $editor.filmAmount, range: 0...1)
           Text(
