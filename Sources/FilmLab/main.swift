@@ -1611,9 +1611,12 @@ final class PhotoEditor {
       image = shaped
     }
     for area in radialLights.prefix(index)
-    where abs(area.exposure) > 0.001 || abs(area.warmth) > 0.001 || abs(area.tint) > 0.001 {
+    where abs(area.exposure) > 0.001 || abs(area.warmth) > 0.001 || abs(area.tint) > 0.001
+      || abs(area.saturation) > 0.001
+    {
       image = LocalExposure.apply(
         to: image, ev: area.exposure, warmth: area.warmth, tint: area.tint,
+        saturation: area.saturation,
         centerX: area.centerX,
         centerY: area.centerY, radius: area.radius, feather: area.feather,
         inverted: area.inverted, shape: area.shape, angle: area.angle,
@@ -4083,6 +4086,7 @@ struct ContentView: View {
           control("Exposure (EV)", value: localBinding(\.exposure), range: -2...2)
           control("Warmth", value: localBinding(\.warmth), range: -1...1)
           control("Tint", value: localBinding(\.tint), range: -1...1)
+          control("Saturation", value: localBinding(\.saturation), range: -1...1)
           Toggle("Limit by brightness", isOn: localBoolBinding(\.toneRangeEnabled))
           if editor.radialLights[editor.selectedLocalIndex].toneRangeEnabled {
             Button(

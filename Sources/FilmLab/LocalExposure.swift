@@ -161,6 +161,7 @@ enum LocalExposure {
 
   static func apply(
     to image: CIImage, ev: Double, warmth: Double = 0, tint: Double = 0,
+    saturation: Double = 0,
     centerX: Double, centerY: Double,
     radius: Double, feather: Double, inverted: Bool = false,
     shape: Int = 0, angle: Double = 90,
@@ -170,7 +171,9 @@ enum LocalExposure {
     hueRangeEnabled: Bool = false, hueCenter: Double = 210,
     hueWidth: Double = 45, hueFeather: Double = 20
   ) -> CIImage {
-    guard abs(ev) > 0.001 || abs(warmth) > 0.001 || abs(tint) > 0.001,
+    guard
+      abs(ev) > 0.001 || abs(warmth) > 0.001 || abs(tint) > 0.001
+        || abs(saturation) > 0.001,
       image.extent.width > 0, image.extent.height > 0
     else {
       return image
@@ -196,6 +199,11 @@ enum LocalExposure {
       balance.targetNeutral = CIVector(x: 6500 - warmth * 1000, y: tint * 100)
       guard let balanced = balance.outputImage else { return image }
       adjusted = balanced
+    }
+    if abs(saturation) > 0.001 {
+      adjusted = adjusted.applyingFilter(
+        "CIColorControls",
+        parameters: [kCIInputSaturationKey: 1 + min(max(saturation, -1), 1)])
     }
     return adjusted.applyingFilter(
       "CIBlendWithMask",

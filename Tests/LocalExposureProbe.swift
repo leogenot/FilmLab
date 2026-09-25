@@ -81,7 +81,8 @@ struct LocalExposureProbe {
           .utf8))
     precondition(
       oldArea.shape == 0 && oldArea.angle == 90 && oldArea.inverted
-        && oldArea.warmth == 0 && oldArea.tint == 0 && !oldArea.toneRangeEnabled
+        && oldArea.warmth == 0 && oldArea.tint == 0 && oldArea.saturation == 0
+        && !oldArea.toneRangeEnabled
         && !oldArea.hueRangeEnabled,
       "Older saved radial areas did not decode")
     var colorPixels = [Float](repeating: 1, count: 4 * 4)
@@ -110,6 +111,20 @@ struct LocalExposureProbe {
       hueCenter: 240, hueWidth: 45, hueFeather: 20)
     precondition(channel(colorBright, 0, 0, 2) < 0.01, "Red pixel gained blue")
     precondition(channel(colorBright, 2, 0, 2) > 1.9, "Blue pixel did not brighten")
+    let redDesaturated = LocalExposure.apply(
+      to: colorSource, ev: 0, saturation: -1,
+      centerX: 0.5, centerY: 0.5, radius: 1, feather: 0.01,
+      hueRangeEnabled: true, hueCenter: 0, hueWidth: 45, hueFeather: 20)
+    let redChannels = (0..<3).map { channel(redDesaturated, 0, 0, $0) }
+    precondition(
+      redChannels.max()! - redChannels.min()! < 0.002,
+      "Local desaturation did not neutralize the selected color")
+    for component in 0..<3 {
+      precondition(
+        abs(channel(redDesaturated, 1, 0, component) - channel(colorSource, 1, 0, component))
+          < 0.002,
+        "Local desaturation changed a color outside its hue mask")
+    }
     let combinedMask = LocalExposure.mask(
       for: colorSource, centerX: 0.5, centerY: 0.5, radius: 1,
       feather: 0.01, toneRangeEnabled: true, toneCenter: 2,

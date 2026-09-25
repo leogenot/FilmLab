@@ -27,6 +27,7 @@ struct RadialAdjustment: Codable, Equatable {
   var exposure: Double
   var warmth: Double
   var tint: Double
+  var saturation: Double
   var centerX: Double
   var centerY: Double
   var radius: Double
@@ -47,6 +48,7 @@ struct RadialAdjustment: Codable, Equatable {
 
   init(
     exposure: Double = 0, warmth: Double = 0, tint: Double = 0,
+    saturation: Double = 0,
     centerX: Double = 0.5, centerY: Double = 0.5,
     radius: Double = 0.35, feather: Double = 0.5, inverted: Bool = false,
     shape: Int = 0, angle: Double = 90,
@@ -59,6 +61,7 @@ struct RadialAdjustment: Codable, Equatable {
     self.exposure = exposure
     self.warmth = warmth
     self.tint = tint
+    self.saturation = saturation
     self.centerX = centerX
     self.centerY = centerY
     self.radius = radius
@@ -83,6 +86,7 @@ struct RadialAdjustment: Codable, Equatable {
     exposure = try values.decodeIfPresent(Double.self, forKey: .exposure) ?? 0
     warmth = try values.decodeIfPresent(Double.self, forKey: .warmth) ?? 0
     tint = try values.decodeIfPresent(Double.self, forKey: .tint) ?? 0
+    saturation = try values.decodeIfPresent(Double.self, forKey: .saturation) ?? 0
     centerX = try values.decodeIfPresent(Double.self, forKey: .centerX) ?? 0.5
     centerY = try values.decodeIfPresent(Double.self, forKey: .centerY) ?? 0.5
     radius = try values.decodeIfPresent(Double.self, forKey: .radius) ?? 0.35
