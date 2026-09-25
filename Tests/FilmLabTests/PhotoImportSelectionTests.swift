@@ -36,6 +36,25 @@ final class PhotoImportSelectionTests: XCTestCase {
     XCTAssertEqual(PhotoImportSelection(urls: [raw]).photos, [raw.standardizedFileURL])
   }
 
+  func testCancelledClassificationDoesNotReturnPartialImport() async {
+    let result = await Task.detached {
+      withUnsafeCurrentTask { $0?.cancel() }
+      return PhotoImportSelection.cancellable(urls: [URL(fileURLWithPath: "/tmp/photo.jpg")])
+    }.value
+    XCTAssertNil(result)
+  }
+
+  func testCancellationAfterFirstEntryDiscardsPartialSelection() {
+    var checks = 0
+    let selection = PhotoImportSelection.cancellable(
+      urls: [URL(fileURLWithPath: "/tmp"), URL(fileURLWithPath: "/tmp/second.jpg")],
+      isCancelled: {
+        checks += 1
+        return checks > 1
+      })
+    XCTAssertNil(selection)
+  }
+
   private func writeJPEG(to url: URL) throws {
     let image = CIImage(color: CIColor(red: 0.3, green: 0.4, blue: 0.5))
       .cropped(to: CGRect(x: 0, y: 0, width: 4, height: 4))

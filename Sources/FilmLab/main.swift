@@ -2626,6 +2626,7 @@ struct ContentView: View {
   @State private var libraryNotice: String?
   @State private var importingFolder = false
   @State private var classifyingImport = false
+  @State private var importClassificationTask: Task<PhotoImportSelection?, Never>?
   @State private var reconnectingPhotos = false
   @State private var reconnectTask: Task<Void, Never>?
   @State private var folderImportTask: Task<Void, Never>?
@@ -3200,18 +3201,26 @@ struct ContentView: View {
     let catalogID = destinationCatalogID ?? library.selectedCatalogID
     classifyingImport = true
     showingLibrary = true
+    let classification = Task.detached(priority: .utility) {
+      PhotoImportSelection.cancellable(urls: urls)
+    }
+    importClassificationTask = classification
     Task { @MainActor in
-      let selection = await Task.detached(priority: .utility) {
-        PhotoImportSelection(urls: urls)
-      }.value
+      let selection = await classification.value
       classifyingImport = false
+      importClassificationTask = nil
+      guard let selection else {
+        libraryNotice = "Photo import cancelled."
+        return
+      }
       finishImport(selection, into: catalogID)
     }
   }
 
   private func finishImport(_ selection: PhotoImportSelection, into catalogID: UUID) {
     guard !selection.photos.isEmpty || !selection.folders.isEmpty else {
-      libraryNotice = "No supported photos or folders were selected."
+      libraryNotice =
+        "No supported photos or folders were selected. Skipped \(selection.ignoredCount) item\(selection.ignoredCount == 1 ? "" : "s")."
       return
     }
     guard let catalogName = library.catalogs.first(where: { $0.id == catalogID })?.name else {
@@ -3225,10 +3234,20 @@ struct ContentView: View {
       let currentCount =
         library.catalogs.first(where: { $0.id == catalogID })?.photoPaths.count ?? 0
       let added = currentCount - previousCount
+      let skipped = selection.ignoredCount
       if catalogID != library.selectedCatalogID {
         libraryNotice =
           "Added \(added) photo\(added == 1 ? "" : "s") to \(catalogName). Originals and saved edits remain in place."
+        if skipped > 0 {
+          libraryNotice =
+            (libraryNotice ?? "")
+            + " Skipped \(skipped) unsupported or duplicate item\(skipped == 1 ? "" : "s")."
+        }
       } else if let first = selection.photos.first {
+        if skipped > 0 {
+          libraryNotice =
+            "Skipped \(skipped) unsupported or duplicate item\(skipped == 1 ? "" : "s") during import."
+        }
         showingLibrary = false
         editor.open(first)
       }
@@ -3278,6 +3297,11 @@ struct ContentView: View {
         let added = currentCount - previousCount
         libraryNotice =
           "Imported \(added) photo\(added == 1 ? "" : "s") into \(catalogName). \(linkedFolders.count) folder\(linkedFolders.count == 1 ? "" : "s") linked for refresh."
+        if selection.ignoredCount > 0 {
+          libraryNotice =
+            (libraryNotice ?? "")
+            + " Skipped \(selection.ignoredCount) unsupported or duplicate item\(selection.ignoredCount == 1 ? "" : "s")."
+        }
         if !failedFolders.isEmpty {
           libraryNotice =
             (libraryNotice ?? "") + " Could not read: \(failedFolders.joined(separator: ", "))."
@@ -3971,7 +3995,11 @@ struct ContentView: View {
           }
         }
         if classifyingImport {
-          ProgressView("Checking selected photos…")
+          HStack {
+            ProgressView("Checking selected photos…")
+            Spacer()
+            Button("Cancel Import") { importClassificationTask?.cancel() }
+          }
         }
         if importingFolder {
           HStack {

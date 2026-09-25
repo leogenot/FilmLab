@@ -68,7 +68,7 @@ Capture-date sorting reads ImageIO EXIF original time (including its offset when
 
 Library selection mode also offers Add to Favorites, Remove from Favorites, and Remove from Catalog for all selected references. Removal asks for confirmation and leaves original files and saved edits untouched; a favorite persists while another catalog still references that photo. These operations save the library index before the UI changes.
 
-Direct and folder imports check each candidate's ImageIO image header after checking its extension. Direct import checks run outside the UI thread. A file whose name only resembles a supported photo is skipped; this check does not fully decode image pixels, so a damaged image can still fail when opened or exported.
+Direct and folder imports check each candidate's ImageIO image header after checking its extension. Direct import checks run outside the UI thread and can be cancelled while files are checked; mixed selections report skipped unsupported or duplicate entries. A file whose name only resembles a supported photo is skipped; this check does not fully decode image pixels, so a damaged image can still fail when opened or exported.
 
 Favorites are stored by local photo path in the library index and shared when the same photo appears in several catalogs. Relinking moves the mark to the new path. Removing its last catalog reference removes the mark; use Locate Original when a moved file cannot be resolved from its bookmark. Favorites are a simple keeper marker, not a rating, rejection, or metadata written into the image.
 
