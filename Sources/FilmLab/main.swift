@@ -145,6 +145,7 @@ final class PhotoEditor {
   var preview: NSImage?
   var comparisonPreview: NSImage?
   var histogram: PreviewHistogram?
+  var jpegChannelNearWhiteFraction: Double?
   var compareEnabled = false
   var compareFraction = 0.5
   var exposure = 0.0
@@ -286,6 +287,7 @@ final class PhotoEditor {
         retainAccess = access
         source = image
         sourceURL = url
+        jpegChannelNearWhiteFraction = decoded.jpegChannelNearWhiteFraction
         editRecoveryNotice = loaded.notice
         editRecoveryURL = loaded.backupURL
         editSavingBlocked = !loaded.canSave
@@ -1527,8 +1529,14 @@ struct ContentView: View {
             Text("Rendered input balance").font(.headline)
             control("Input warmth", value: $editor.inputWarmth, range: -1...1)
             control("Input tint", value: $editor.inputTint, range: -1...1)
+            if let nearWhite = editor.jpegChannelNearWhiteFraction, nearWhite >= 0.01 {
+              Text(
+                "JPEG input: \(nearWhite.formatted(.percent.precision(.fractionLength(1)))) of sampled pixels have a display RGB channel near white. Check bright detail; this does not prove clipping."
+              )
+              .font(.caption).foregroundStyle(.secondary)
+            }
             Text(
-              "Balances non-RAW color before film processing; clipped source detail stays lost."
+              "Balances rendered color before film processing."
             )
             .font(.caption).foregroundStyle(.secondary)
             Divider()
