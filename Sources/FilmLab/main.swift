@@ -1597,10 +1597,12 @@ final class PhotoEditor {
   }
 
   private func framedImage(_ image: CIImage, aspectOverride: Int? = nil) -> CIImage {
-    Framing.apply(
+    let framed = Framing.apply(
       to: image, quarterTurns: frameRotation, straightenDegrees: frameStraighten,
       aspect: aspectOverride ?? frameAspect, offsetX: frameOffsetX, offsetY: frameOffsetY,
       freeCrop: frameFreeCrop)
+    return framed.transformed(
+      by: CGAffineTransform(translationX: -framed.extent.minX, y: -framed.extent.minY))
   }
 
   func rotateFrame(_ steps: Int) {

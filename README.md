@@ -34,9 +34,11 @@ Library and filmstrip thumbnails develop each photo with its saved grade. The op
 
 Open `Package.swift` in Xcode and run the `FilmLab` executable target. For a signed local release bundle, run `Scripts/build-app.sh` and open either `Dist/FilmLab.app` or the root `FilmLab.app` link to that same bundle. The script builds with SwiftPM in release mode, compiles and bundles the stitchable Core Image Metal library, signs the app ad hoc, and verifies the signature. On its first run with an older standalone root app, it moves that bundle into `.build/legacy-bundles/` before creating the link. Xcode's optional Metal Toolchain component is required to build that library; install it with `xcodebuild -downloadComponent MetalToolchain` if `xcrun metal` reports it missing. Direct SwiftPM development runs without bundled resources compile the same kernel source at runtime. This local build is not notarized for distribution to other Macs. Run `Scripts/verify-rendering.sh` to check the bundled kernels, neutral balance, exposure order, distinct stock response and pre-film tonal controls. Set `FILMLAB_TEST_RAW` and `FILMLAB_TEST_JPEG` to disposable image paths to include the real-image Fit-preview/export parity probe.
 
+The full-editor RAW/JPEG preview/export test runs with `FILMLAB_TEST_RAW=/path/to/disposable.arw FILMLAB_TEST_JPEG=/path/to/disposable.jpg DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter EditorParityTests`. It copies both inputs to a temporary folder before editing and exporting.
+
 ## Next image-quality milestone
 
-1. Extend the Fit-view RAW/JPEG parity probe to the complete editor graph, including local edits, texture and framing; refine input normalization where the differences warrant it.
+1. Expand the full-editor RAW/JPEG parity probe to more scenes, exposure settings, and crop geometries; investigate remaining edge-pixel differences and refine input normalization where warranted.
 2. Refine the published-data density stage, then model film spectral sensitivity and a separately specified print/scan stage.
 3. Validate the resulting positive output against legally usable reference scans across several exposures and lighting conditions.
 4. Calibrate stock-dependent grain, halation, and edge response; evaluate them at 100% zoom.
