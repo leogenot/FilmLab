@@ -26,6 +26,7 @@ private struct PhotoEdits: Codable, Equatable {
   var warmth = 0.0
   var inputWarmth = 0.0
   var inputTint = 0.0
+  var inputTone = 1.0
   var filmAmount = 1.0
   var stockIndex = 0
   var enduraPaperTone = false
@@ -84,6 +85,7 @@ private struct PhotoEdits: Codable, Equatable {
     warmth = try values.decodeIfPresent(Double.self, forKey: .warmth) ?? 0
     inputWarmth = try values.decodeIfPresent(Double.self, forKey: .inputWarmth) ?? 0
     inputTint = try values.decodeIfPresent(Double.self, forKey: .inputTint) ?? 0
+    inputTone = try values.decodeIfPresent(Double.self, forKey: .inputTone) ?? 1
     filmAmount = try values.decodeIfPresent(Double.self, forKey: .filmAmount) ?? 1.0
     stockIndex = try values.decodeIfPresent(Int.self, forKey: .stockIndex) ?? 0
     enduraPaperTone = try values.decodeIfPresent(Bool.self, forKey: .enduraPaperTone) ?? false
@@ -154,6 +156,7 @@ final class PhotoEditor {
   var warmth = 0.0
   var inputWarmth = 0.0
   var inputTint = 0.0
+  var inputTone = 1.0
   var filmAmount = 1.0
   var stockIndex = 0
   var enduraPaperTone = false
@@ -243,6 +246,7 @@ final class PhotoEditor {
   private let sceneLightKernel = FilmKernels.kernel("shapeSceneLight")
   private let measuredNegativeKernel = FilmKernels.kernel("measuredNegative")
   private let portraPositiveKernel = FilmKernels.kernel("portraPositive")
+  private let renderedInputToneKernel = FilmKernels.kernel("renderedInputTone")
 
   func open(_ url: URL) {
     openTask?.cancel()
@@ -357,6 +361,7 @@ final class PhotoEditor {
     warmth = saved.warmth
     inputWarmth = saved.inputWarmth
     inputTint = saved.inputTint
+    inputTone = saved.inputTone
     filmAmount = saved.filmAmount
     stockIndex = saved.stockIndex
     enduraPaperTone = saved.enduraPaperTone
@@ -486,6 +491,7 @@ final class PhotoEditor {
     edits.warmth = warmth
     edits.inputWarmth = inputWarmth
     edits.inputTint = inputTint
+    edits.inputTone = inputTone
     edits.filmAmount = filmAmount
     edits.stockIndex = stockIndex
     edits.enduraPaperTone = enduraPaperTone
@@ -574,6 +580,7 @@ final class PhotoEditor {
     settings.rawTint = nil
     settings.inputWarmth = 0
     settings.inputTint = 0
+    settings.inputTone = 1
     do {
       try LookFile(settings: settings).write(to: url)
       error = nil
@@ -608,6 +615,7 @@ final class PhotoEditor {
     copied.rawTint = current.rawTint
     copied.inputWarmth = current.inputWarmth
     copied.inputTint = current.inputTint
+    copied.inputTone = current.inputTone
     restoreEdits(copied)
     showCropBounds = false
     showLocalMask = false
@@ -649,6 +657,7 @@ final class PhotoEditor {
     warmth = defaults.warmth
     inputWarmth = defaults.inputWarmth
     inputTint = defaults.inputTint
+    inputTone = defaults.inputTone
     filmAmount = defaults.filmAmount
     stockIndex = defaults.stockIndex
     enduraPaperTone = defaults.enduraPaperTone
@@ -889,6 +898,17 @@ final class PhotoEditor {
 
   private func developedImage(previewUncropped: Bool = false) -> CIImage? {
     guard var image = source else { return nil }
+    if !sourceIsRAW && abs(inputTone - 1) > 0.001 {
+      guard let renderedInputToneKernel,
+        let toned = renderedInputToneKernel.apply(
+          extent: image.extent, arguments: [image, inputTone]
+        )
+      else {
+        error = "The rendered-input tone stage could not be loaded."
+        return nil
+      }
+      image = toned
+    }
     if !sourceIsRAW && (abs(inputWarmth) > 0.001 || abs(inputTint) > 0.001) {
       let balance = CIFilter.temperatureAndTint()
       balance.inputImage = image
@@ -1178,6 +1198,7 @@ struct ContentView: View {
     .onChange(of: editor.warmth) { editor.editsChanged() }
     .onChange(of: editor.inputWarmth) { editor.editsChanged() }
     .onChange(of: editor.inputTint) { editor.editsChanged() }
+    .onChange(of: editor.inputTone) { editor.editsChanged() }
     .onChange(of: editor.filmAmount) { editor.editsChanged() }
     .onChange(of: editor.stockIndex) { editor.editsChanged() }
     .onChange(of: editor.enduraPaperTone) { editor.editsChanged() }
@@ -1526,7 +1547,8 @@ struct ContentView: View {
             Divider()
           }
           if !editor.isRAWSource {
-            Text("Rendered input balance").font(.headline)
+            Text("Rendered input").font(.headline)
+            control("Input tone", value: $editor.inputTone, range: 0.5...1.5)
             control("Input warmth", value: $editor.inputWarmth, range: -1...1)
             control("Input tint", value: $editor.inputTint, range: -1...1)
             if let nearWhite = editor.jpegChannelNearWhiteFraction, nearWhite >= 0.01 {
@@ -1536,7 +1558,7 @@ struct ContentView: View {
               .font(.caption).foregroundStyle(.secondary)
             }
             Text(
-              "Balances rendered color before film processing."
+              "Input tone below 1 softens contrast; above 1 expands it. Middle gray stays fixed before film processing."
             )
             .font(.caption).foregroundStyle(.secondary)
             Divider()

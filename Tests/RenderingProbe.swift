@@ -16,6 +16,7 @@ struct RenderingProbe {
     let negative = FilmKernels.kernel("measuredNegative")!
     let positive = FilmKernels.kernel("portraPositive")!
     let sceneLight = FilmKernels.kernel("shapeSceneLight")!
+    let renderedInputTone = FilmKernels.kernel("renderedInputTone")!
 
     func patch(_ value: Double) -> CIImage {
       CIImage(color: CIColor(red: value, green: value, blue: value, colorSpace: space)!)
@@ -42,6 +43,25 @@ struct RenderingProbe {
         arguments: [density, source, exposure, 1.0, 0.0, 0.0, stock])!
       return channels(output)
     }
+
+    func inputTone(_ light: Double, _ slope: Double) -> Float {
+      let source = patch(light)
+      return channels(
+        renderedInputTone.apply(extent: source.extent, arguments: [source, slope])!
+      )[0]
+    }
+    precondition(abs(inputTone(0.18, 0.5) - 0.18) < 0.001, "Input tone shifted gray")
+    precondition(inputTone(0.01, 0.5) > 0.01, "Input tone did not lift dark values")
+    precondition(inputTone(1, 0.5) < 1, "Input tone did not compress bright values")
+    precondition(inputTone(0.01, 1.5) < 0.01, "Expanded input tone did not lower shadows")
+    precondition(inputTone(1, 1.5) > 1, "Expanded input tone did not raise highlights")
+    let coloredInput = CIImage(
+      color: CIColor(red: 0.4, green: 0.2, blue: 0.1, colorSpace: space)!
+    ).cropped(to: CGRect(x: 0, y: 0, width: 1, height: 1))
+    let tonedColor = channels(
+      renderedInputTone.apply(extent: coloredInput.extent, arguments: [coloredInput, 0.5])!)
+    precondition(abs(tonedColor[0] / tonedColor[1] - 2) < 0.002, "Input tone shifted hue")
+    precondition(abs(tonedColor[1] / tonedColor[2] - 2) < 0.002, "Input tone shifted hue")
 
     for stock in [1.0, 2.0] {
       let under = rendered(stock, -2)

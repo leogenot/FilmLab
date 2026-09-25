@@ -11,7 +11,7 @@ enum FilmKernels {
         let required = Set([
           "filmResponse", "shapeSceneLight", "measuredNegative", "portraPositive",
           "grade", "selectiveColor", "colorMixerBand", "applyGrain",
-          "highlightMask", "applyHalation", "applyAcutance",
+          "highlightMask", "applyHalation", "applyAcutance", "renderedInputTone",
         ])
         guard required.isSubset(of: Set(names)) else {
           throw KernelLoadError.incompleteLibrary
@@ -45,6 +45,14 @@ enum FilmKernels {
     inline float softplus(float x) {
                   return log(1.0 + exp(clamp(x, -30.0, 30.0)));
               }
+    [[stitchable]] float4 renderedInputTone(coreimage::sample_t pixel, float slope) {
+        float3 rgb = max(pixel.rgb, float3(0.0));
+        float luminance = dot(rgb, float3(0.2126, 0.7152, 0.0722));
+        if (luminance <= 0.000001) return float4(rgb, pixel.a);
+        float relative = clamp(luminance / 0.18, 0.000001, 1000000.0);
+        float target = 0.18 * pow(relative, slope);
+        return float4(rgb * (target / luminance), pixel.a);
+    }
               inline float response(float light, float ev, float dev, float toe, float shoulder) {
                   float stops = log2(max(light, 0.000001) / 0.18) + ev;
                   float slope = 1.0 + dev * 0.18;
