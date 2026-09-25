@@ -628,15 +628,16 @@ final class PhotoEditor {
     }
   }
 
-  func resumeLastPhoto(in availablePaths: [String]) {
+  func resumeLastPhoto(in availablePaths: [String], remembered: String?) {
     guard !didAttemptResume else { return }
     didAttemptResume = true
     guard let lastPath = UserDefaults.standard.string(forKey: lastPhotoKey) else {
       closePhoto()
       return
     }
+    let preferred = remembered.flatMap { availablePaths.contains($0) ? $0 : nil } ?? lastPath
     let selected = CatalogPhotoSelection.preferredPath(
-      in: availablePaths, current: nil, remembered: lastPath)
+      in: availablePaths, current: nil, remembered: preferred)
     if let selected {
       open(URL(fileURLWithPath: selected))
     } else {
@@ -2148,7 +2149,7 @@ struct ContentView: View {
   @State private var selectionAnchor: String?
   @State private var thumbnailRefresh: [String: Int] = [:]
   @State private var lastActiveThumbnailPath: String?
-  @State private var lastPhotoByCatalog: [UUID: String] = [:]
+  @State private var lastPhotoByCatalog = CatalogPhotoMemory.load()
   @State private var librarySearch = ""
   @State private var librarySort: LibrarySort = .importOrder
   @State private var showFavoritesOnly = false
@@ -2281,7 +2282,11 @@ struct ContentView: View {
             .help(path)
           }
           Divider()
-          Button("Clear Recent Photos") { editor.clearRecentPhotos() }
+          Button("Clear Recent Photos") {
+            editor.clearRecentPhotos()
+            lastPhotoByCatalog.removeAll()
+            CatalogPhotoMemory.save(lastPhotoByCatalog)
+          }
         }
       }
       .accessibilityLabel("Open photos")
@@ -2356,7 +2361,12 @@ struct ContentView: View {
       Button("Remove Catalog", role: .destructive) {
         if let catalogToDelete {
           if library.selectedCatalogID != catalogToDelete.id || editor.flushEdits() {
-            updateLibrary { $0.deleteCatalog(catalogToDelete.id) }
+            if updateLibrary({ $0.deleteCatalog(catalogToDelete.id) }),
+              !library.catalogs.contains(where: { $0.id == catalogToDelete.id })
+            {
+              lastPhotoByCatalog.removeValue(forKey: catalogToDelete.id)
+              CatalogPhotoMemory.save(lastPhotoByCatalog)
+            }
           } else {
             libraryNotice = "Current edits could not be saved. The catalog was kept."
           }
@@ -2369,7 +2379,11 @@ struct ContentView: View {
         "This removes the catalog and its photo references. Original photos and edits stay in place."
       )
     }
-    .onAppear { editor.resumeLastPhoto(in: availableCatalogPaths) }
+    .onAppear {
+      editor.resumeLastPhoto(
+        in: availableCatalogPaths,
+        remembered: lastPhotoByCatalog[library.selectedCatalogID])
+    }
     .onDisappear { editor.flushEdits() }
     .onChange(of: panel) {
       if panel != .develop { editor.setPickingNeutralArea(false) }
@@ -2401,6 +2415,7 @@ struct ContentView: View {
         library.selectedCatalog?.photoPaths.contains(path) == true
       {
         lastPhotoByCatalog[library.selectedCatalogID] = path
+        CatalogPhotoMemory.save(lastPhotoByCatalog)
       }
     }
     .onChange(of: scenePhase) {
@@ -2575,8 +2590,15 @@ struct ContentView: View {
     if let catalog = library.catalogs.first(where: { $0.photoPaths.contains(path) }),
       catalog.id != library.selectedCatalogID
     {
+      let previous = lastPhotoByCatalog[catalog.id]
       lastPhotoByCatalog[catalog.id] = path
-      if updateLibrary({ $0.selectedCatalogID = catalog.id }) { showingLibrary = false }
+      CatalogPhotoMemory.save(lastPhotoByCatalog)
+      if updateLibrary({ $0.selectedCatalogID = catalog.id }) {
+        showingLibrary = false
+      } else {
+        lastPhotoByCatalog[catalog.id] = previous
+        CatalogPhotoMemory.save(lastPhotoByCatalog)
+      }
     } else {
       let url = URL(fileURLWithPath: path)
       if updateLibrary({ $0.importPhotos([url]) }) { selectPhoto(path) }
