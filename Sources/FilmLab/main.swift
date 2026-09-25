@@ -1,7 +1,6 @@
 import AppKit
 import CoreImage
 import CoreImage.CIFilterBuiltins
-import CryptoKit
 import ImageIO
 import SwiftUI
 import UniformTypeIdentifiers
@@ -238,6 +237,7 @@ final class PhotoEditor {
     .filter { FileManager.default.fileExists(atPath: $0) }
 
   private var source: CIImage?
+  private var sourceEditLocation: EditRecordLocation?
   private var didAttemptResume = false
   private let lastPhotoKey = "FilmLab.lastPhotoPath"
   private let recentPhotosKey = "FilmLab.recentPhotos"
@@ -304,8 +304,10 @@ final class PhotoEditor {
       do {
         let isRAW = await imageDecoder.isRAWFile(url)
         try Task.checkCancellation()
+        let editLocation = EditRecordLocator.locate(
+          sourceURL: url, directory: editsDirectory)
         let loaded = SavedEditStore.load(
-          from: editsURL(for: url), defaultValue: PhotoEdits.defaults(forRAW: isRAW))
+          from: editLocation.primaryURL, defaultValue: PhotoEdits.defaults(forRAW: isRAW))
         let saved = loaded.value
         let decoded = try await imageDecoder.decode(
           from: url, isRAW: isRAW, flatRAW: saved.flatRAW,
@@ -327,10 +329,23 @@ final class PhotoEditor {
         if let scopedURL { scopedURL.stopAccessingSecurityScopedResource() }
         scopedURL = access ? url : nil
         retainAccess = access
+        var notices = [loaded.notice, editLocation.migrationNotice].compactMap { $0 }
+        if loaded.notice == nil, editLocation.primaryURL != editLocation.pathURL,
+          !FileManager.default.fileExists(atPath: editLocation.pathURL.path)
+        {
+          do {
+            try SavedEditStore.save(saved, to: editLocation.pathURL)
+          } catch {
+            notices.append(
+              "Could not create a path backup for this photo's edits: \(error.localizedDescription)"
+            )
+          }
+        }
         source = image
         sourceURL = url
+        sourceEditLocation = editLocation
         jpegChannelNearWhiteFraction = decoded.jpegChannelNearWhiteFraction
-        editRecoveryNotice = loaded.notice
+        editRecoveryNotice = notices.isEmpty ? nil : notices.joined(separator: " ")
         editRecoveryURL = loaded.backupURL
         editSavingBlocked = !loaded.canSave
         UserDefaults.standard.set(url.standardizedFileURL.path, forKey: lastPhotoKey)
@@ -399,12 +414,9 @@ final class PhotoEditor {
     saveEdits()
   }
 
-  private func editsURL(for url: URL) -> URL {
-    let key = SHA256.hash(data: Data(url.standardizedFileURL.path.utf8))
-      .map { String(format: "%02x", $0) }.joined()
+  private var editsDirectory: URL {
     return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
       .appendingPathComponent("FilmLab/Edits", isDirectory: true)
-      .appendingPathComponent(key + ".json")
   }
 
   private func restoreEdits(_ saved: PhotoEdits) {
@@ -598,12 +610,14 @@ final class PhotoEditor {
   }
 
   private func saveEdits() {
-    guard let sourceURL else { return }
+    guard sourceURL != nil, let sourceEditLocation else { return }
     guard !editSavingBlocked else { return }
     let edits = currentEdits()
-    let url = editsURL(for: sourceURL)
     do {
-      try SavedEditStore.save(edits, to: url)
+      try SavedEditStore.save(edits, to: sourceEditLocation.primaryURL)
+      if sourceEditLocation.pathURL != sourceEditLocation.primaryURL {
+        try SavedEditStore.save(edits, to: sourceEditLocation.pathURL)
+      }
     } catch {
       self.error = "Could not save edits: \(error.localizedDescription)"
     }
