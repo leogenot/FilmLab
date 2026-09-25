@@ -2747,6 +2747,99 @@ struct ContentView: View {
     }
   }
 
+  private func locateImportedFolder(_ oldPath: String) {
+    guard !importingFolder else { return }
+    let panel = NSOpenPanel()
+    panel.canChooseFiles = false
+    panel.canChooseDirectories = true
+    panel.allowsMultipleSelection = false
+    panel.prompt = "Locate Folder"
+    guard panel.runModal() == .OK, let folder = panel.url else { return }
+    let catalogID = library.selectedCatalogID
+    importingFolder = true
+    libraryNotice = nil
+    folderImportTask = Task { @MainActor in
+      let access = folder.startAccessingSecurityScopedResource()
+      defer { if access { folder.stopAccessingSecurityScopedResource() } }
+      do {
+        let photos = try await folderScanner.scan(folder)
+        try Task.checkCancellation()
+        guard
+          library.catalogs.contains(where: {
+            $0.id == catalogID && $0.importedFolderPaths.contains(oldPath)
+          })
+        else {
+          libraryNotice = "The linked folder changed before it could be relocated."
+          importingFolder = false
+          folderImportTask = nil
+          return
+        }
+        let candidates = library.movedFolderCandidates(
+          from: oldPath, to: folder, scannedPhotos: photos, in: catalogID)
+        let previousLibrary = library
+        let oldPrefix = URL(fileURLWithPath: oldPath).standardizedFileURL.path + "/"
+        let referencedCount =
+          previousLibrary.catalogs.first(where: { $0.id == catalogID })?
+          .photoPaths.filter { $0.hasPrefix(oldPrefix) }.count ?? 0
+        var relinked = [(String, URL)]()
+        var unavailableEdits = 0
+        var failures = [String]()
+        for (oldPhotoPath, replacement) in candidates {
+          do {
+            let result = try PhotoEditRelinker.transferSavedEdits(
+              from: URL(fileURLWithPath: oldPhotoPath), to: replacement,
+              directory: editsDirectory, as: PhotoEdits.self)
+            if result == .unavailable { unavailableEdits += 1 }
+            library.relinkPhoto(from: oldPhotoPath, to: replacement)
+            relinked.append((oldPhotoPath, replacement))
+          } catch {
+            failures.append(URL(fileURLWithPath: oldPhotoPath).lastPathComponent)
+          }
+        }
+        guard library.relinkImportedFolder(oldPath, to: folder, in: catalogID) else {
+          library = previousLibrary
+          libraryNotice = "Choose a different folder for this linked location."
+          importingFolder = false
+          folderImportTask = nil
+          return
+        }
+        guard saveLibrary() else {
+          library = previousLibrary
+          importingFolder = false
+          folderImportTask = nil
+          return
+        }
+        selectedPhotoPaths.subtract(relinked.map(\.0))
+        if let selectionAnchor, relinked.contains(where: { $0.0 == selectionAnchor }) {
+          self.selectionAnchor = nil
+        }
+        if let openPath = editor.sourceURL?.standardizedFileURL.path,
+          let replacement = relinked.first(where: { $0.0 == openPath })?.1
+        {
+          editor.open(replacement)
+        }
+        var notice =
+          "Linked folder moved. Relinked \(relinked.count) original\(relinked.count == 1 ? "" : "s")."
+        if unavailableEdits > 0 {
+          notice += " \(unavailableEdits) had no valid saved edit backup."
+        }
+        if !failures.isEmpty {
+          notice += " Could not relink: \(failures.joined(separator: ", "))."
+        }
+        if relinked.count < referencedCount {
+          notice += " Unmatched photos remain missing; use Locate Original for those entries."
+        }
+        libraryNotice = notice
+      } catch is CancellationError {
+        libraryNotice = "Folder relocation cancelled."
+      } catch {
+        libraryNotice = "Could not relocate folder: \(error.localizedDescription)"
+      }
+      importingFolder = false
+      folderImportTask = nil
+    }
+  }
+
   private func adjacentPhoto(step: Int) -> String? {
     let paths = library.selectedCatalog?.photoPaths ?? []
     guard !paths.isEmpty else { return nil }
@@ -2999,6 +3092,10 @@ struct ContentView: View {
               Divider()
               Menu("Linked Folders") {
                 ForEach(library.selectedCatalog?.importedFolderPaths ?? [], id: \.self) { path in
+                  Button("Locate \(URL(fileURLWithPath: path).lastPathComponent)…") {
+                    locateImportedFolder(path)
+                  }
+                  .help("Reconnect photos by their paths within this folder: \(path)")
                   Button("Stop Refreshing \(URL(fileURLWithPath: path).lastPathComponent)") {
                     if updateLibrary({
                       $0.untrackImportedFolder(path, in: library.selectedCatalogID)
@@ -3021,6 +3118,22 @@ struct ContentView: View {
             importingFolder || library.selectedCatalog?.importedFolderPaths.isEmpty != false
           )
           .help("Add newly found photos from folders imported into this catalog")
+        }
+        ForEach(
+          (library.selectedCatalog?.importedFolderPaths ?? []).filter {
+            !FileManager.default.fileExists(atPath: $0)
+          }, id: \.self
+        ) { path in
+          HStack(spacing: 8) {
+            Image(systemName: "folder.badge.questionmark")
+            Text("Linked folder missing: \(URL(fileURLWithPath: path).lastPathComponent)")
+              .lineLimit(1)
+            Spacer()
+            Button("Locate Folder…") { locateImportedFolder(path) }
+              .disabled(importingFolder)
+          }
+          .font(.caption)
+          .foregroundStyle(.orange)
         }
         HStack(spacing: 10) {
           TextField("Search filenames", text: $librarySearch)

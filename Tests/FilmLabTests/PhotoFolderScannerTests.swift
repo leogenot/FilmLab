@@ -68,4 +68,33 @@ final class PhotoFolderScannerTests: XCTestCase {
     XCTAssertEqual(catalog.importedFolderPaths, [])
     XCTAssertEqual(catalog.photoPaths, ["/tmp/a.jpg"])
   }
+
+  func testMovedFolderRelinksNestedPhotosAndRefreshLocation() {
+    var library = PhotoLibrary.empty()
+    let catalogID = library.selectedCatalogID
+    let oldFolder = URL(fileURLWithPath: "/tmp/FilmLab-old-session")
+    let newFolder = URL(fileURLWithPath: "/tmp/FilmLab-new-session")
+    let oldPortrait = oldFolder.appendingPathComponent("Portraits/one.ARW")
+    let oldLandscape = oldFolder.appendingPathComponent("Landscapes/two.jpg")
+    let unrelated = URL(fileURLWithPath: "/tmp/FilmLab-old-session-extra/three.jpg")
+    library.importPhotos([oldPortrait, oldLandscape, unrelated])
+    library.trackImportedFolder(oldFolder, in: catalogID)
+    library.toggleFavorite(oldPortrait.path)
+
+    let replacement = newFolder.appendingPathComponent("Portraits/one.ARW")
+    let candidates = library.movedFolderCandidates(
+      from: oldFolder.path, to: newFolder,
+      scannedPhotos: [replacement, newFolder.appendingPathComponent("other.jpg")], in: catalogID)
+    XCTAssertEqual(candidates.map(\.0), [oldPortrait.path])
+    XCTAssertEqual(candidates.map(\.1), [replacement])
+    library.relinkPhoto(from: candidates[0].0, to: candidates[0].1)
+    XCTAssertTrue(library.relinkImportedFolder(oldFolder.path, to: newFolder, in: catalogID))
+
+    XCTAssertEqual(library.selectedCatalog?.importedFolderPaths, [newFolder.path])
+    XCTAssertEqual(
+      library.selectedCatalog?.photoPaths,
+      [replacement.path, oldLandscape.path, unrelated.path])
+    XCTAssertTrue(library.favoritePaths.contains(replacement.path))
+    XCTAssertFalse(library.favoritePaths.contains(oldPortrait.path))
+  }
 }
