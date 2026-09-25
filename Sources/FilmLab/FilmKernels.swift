@@ -86,15 +86,21 @@ enum FilmKernels {
         // Chroma compression can preserve luminance only while the neutral lies in sRGB.
         if (luminance <= 0.0 || luminance >= 1.0) return pixel;
         float3 chroma = rgb - luminance;
-        float scale = 1.0;
+        float boundary = 1.0e20;
         for (int channel = 0; channel < 3; channel++) {
             if (chroma[channel] < 0.0) {
-                scale = min(scale, luminance / -chroma[channel]);
+                boundary = min(boundary, luminance / -chroma[channel]);
             } else if (chroma[channel] > 0.0) {
-                scale = min(scale, (1.0 - luminance) / chroma[channel]);
+                boundary = min(boundary, (1.0 - luminance) / chroma[channel]);
             }
         }
-        return float4(luminance + chroma * clamp(scale, 0.0, 1.0), pixel.a);
+        float position = 1.0 / boundary;
+        const float knee = 0.85;
+        if (position <= knee) return pixel;
+        // A matched-slope soft knee keeps distinct out-of-gamut chroma values ordered.
+        float compressed = knee + (1.0 - knee)
+            * (1.0 - exp(-(position - knee) / (1.0 - knee)));
+        return float4(luminance + chroma * (compressed / position), pixel.a);
     }
     [[stitchable]] float4 vibrance(coreimage::sample_t pixel, float amount) {
         float3 rgb = pixel.rgb;

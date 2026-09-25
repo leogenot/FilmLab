@@ -3952,7 +3952,7 @@ struct ContentView: View {
           Toggle("Compress sRGB colors", isOn: $editor.compressSRGBGamut)
             .font(.caption)
             .help(
-              "Fit out-of-gamut color into sRGB by reducing chroma while keeping linear luminance when it lies between black and white. Applies to sRGB canvas, JPEG, and sRGB TIFF; P3 TIFF stays unchanged."
+              "Smoothly reduce strong chroma near the sRGB boundary while keeping linear luminance when it lies between black and white. Applies to sRGB canvas, JPEG, and sRGB TIFF; P3 TIFF stays unchanged."
             )
         }
         switch panel {

@@ -149,7 +149,23 @@ struct ExporterProbe {
     }
     precondition(compressed.prefix(3).allSatisfy { $0 >= -0.0001 && $0 <= 1.0001 })
     precondition(abs(luminance(compressed) - luminance(originalVivid)) < 0.0001)
-    precondition(abs(compressed[0] - 1) < 0.0001)
+    precondition(compressed[0] > 0.95 && compressed[0] < 1)
+    func hueRay(_ position: CGFloat) -> CIImage {
+      let red = 0.4 + 0.6 * position
+      let green = 0.4 - 0.6 * position * (0.2126 / 0.7152)
+      return CIImage(
+        color: CIColor(red: red, green: green, blue: 0.4, colorSpace: linearSpace)!
+      ).cropped(to: CGRect(x: 0, y: 0, width: 1, height: 1))
+    }
+    let inGamut = linearChannels(OutputGamutMap.apply(to: hueRay(0.5))!)
+    precondition(abs(inGamut[0] - 0.7) < 0.0001)
+    let justOutside = linearChannels(OutputGamutMap.apply(to: hueRay(1.05))!)
+    let fartherOutside = linearChannels(OutputGamutMap.apply(to: hueRay(1.3))!)
+    precondition(justOutside[0] < fartherOutside[0])
+    precondition(fartherOutside[0] < 1)
+    precondition(fartherOutside[0] - justOutside[0] > 0.01)
+    precondition(abs(luminance(justOutside) - 0.4) < 0.0001)
+    precondition(abs(luminance(fartherOutside) - 0.4) < 0.0001)
     let compressedURL = directory.appendingPathComponent("compressed-srgb.tiff")
     let unchangedP3URL = directory.appendingPathComponent("unchanged-p3.tiff")
     try await exporter.export(
