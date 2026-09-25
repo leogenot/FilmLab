@@ -311,6 +311,18 @@ struct PhotoLibrary: Codable, Equatable, Sendable {
 }
 
 enum PhotoLibraryStore {
+  private static func previousURL(for url: URL) -> URL {
+    url.deletingPathExtension().appendingPathExtension("previous.json")
+  }
+
+  private static func validLibrary(from data: Data) -> PhotoLibrary? {
+    guard let library = try? JSONDecoder().decode(PhotoLibrary.self, from: data),
+      !library.catalogs.isEmpty, library.selectedCatalog != nil,
+      library.repaired() == library
+    else { return nil }
+    return library
+  }
+
   static func updating(
     _ library: PhotoLibrary, at url: URL, change: (inout PhotoLibrary) -> Void
   ) throws -> PhotoLibrary {
@@ -323,6 +335,50 @@ enum PhotoLibraryStore {
 
   static func loadSafely(from url: URL) -> SavedEditLoad<PhotoLibrary> {
     let loaded = SavedEditStore.load(from: url, defaultValue: PhotoLibrary.empty())
+    let missingPrimary = !FileManager.default.fileExists(atPath: url.path)
+    let invalidPrimary = loaded.notice != nil || loaded.value.catalogs.isEmpty
+    if missingPrimary || invalidPrimary,
+      let previousData = try? Data(contentsOf: previousURL(for: url)),
+      let previous = validLibrary(from: previousData)
+    {
+      guard loaded.canSave else {
+        return SavedEditLoad(
+          value: previous,
+          notice:
+            "The library index could not be read. A previous catalog state is shown, but saving is paused to protect the existing file.",
+          canSave: false, backupURL: loaded.backupURL)
+      }
+      do {
+        var preservedURL = loaded.backupURL
+        if invalidPrimary, preservedURL == nil, !missingPrimary {
+          let recoveryURL = url.deletingPathExtension()
+            .appendingPathExtension("recovery-\(UUID().uuidString).json")
+          try FileManager.default.copyItem(at: url, to: recoveryURL)
+          preservedURL = recoveryURL
+        }
+        try previousData.write(to: url, options: .atomic)
+        return SavedEditLoad(
+          value: previous,
+          notice: missingPrimary
+            ? "The missing library index was restored from its previous saved state."
+            : "The damaged library index was preserved and restored from its previous saved state.",
+          canSave: true, backupURL: preservedURL)
+      } catch {
+        return SavedEditLoad(
+          value: previous,
+          notice:
+            "A previous catalog state was found, but the library index could not be restored. Saving is paused: \(error.localizedDescription)",
+          canSave: false, backupURL: loaded.backupURL)
+      }
+    }
+    if invalidPrimary, !missingPrimary {
+      return SavedEditLoad(
+        value: loaded.value.catalogs.isEmpty ? .empty() : loaded.value,
+        notice: loaded.backupURL == nil
+          ? "The library index could not be read and no valid previous index is available. Saving is paused to protect the original."
+          : "The library index is damaged and no valid previous index is available. Saving is paused; a recovery copy of the original was preserved.",
+        canSave: false, backupURL: loaded.backupURL)
+    }
     guard loaded.canSave, loaded.notice == nil else { return loaded }
     let repaired = loaded.value.repaired()
     guard repaired != loaded.value else { return loaded }
@@ -364,6 +420,12 @@ enum PhotoLibraryStore {
   static func save(_ library: PhotoLibrary, to url: URL) throws {
     try FileManager.default.createDirectory(
       at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+    if FileManager.default.fileExists(atPath: url.path) {
+      let currentData = try Data(contentsOf: url)
+      if validLibrary(from: currentData) != nil {
+        try currentData.write(to: previousURL(for: url), options: .atomic)
+      }
+    }
     try JSONEncoder().encode(library).write(to: url, options: .atomic)
   }
 }

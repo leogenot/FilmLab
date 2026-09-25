@@ -4,6 +4,98 @@ import XCTest
 @testable import FilmLab
 
 final class PhotoLibraryPersistenceTests: XCTestCase {
+  func testDamagedLibraryRestoresLastSavedCatalogState() throws {
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("FilmLab-library-recovery-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let index = directory.appendingPathComponent("Library.json")
+    var original = PhotoLibrary.empty()
+    original.createCatalog(named: "Portraits")
+    try PhotoLibraryStore.save(original, to: index)
+    var newer = original
+    newer.createCatalog(named: "Travel")
+    try PhotoLibraryStore.save(newer, to: index)
+    try Data("not json".utf8).write(to: index, options: .atomic)
+
+    let loaded = PhotoLibraryStore.loadSafely(from: index)
+    XCTAssertTrue(loaded.canSave)
+    XCTAssertEqual(loaded.value, original)
+    XCTAssertEqual(PhotoLibraryStore.load(from: index), original)
+    XCTAssertNotNil(loaded.notice)
+    XCTAssertEqual(try Data(contentsOf: XCTUnwrap(loaded.backupURL)), Data("not json".utf8))
+  }
+
+  func testMissingLibraryRestoresPreviousIndex() throws {
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("FilmLab-library-missing-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let index = directory.appendingPathComponent("Library.json")
+    let original = PhotoLibrary.empty()
+    try PhotoLibraryStore.save(original, to: index)
+    var newer = original
+    newer.createCatalog(named: "Travel")
+    try PhotoLibraryStore.save(newer, to: index)
+    try FileManager.default.removeItem(at: index)
+
+    let loaded = PhotoLibraryStore.loadSafely(from: index)
+    XCTAssertTrue(loaded.canSave)
+    XCTAssertEqual(loaded.value, original)
+    XCTAssertEqual(PhotoLibraryStore.load(from: index), original)
+  }
+
+  func testStructurallyEmptyLibraryPreservesDamagedIndexBeforeRecovery() throws {
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("FilmLab-library-empty-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let index = directory.appendingPathComponent("Library.json")
+    let original = PhotoLibrary.empty()
+    try PhotoLibraryStore.save(original, to: index)
+    var newer = original
+    newer.createCatalog(named: "Travel")
+    try PhotoLibraryStore.save(newer, to: index)
+    var empty = newer
+    empty.catalogs = []
+    let damagedData = try JSONEncoder().encode(empty)
+    try damagedData.write(to: index, options: .atomic)
+
+    let loaded = PhotoLibraryStore.loadSafely(from: index)
+    XCTAssertEqual(loaded.value, original)
+    XCTAssertTrue(loaded.canSave)
+    XCTAssertEqual(try Data(contentsOf: XCTUnwrap(loaded.backupURL)), damagedData)
+  }
+
+  func testDamagedLibraryWithoutValidPreviousIndexPausesSaving() throws {
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("FilmLab-library-no-backup-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let index = directory.appendingPathComponent("Library.json")
+    let damagedData = Data("not json".utf8)
+    try damagedData.write(to: index)
+
+    let loaded = PhotoLibraryStore.loadSafely(from: index)
+    XCTAssertFalse(loaded.canSave)
+    XCTAssertNotNil(loaded.notice)
+    XCTAssertEqual(try Data(contentsOf: index), damagedData)
+    XCTAssertEqual(try Data(contentsOf: XCTUnwrap(loaded.backupURL)), damagedData)
+  }
+
+  func testFailedPreviousIndexWriteDoesNotReplaceLibrary() throws {
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("FilmLab-library-backup-blocked-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let index = directory.appendingPathComponent("Library.json")
+    let original = PhotoLibrary.empty()
+    try PhotoLibraryStore.save(original, to: index)
+    let blocker = directory.appendingPathComponent("Library.previous.json")
+    try FileManager.default.createDirectory(at: blocker, withIntermediateDirectories: true)
+    var newer = original
+    newer.createCatalog(named: "Travel")
+
+    XCTAssertThrowsError(try PhotoLibraryStore.save(newer, to: index))
+    XCTAssertEqual(PhotoLibraryStore.load(from: index), original)
+  }
+
   func testSuccessfulUpdatePersistsBeforeReturningNewLibrary() throws {
     let directory = FileManager.default.temporaryDirectory
       .appendingPathComponent("FilmLab-library-update-\(UUID().uuidString)")
