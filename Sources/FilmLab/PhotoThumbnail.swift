@@ -31,6 +31,12 @@ struct PhotoThumbnail: View {
     .task(id: "\(path)#\(refreshToken)#\(activePreview == nil)") {
       image = nil
       guard activePreview == nil else { return }
+      if let cached = await ThumbnailLoader.shared.cachedEdited(path), !Task.isCancelled {
+        image = NSImage(
+          cgImage: cached.image,
+          size: NSSize(width: cached.image.width, height: cached.image.height))
+        return
+      }
       if let original = await ThumbnailLoader.shared.loadOriginal(path), !Task.isCancelled {
         image = NSImage(
           cgImage: original.image,
@@ -56,19 +62,37 @@ private actor ThumbnailLoader {
   private struct EditedKey: Hashable, Sendable {
     let path: String
     let refreshToken: Int
+    let signature: String
   }
   private let queue = RenderWorkQueue<EditedKey, SendableThumbnail>(maxConcurrent: 2) { key in
     await PhotoEditor.renderedThumbnail(for: URL(fileURLWithPath: key.path)).map {
       SendableThumbnail(image: $0)
     }
   }
-  private var originals: [String: SendableThumbnail] = [:]
-  private var edited: [String: (refreshToken: Int, thumbnail: SendableThumbnail?)] = [:]
+  private var originals: [String: (signature: String, thumbnail: SendableThumbnail)] = [:]
+  private var edited: [String: (signature: String, thumbnail: SendableThumbnail?)] = [:]
   private var order: [String] = []
   private let capacity = 128
+  private let diskCache = ThumbnailDiskCache()
+  private let editsDirectory = FileManager.default.urls(
+    for: .applicationSupportDirectory, in: .userDomainMask)[0]
+    .appendingPathComponent("FilmLab/Edits", isDirectory: true)
+
+  private func remember(_ path: String) {
+    guard !order.contains(path) else { return }
+    order.append(path)
+    if order.count > capacity {
+      let evicted = order.removeFirst()
+      originals.removeValue(forKey: evicted)
+      edited.removeValue(forKey: evicted)
+    }
+  }
 
   func loadOriginal(_ path: String) -> SendableThumbnail? {
-    if let original = originals[path] { return original }
+    let signature = ThumbnailCacheSignature.source(for: URL(fileURLWithPath: path))
+    if let signature, let original = originals[path], original.signature == signature {
+      return original.thumbnail
+    }
     guard !Task.isCancelled else { return nil }
     let url = URL(fileURLWithPath: path) as CFURL
     let sourceOptions: [CFString: Any] = [kCGImageSourceShouldCache: false]
@@ -83,24 +107,47 @@ private actor ThumbnailLoader {
     guard let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
     else { return nil }
     let result = SendableThumbnail(image: thumbnail)
-    originals[path] = result
-    order.append(path)
-    if order.count > capacity {
-      let evicted = order.removeFirst()
-      originals.removeValue(forKey: evicted)
-      edited.removeValue(forKey: evicted)
+    if let signature {
+      originals[path] = (signature, result)
+      remember(path)
     }
     return result
   }
 
-  func loadEdited(_ path: String, refreshToken: Int) async -> SendableThumbnail? {
-    if let cached = edited[path], cached.refreshToken == refreshToken {
+  func cachedEdited(_ path: String) -> SendableThumbnail? {
+    let url = URL(fileURLWithPath: path)
+    guard
+      let signature = ThumbnailCacheSignature.developed(
+        for: url, editsDirectory: editsDirectory)
+    else { return nil }
+    if let cached = edited[path], cached.signature == signature {
       return cached.thumbnail
     }
+    if let diskImage = diskCache.load(path: path, signature: signature) {
+      let cached = SendableThumbnail(image: diskImage)
+      edited[path] = (signature, cached)
+      remember(path)
+      return cached
+    }
+    return nil
+  }
+
+  func loadEdited(_ path: String, refreshToken: Int) async -> SendableThumbnail? {
+    if let cached = cachedEdited(path) { return cached }
+    let url = URL(fileURLWithPath: path)
+    let signature = ThumbnailCacheSignature.developed(for: url, editsDirectory: editsDirectory)
     guard !Task.isCancelled else { return nil }
-    let rendered = await queue.value(for: EditedKey(path: path, refreshToken: refreshToken))
+    let rendered = await queue.value(
+      for: EditedKey(path: path, refreshToken: refreshToken, signature: signature ?? "uncacheable"))
     guard !Task.isCancelled else { return nil }
-    if originals[path] != nil { edited[path] = (refreshToken, rendered) }
+    guard let signature else { return rendered }
+    guard ThumbnailCacheSignature.developed(for: url, editsDirectory: editsDirectory) == signature
+    else { return nil }
+    if let rendered {
+      edited[path] = (signature, rendered)
+      remember(path)
+      diskCache.save(rendered.image, path: path, signature: signature)
+    }
     return rendered
   }
 }
