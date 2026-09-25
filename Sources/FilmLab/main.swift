@@ -229,6 +229,7 @@ final class PhotoEditor {
   var showGamutWarning = false
   var inspectPixel = false
   var pixelReadout: PixelReadout?
+  var selectedPixel: CGPoint?
   var showLocalMask = false
   var zoom100 = false
   var isRendering = false
@@ -334,6 +335,7 @@ final class PhotoEditor {
         pixelTask?.cancel()
         pixelVersion += 1
         pixelReadout = nil
+        selectedPixel = nil
         if let scopedURL { scopedURL.stopAccessingSecurityScopedResource() }
         scopedURL = access ? url : nil
         retainAccess = access
@@ -1177,6 +1179,9 @@ final class PhotoEditor {
         }
         histogram = showLocalMask || showCropBounds ? nil : result.histogram
         error = nil
+        if inspectPixel, let selectedPixel {
+          inspect(displayX: Double(selectedPixel.x), displayY: Double(selectedPixel.y))
+        }
       } else {
         error = "Could not render this photo."
       }
@@ -1193,6 +1198,7 @@ final class PhotoEditor {
         freeCrop: frameFreeCrop),
       let output = developedImage()
     else { return }
+    selectedPixel = CGPoint(x: displayX, y: displayY)
     pixelTask?.cancel()
     pixelVersion += 1
     let version = pixelVersion
@@ -1546,6 +1552,26 @@ struct ContentView: View {
               .frame(width: geometry.size.width, height: geometry.size.height)
               .contentShape(Rectangle())
               .overlay {
+                if editor.inspectPixel, let point = editor.selectedPixel {
+                  let scale = min(
+                    geometry.size.width / preview.size.width,
+                    geometry.size.height / preview.size.height)
+                  let imageWidth = preview.size.width * scale
+                  let imageHeight = preview.size.height * scale
+                  let left = (geometry.size.width - imageWidth) / 2
+                  let top = (geometry.size.height - imageHeight) / 2
+                  Circle()
+                    .strokeBorder(.white, lineWidth: 1.5)
+                    .background(Circle().fill(.black.opacity(0.35)))
+                    .frame(width: 13, height: 13)
+                    .position(
+                      x: left + imageWidth * point.x,
+                      y: top + imageHeight * point.y
+                    )
+                    .allowsHitTesting(false)
+                }
+              }
+              .overlay {
                 if editor.showCropBounds {
                   let scale = min(
                     geometry.size.width / preview.size.width,
@@ -1689,6 +1715,7 @@ struct ContentView: View {
               set: { enabled in
                 editor.inspectPixel = enabled
                 editor.pixelReadout = nil
+                editor.selectedPixel = nil
                 if enabled {
                   editor.zoom100 = false
                   editor.compareEnabled = false
