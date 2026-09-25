@@ -40,6 +40,8 @@ private struct PhotoEdits: Codable, Equatable {
   var inputTint = 0.0
   var inputTone = 1.0
   var inputNeutralBalance = InputNeutralBalance()
+  var filmLightWarmth = 0.0
+  var filmLightTint = 0.0
   var filmAmount = 1.0
   var stockIndex = 0
   var enduraPaperTone = false
@@ -122,6 +124,8 @@ private struct PhotoEdits: Codable, Equatable {
     inputNeutralBalance =
       try values.decodeIfPresent(InputNeutralBalance.self, forKey: .inputNeutralBalance)
       ?? InputNeutralBalance()
+    filmLightWarmth = try values.decodeIfPresent(Double.self, forKey: .filmLightWarmth) ?? 0
+    filmLightTint = try values.decodeIfPresent(Double.self, forKey: .filmLightTint) ?? 0
     filmAmount = try values.decodeIfPresent(Double.self, forKey: .filmAmount) ?? 1.0
     stockIndex = try values.decodeIfPresent(Int.self, forKey: .stockIndex) ?? 0
     enduraPaperTone = try values.decodeIfPresent(Bool.self, forKey: .enduraPaperTone) ?? false
@@ -245,6 +249,8 @@ final class PhotoEditor {
   var inputTint = 0.0
   var inputTone = 1.0
   var inputNeutralBalance = InputNeutralBalance()
+  var filmLightWarmth = 0.0
+  var filmLightTint = 0.0
   var filmAmount = 1.0
   var stockIndex = 0
   var enduraPaperTone = false
@@ -553,6 +559,8 @@ final class PhotoEditor {
     inputTint = saved.inputTint
     inputTone = saved.inputTone
     inputNeutralBalance = saved.inputNeutralBalance
+    filmLightWarmth = saved.filmLightWarmth
+    filmLightTint = saved.filmLightTint
     filmAmount = saved.filmAmount
     stockIndex = saved.stockIndex
     enduraPaperTone = saved.enduraPaperTone
@@ -693,6 +701,8 @@ final class PhotoEditor {
     edits.inputTint = inputTint
     edits.inputTone = inputTone
     edits.inputNeutralBalance = inputNeutralBalance
+    edits.filmLightWarmth = filmLightWarmth
+    edits.filmLightTint = filmLightTint
     edits.filmAmount = filmAmount
     edits.stockIndex = stockIndex
     edits.enduraPaperTone = enduraPaperTone
@@ -1001,6 +1011,8 @@ final class PhotoEditor {
     inputTint = defaults.inputTint
     inputTone = defaults.inputTone
     inputNeutralBalance = defaults.inputNeutralBalance
+    filmLightWarmth = defaults.filmLightWarmth
+    filmLightTint = defaults.filmLightTint
     filmAmount = defaults.filmAmount
     stockIndex = defaults.stockIndex
     enduraPaperTone = defaults.enduraPaperTone
@@ -1297,6 +1309,18 @@ final class PhotoEditor {
         centerY: area.centerY, radius: area.radius, feather: area.feather,
         inverted: area.inverted, shape: area.shape, angle: area.angle,
         brushSize: area.brushSize, strokes: area.strokes)
+    }
+    if abs(filmLightWarmth) > 0.001 || abs(filmLightTint) > 0.001 {
+      let balance = CIFilter.temperatureAndTint()
+      balance.inputImage = image
+      balance.neutral = CIVector(x: 6500, y: 0)
+      balance.targetNeutral = CIVector(
+        x: 6500 - filmLightWarmth * 1000, y: -filmLightTint * 100)
+      guard let balanced = balance.outputImage else {
+        error = "The film-light color balance could not be rendered."
+        return nil
+      }
+      image = balanced
     }
     if stockIndex == 1 || stockIndex == 2 {
       guard let measuredNegativeKernel,
@@ -1810,6 +1834,8 @@ struct ContentView: View {
     .onChange(of: editor.outputShoulder) { editor.editsChanged() }
     .onChange(of: editor.inputWarmth) { editor.editsChanged() }
     .onChange(of: editor.inputTint) { editor.editsChanged() }
+    .onChange(of: editor.filmLightWarmth) { editor.editsChanged() }
+    .onChange(of: editor.filmLightTint) { editor.editsChanged() }
     .onChange(of: editor.inputTone) { editor.editsChanged() }
     .onChange(of: editor.filmAmount) { editor.editsChanged() }
     .onChange(of: editor.stockIndex) { editor.editsChanged() }
@@ -2678,6 +2704,12 @@ struct ContentView: View {
           control("Highlight light (EV)", value: $editor.highlightLight, range: -2...2)
           Text("Changes the light reaching the film model in each tonal region.")
             .font(.caption).foregroundStyle(.secondary)
+          control("Film light warmth", value: $editor.filmLightWarmth, range: -1...1)
+          control("Film light tint (magenta +)", value: $editor.filmLightTint, range: -1...1)
+          Text(
+            "Balances light before the stock response, so color separation changes with exposure."
+          )
+          .font(.caption).foregroundStyle(.secondary)
           Divider()
           control("Output exposure (EV)", value: $editor.exposure, range: -3...3)
           control("Contrast", value: $editor.contrast, range: 0.5...1.5)

@@ -1,4 +1,5 @@
 import CoreImage
+import CoreImage.CIFilterBuiltins
 import Foundation
 
 @main
@@ -64,6 +65,30 @@ struct RenderingProbe {
         extent: source.extent,
         arguments: [density, source, exposure, 1.0, 0.0, 0.0, stock])!
       return channels(output)
+    }
+
+    let coloredLight = CIImage(
+      color: CIColor(red: 0.22, green: 0.18, blue: 0.13, colorSpace: space)!
+    ).cropped(to: CGRect(x: 0, y: 0, width: 1, height: 1))
+    func balanced(_ image: CIImage) -> CIImage {
+      let balance = CIFilter.temperatureAndTint()
+      balance.inputImage = image
+      balance.neutral = CIVector(x: 6500, y: 0)
+      balance.targetNeutral = CIVector(x: 6100, y: -35)
+      return balance.outputImage!
+    }
+    func film(_ input: CIImage, exposure: Double) -> CIImage {
+      let density = negative.apply(
+        extent: input.extent, arguments: [input, exposure, 0.0, 1.0])!
+      return positive.apply(
+        extent: input.extent,
+        arguments: [density, input, exposure, 1.0, 0.0, 0.0, 1.0])!
+    }
+    for exposure in [-2.0, 2.0] {
+      let beforeFilm = channels(film(balanced(coloredLight), exposure: exposure))
+      let afterFilm = channels(balanced(film(coloredLight, exposure: exposure)))
+      let difference = zip(beforeFilm, afterFilm).map { abs($0 - $1) }.max() ?? 0
+      precondition(difference > 0.001, "Film-light balance acted like output balance")
     }
 
     func inputTone(_ light: Double, _ slope: Double) -> Float {
