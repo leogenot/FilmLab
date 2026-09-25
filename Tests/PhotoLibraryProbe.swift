@@ -21,6 +21,18 @@ struct PhotoLibraryProbe {
     precondition(library.selectedCatalog?.name == "Portraits")
     precondition(library.selectedCatalog?.photoPaths.isEmpty == true)
     library.importPhotos([first])
+    let portraitsID = library.selectedCatalogID
+    library.renameCatalog(portraitsID, to: "  People  ")
+    precondition(library.selectedCatalog?.name == "People")
+    library.renameCatalog(portraitsID, to: "  ")
+    precondition(library.selectedCatalog?.name == "People")
+    library.transferPhotos(
+      [first.path, "/tmp/not-in-source.jpg"], to: firstID, removeFromSource: false)
+    precondition(library.selectedCatalog?.photoPaths == [first.path])
+    library.transferPhotos([first.path], to: firstID, removeFromSource: true)
+    precondition(library.selectedCatalog?.photoPaths.isEmpty == true)
+    library.transferPhotos([first.path], to: firstID, removeFromSource: true)
+    library.importPhotos([first])
     try PhotoLibraryStore.save(library, to: url)
     var reopened = PhotoLibraryStore.load(from: url)
     precondition(reopened == library)

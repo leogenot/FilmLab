@@ -27,6 +27,37 @@ struct PhotoLibrary: Codable, Equatable {
     selectedCatalogID = catalog.id
   }
 
+  mutating func renameCatalog(_ id: UUID, to name: String) {
+    let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty, let index = catalogs.firstIndex(where: { $0.id == id }) else { return }
+    catalogs[index].name = trimmed
+  }
+
+  @discardableResult
+  mutating func transferPhotos(_ paths: [String], to destinationID: UUID, removeFromSource: Bool)
+    -> Int
+  {
+    guard destinationID != selectedCatalogID,
+      let sourceIndex = catalogs.firstIndex(where: { $0.id == selectedCatalogID }),
+      let destinationIndex = catalogs.firstIndex(where: { $0.id == destinationID })
+    else { return 0 }
+    let sourcePaths = Set(catalogs[sourceIndex].photoPaths)
+    let selectedPaths = Set(paths).intersection(sourcePaths)
+    guard !selectedPaths.isEmpty else { return 0 }
+    var transferred = 0
+    for path in catalogs[sourceIndex].photoPaths where selectedPaths.contains(path) {
+      if !catalogs[destinationIndex].photoPaths.contains(path) {
+        catalogs[destinationIndex].photoPaths.append(path)
+        transferred += 1
+      }
+    }
+    if removeFromSource {
+      catalogs[sourceIndex].photoPaths.removeAll { selectedPaths.contains($0) }
+      return selectedPaths.count
+    }
+    return transferred
+  }
+
   mutating func importPhotos(_ urls: [URL]) {
     guard let index = catalogs.firstIndex(where: { $0.id == selectedCatalogID }) else { return }
     for url in urls {

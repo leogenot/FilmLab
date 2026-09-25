@@ -1591,6 +1591,8 @@ struct ContentView: View {
   @State private var showingLibrary = false
   @State private var showingNewCatalog = false
   @State private var newCatalogName = ""
+  @State private var catalogToRename: PhotoCatalog?
+  @State private var renamedCatalogName = ""
   @State private var catalogToDelete: PhotoCatalog?
   @State private var pathToRelink: String?
   @State private var showingRelinkImporter = false
@@ -1732,6 +1734,22 @@ struct ContentView: View {
       Button("Cancel", role: .cancel) { newCatalogName = "" }
     } message: {
       Text("Catalogs organize references to your photos. Original files stay in place.")
+    }
+    .alert(
+      "Rename Catalog",
+      isPresented: Binding(
+        get: { catalogToRename != nil },
+        set: { if !$0 { catalogToRename = nil } })
+    ) {
+      TextField("Catalog name", text: $renamedCatalogName)
+      Button("Rename") {
+        if let catalogToRename {
+          library.renameCatalog(catalogToRename.id, to: renamedCatalogName)
+          saveLibrary()
+        }
+        catalogToRename = nil
+      }
+      Button("Cancel", role: .cancel) { catalogToRename = nil }
     }
     .alert(
       "Remove Catalog?",
@@ -1932,6 +1950,36 @@ struct ContentView: View {
     }
   }
 
+  private func transferPhotos(_ paths: [String], to destination: PhotoCatalog, move: Bool) {
+    let previousLibrary = library
+    let transferred = library.transferPhotos(paths, to: destination.id, removeFromSource: move)
+    guard transferred > 0 else {
+      libraryNotice = "These photos are already in \(destination.name)."
+      return
+    }
+    if saveLibrary() {
+      selectedPhotoPaths.subtract(paths)
+      libraryNotice =
+        "\(move ? "Moved" : "Copied") \(transferred) photo reference\(transferred == 1 ? "" : "s") to \(destination.name)."
+    } else {
+      library = previousLibrary
+    }
+  }
+
+  @ViewBuilder
+  private func catalogTransferMenu(for paths: [String]) -> some View {
+    Menu("Copy to Catalog") {
+      ForEach(library.catalogs.filter { $0.id != library.selectedCatalogID }) { catalog in
+        Button(catalog.name) { transferPhotos(paths, to: catalog, move: false) }
+      }
+    }
+    Menu("Move to Catalog") {
+      ForEach(library.catalogs.filter { $0.id != library.selectedCatalogID }) { catalog in
+        Button(catalog.name) { transferPhotos(paths, to: catalog, move: true) }
+      }
+    }
+  }
+
   private func relinkPhoto(from oldPath: String, to url: URL) {
     guard FileManager.default.fileExists(atPath: url.path) else {
       libraryNotice = "The selected original is unavailable."
@@ -1993,6 +2041,10 @@ struct ContentView: View {
           }
           .buttonStyle(.plain)
           .contextMenu {
+            Button("Rename Catalog") {
+              catalogToRename = catalog
+              renamedCatalogName = catalog.name
+            }
             if library.catalogs.count > 1 {
               Button("Remove Catalog", role: .destructive) {
                 catalogToDelete = catalog
@@ -2012,7 +2064,7 @@ struct ContentView: View {
             Text(library.selectedCatalog?.name ?? "Library")
               .font(.title2.weight(.medium))
             Text(
-              "\(library.selectedCatalog?.photoPaths.count ?? 0) photos · Originals stay in place"
+              "\(library.selectedCatalog?.photoPaths.count ?? 0) photo\((library.selectedCatalog?.photoPaths.count ?? 0) == 1 ? "" : "s") · Originals stay in place"
             )
             .font(.caption)
             .foregroundStyle(.secondary)
@@ -2036,6 +2088,9 @@ struct ContentView: View {
                 applySettingsToSelection()
               }
               .disabled(selectedPhotoPaths.isEmpty || applyingBatch)
+              if library.catalogs.count > 1, !selectedPhotoPaths.isEmpty {
+                catalogTransferMenu(for: Array(selectedPhotoPaths))
+              }
             }
             Spacer()
             if editor.canUndoBatch {
@@ -2106,6 +2161,9 @@ struct ContentView: View {
                   .buttonStyle(.plain)
                   .disabled(applyingBatch)
                   .contextMenu {
+                    if library.catalogs.count > 1 {
+                      catalogTransferMenu(for: [path])
+                    }
                     if !FileManager.default.fileExists(atPath: path) {
                       Button("Locate Original…") {
                         pathToRelink = path
