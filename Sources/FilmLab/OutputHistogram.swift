@@ -5,6 +5,7 @@ struct OutputHistogram: View {
   let bins: [Double]
   let blackFraction: Double
   let whiteFraction: Double
+  let outsideSRGBFraction: Double
 
   var body: some View {
     VStack(alignment: .leading, spacing: 7) {
@@ -37,6 +38,11 @@ struct OutputHistogram: View {
         Spacer()
         Text("Near white \(whiteFraction.formatted(.percent.precision(.fractionLength(1))))")
       }
+      .font(.caption2)
+      .foregroundStyle(.secondary)
+      Text(
+        "Outside sRGB before output: \(outsideSRGBFraction.formatted(.percent.precision(.fractionLength(1))))"
+      )
       .font(.caption2)
       .foregroundStyle(.secondary)
     }

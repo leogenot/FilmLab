@@ -17,6 +17,7 @@ struct PreviewHistogram: Sendable {
   let bins: [Double]
   let blackFraction: Double
   let whiteFraction: Double
+  let outsideSRGBFraction: Double
 }
 
 actor PreviewRenderer {
@@ -64,10 +65,27 @@ actor PreviewRenderer {
     }
     let peak = max(1, counts.max() ?? 1)
     let total = Double(width * height)
+    var linearPixels = [Float](repeating: 0, count: width * height * 4)
+    linearPixels.withUnsafeMutableBytes { bytes in
+      if let base = bytes.baseAddress {
+        context.render(
+          reduced, toBitmap: base, rowBytes: width * 4 * MemoryLayout<Float>.size,
+          bounds: bounds, format: .RGBAf,
+          colorSpace: CGColorSpace(name: CGColorSpace.extendedLinearSRGB)!)
+      }
+    }
+    var outside = 0
+    for offset in stride(from: 0, to: linearPixels.count, by: 4) {
+      let channels = linearPixels[offset..<(offset + 3)]
+      if channels.contains(where: { !$0.isFinite || $0 < -0.0001 || $0 > 1.0001 }) {
+        outside += 1
+      }
+    }
     return PreviewHistogram(
       bins: counts.map { Double($0) / Double(peak) },
       blackFraction: Double(black) / total,
-      whiteFraction: Double(white) / total
+      whiteFraction: Double(white) / total,
+      outsideSRGBFraction: Double(outside) / total
     )
   }
 

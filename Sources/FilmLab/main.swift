@@ -1497,7 +1497,8 @@ struct ContentView: View {
           OutputHistogram(
             bins: histogram.bins,
             blackFraction: histogram.blackFraction,
-            whiteFraction: histogram.whiteFraction
+            whiteFraction: histogram.whiteFraction,
+            outsideSRGBFraction: histogram.outsideSRGBFraction
           )
         }
         switch panel {
