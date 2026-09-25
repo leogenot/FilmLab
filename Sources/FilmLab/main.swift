@@ -394,6 +394,7 @@ final class PhotoEditor {
   var editRecoveryURL: URL?
   var showOriginal = false
   var showGamutWarning = false
+  var highPrecisionPreview = UserDefaults.standard.bool(forKey: "FilmLab.highPrecisionPreview")
   var inspectPixel = false
   var pixelReadout: PixelReadout?
   var selectedPixel: CGPoint?
@@ -1616,7 +1617,8 @@ final class PhotoEditor {
     let request = PreviewRequest(
       image: image, scale: scale, sourceURL: scopedURL,
       originalImage: compareEnabled ? source.map { framedImage($0) } : nil,
-      showGamutWarning: showGamutWarning && !showOriginal && !showLocalMask && !showCropBounds
+      showGamutWarning: showGamutWarning && !showOriginal && !showLocalMask && !showCropBounds,
+      highPrecision: highPrecisionPreview
     )
     previewTask = Task {
       do { try await Task.sleep(for: .milliseconds(60)) } catch { return }
@@ -2108,6 +2110,10 @@ struct ContentView: View {
     }
     .onChange(of: scenePhase) {
       if scenePhase != .active { editor.flushEdits() }
+    }
+    .onChange(of: editor.highPrecisionPreview) {
+      UserDefaults.standard.set(editor.highPrecisionPreview, forKey: "FilmLab.highPrecisionPreview")
+      editor.renderPreview()
     }
     .onChange(of: editor.exposure) { editor.editsChanged() }
     .onChange(of: editor.contrast) { editor.editsChanged() }
@@ -2954,6 +2960,12 @@ struct ContentView: View {
             outsideSRGBFraction: histogram.outsideSRGBFraction
           )
         }
+        Toggle("Float preview", isOn: $editor.highPrecisionPreview)
+          .font(.caption)
+          .help(
+            "Develop previews with the 32-bit float working format used for export. Display remains sRGB; full-size previews use more memory."
+          )
+          .disabled(editor.preview == nil)
         if editor.preview != nil {
           Toggle(
             "Inspect pixel",

@@ -6,6 +6,19 @@ struct PreviewRequest: @unchecked Sendable {
   let sourceURL: URL?
   let originalImage: CIImage?
   let showGamutWarning: Bool
+  let highPrecision: Bool
+
+  init(
+    image: CIImage, scale: CGFloat, sourceURL: URL?, originalImage: CIImage?,
+    showGamutWarning: Bool, highPrecision: Bool = false
+  ) {
+    self.image = image
+    self.scale = scale
+    self.sourceURL = sourceURL
+    self.originalImage = originalImage
+    self.showGamutWarning = showGamutWarning
+    self.highPrecision = highPrecision
+  }
 }
 
 struct PreviewResult: @unchecked Sendable {
@@ -29,16 +42,22 @@ struct PreviewHistogram: Sendable {
 
 actor PreviewRenderer {
   private let gamutWarningKernel = FilmKernels.kernel("outputGamutWarning")
-  private let context = CIContext(options: [
+  private let halfContext = CIContext(options: [
     .useSoftwareRenderer: false,
     .workingColorSpace: CGColorSpace(name: CGColorSpace.extendedLinearSRGB)!,
     .workingFormat: CIFormat.RGBAh,
+  ])
+  private let floatContext = CIContext(options: [
+    .useSoftwareRenderer: false,
+    .workingColorSpace: CGColorSpace(name: CGColorSpace.extendedLinearSRGB)!,
+    .workingFormat: CIFormat.RGBAf,
   ])
 
   func render(_ request: PreviewRequest) -> PreviewResult? {
     let accessing = request.sourceURL?.startAccessingSecurityScopedResource() ?? false
     defer { if accessing { request.sourceURL?.stopAccessingSecurityScopedResource() } }
     guard !Task.isCancelled else { return nil }
+    let context = request.highPrecision ? floatContext : halfContext
     let displayImage: CIImage
     if request.showGamutWarning {
       guard let gamutWarningKernel,
@@ -49,13 +68,18 @@ actor PreviewRenderer {
     } else {
       displayImage = request.image
     }
-    guard let image = renderImage(displayImage, scale: request.scale) else { return nil }
-    let original = request.originalImage.flatMap { renderImage($0, scale: request.scale) }
+    guard let image = renderImage(displayImage, scale: request.scale, context: context) else {
+      return nil
+    }
+    let original = request.originalImage.flatMap {
+      renderImage($0, scale: request.scale, context: context)
+    }
     guard !Task.isCancelled, request.originalImage == nil || original != nil else { return nil }
-    return PreviewResult(image: image, original: original, histogram: histogram(for: request.image))
+    return PreviewResult(
+      image: image, original: original, histogram: histogram(for: request.image, context: context))
   }
 
-  private func histogram(for source: CIImage) -> PreviewHistogram? {
+  private func histogram(for source: CIImage, context: CIContext) -> PreviewHistogram? {
     let scale = min(1, 256 / max(source.extent.width, source.extent.height))
     let reduced = source.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
     let bounds = reduced.extent.integral
@@ -132,7 +156,7 @@ actor PreviewRenderer {
     )
   }
 
-  private func renderImage(_ source: CIImage, scale: CGFloat) -> CGImage? {
+  private func renderImage(_ source: CIImage, scale: CGFloat, context: CIContext) -> CGImage? {
     let reduced = source.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
     guard !Task.isCancelled else { return nil }
     return context.createCGImage(

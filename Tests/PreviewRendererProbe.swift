@@ -63,10 +63,17 @@ struct PreviewRendererProbe {
       PreviewRequest(
         image: gradientImage, scale: 1, sourceURL: nil, originalImage: nil,
         showGamutWarning: false))
+    let floatPreview = await renderer.render(
+      PreviewRequest(
+        image: gradientImage, scale: 1, sourceURL: nil, originalImage: image,
+        showGamutWarning: false, highPrecision: true))
+    precondition(floatPreview?.original?.width == 2)
+    precondition(floatPreview?.histogram?.redBins.count == 64)
     let exportURL = directory.appendingPathComponent("parity.tiff")
     try await ImageExporter().export(
       ExportRequest(image: gradientImage, url: exportURL, format: .tiff16SRGB, sourceURL: nil))
-    guard let previewImage = preview?.image, let exportedImage = CIImage(contentsOf: exportURL)
+    guard let previewImage = preview?.image, let floatImage = floatPreview?.image,
+      let exportedImage = CIImage(contentsOf: exportURL)
     else {
       preconditionFailure("Preview or TIFF export is unreadable")
     }
@@ -85,6 +92,7 @@ struct PreviewRendererProbe {
       return output
     }
     let previewPixels = pixels(CIImage(cgImage: previewImage))
+    let floatPixels = pixels(CIImage(cgImage: floatImage))
     let exportPixels = pixels(exportedImage)
     let maximumDifference =
       zip(previewPixels, exportPixels).map {
@@ -92,7 +100,15 @@ struct PreviewRendererProbe {
       }.max() ?? 0
     precondition(
       maximumDifference <= 2, "Preview and TIFF export differ by \(maximumDifference) levels")
+    let floatMaximumDifference =
+      zip(floatPixels, exportPixels).map { abs(Int($0) - Int($1)) }.max() ?? 0
+    precondition(
+      floatMaximumDifference <= 2,
+      "Float preview and TIFF export differ by \(floatMaximumDifference) levels")
     print("RGB output histogram, extended-linear gamut diagnostic, and preview warning passed")
     print("Preview and 16-bit sRGB TIFF agree within \(maximumDifference) 8-bit levels at 100%")
+    print(
+      "Float preview and 16-bit sRGB TIFF agree within \(floatMaximumDifference) 8-bit levels at 100%"
+    )
   }
 }

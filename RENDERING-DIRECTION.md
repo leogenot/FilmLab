@@ -4,7 +4,7 @@ FilmLab is a digital image editor that simulates photographic film. The film sto
 
 ## What the current prototype does
 
-`Sources/FilmLab/main.swift` decodes RAW through `CIRAWFilter` and JPEG through Core Image, then applies the provisional exposure-dependent stock response and finishing controls. RAW decoder settings, including white balance, act before the stock. Shot Exposure changes the stock's log-light input; Output Exposure, contrast, saturation, warmth and color timing act after it. Preview and export use extended-linear sRGB working spaces with half-float and float precision respectively, then convert to their output profiles. The stock response is still a study model rather than a measured emulsion profile.
+`Sources/FilmLab/main.swift` decodes RAW through `CIRAWFilter` and JPEG through Core Image, then applies the provisional exposure-dependent stock response and finishing controls. RAW decoder settings, including white balance, act before the stock. Shot Exposure changes the stock's log-light input; Output Exposure, contrast, saturation, warmth and color timing act after it. Preview uses an extended-linear sRGB half-float working space by default, with an optional float working mode matching export; both convert to their output profiles. The stock response is still a study model rather than a measured emulsion profile.
 
 ## Target pipeline
 
@@ -41,7 +41,7 @@ The app now has a Fit/100% switch. At 100%, it renders the full-resolution image
 
 ## Responsive rendering and export, 24 September 2026
 
-Preview rendering now runs in a separate actor with a 16-bit half-float extended linear sRGB working buffer. Rapid control changes are debounced and older results are discarded. Full-resolution JPEG and 16-bit Display P3 TIFF exports run in a separate actor with a 32-bit float working buffer, so export does not freeze the editor. Each background job retains access to its source file until it completes. A Sony ARW export was verified at 4672 × 7008 pixels and 16 bits per sample. This verifies the output container and working format, not a measured film response or guaranteed recovery of source detail.
+Preview rendering runs in a separate actor with a 16-bit half-float extended linear sRGB working buffer by default and an optional 32-bit float mode. Rapid control changes are debounced and older results are discarded. Full-resolution JPEG and 16-bit Display P3 TIFF exports run in a separate actor with a 32-bit float working buffer, so export does not freeze the editor. Each background job retains access to its source file until it completes. A Sony ARW export was verified at 4672 × 7008 pixels and 16 bits per sample. This verifies the output container and working format, not a measured film response or guaranteed recovery of source detail.
 
 ## Selective color, 24 September 2026
 
@@ -460,3 +460,9 @@ The signed app copied a disposable Sony RAW Film workspace at +1.00 Shot Exposur
 Library selection can paste the copied workspace to multiple photos. It uses the same per-target recovery checks, pre-change backups, and persistent Undo Last Batch manifest as full-grade batch paste. The operation skips the currently open source photo. Only the copied workspace changes; Develop keeps each target's RAW decoder and white-balance or rendered-input settings.
 
 In the signed app, a JPEG source at +0.80 Shot Exposure supplied its Film workspace to a selected Sony RAW and a second disposable JPEG. The batch reported two applied photos. The persisted manifest recorded both targets changing from zero to +0.80 Shot Exposure; the RAW kept linear decoding and camera white balance, while its Stock Amount followed the copied Film workspace from 1.00 to 0.70. After app restart, Undo Last Batch restored both targets and cleared the manifest. The RAW reopened at zero Shot Exposure and 1.00 Stock Amount. The source's test exposure was reset, and the extra JPEG reference was removed from the catalog. This verifies a two-target Film transfer and restart-safe undo, not every workspace combination or film-stock accuracy.
+
+## Float preview (2026-09-25)
+
+Preview rendering now offers an optional 32-bit float working context alongside the faster half-float default. The toggle is a global app preference, survives relaunch, and applies to Fit and 100% previews, comparison images, and preview diagnostics. Export already uses a 32-bit float working context. Final on-screen previews still convert to sRGB display pixels, so the option improves consistency of intermediate calculations rather than increasing monitor bit depth or source detail.
+
+The synthetic preview probe rendered both modes, checked the float mode's comparison image and histogram, and found zero 8-bit channel difference between either full-size preview and a 16-bit sRGB TIFF of the same 64 × 64 gradient. The existing real-image probe passed for disposable Sony RAW and JPEG at −2, 0, and +2 EV in the default half-float mode; it does not establish exact parity for the full editor graph. In the signed app, the JPEG and RAW opened and rendered with Float preview enabled. A full-size 4672 × 7008 RAW view displayed, and the preference remained enabled after relaunch. Float full-size views use more memory and may render more slowly. The film-stock models remain uncalibrated.
