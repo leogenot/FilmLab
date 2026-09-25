@@ -49,6 +49,8 @@ enum Framing {
       case 2: 4.0 / 5.0
       case 3: 3.0 / 2.0
       case 4: 16.0 / 9.0
+      case 6: 2.0 / 3.0
+      case 7: 9.0 / 16.0
       default: nil
       }
     if aspect == 5 {
@@ -119,6 +121,8 @@ enum Framing {
       case 2: 4.0 / 5.0
       case 3: 3.0 / 2.0
       case 4: 16.0 / 9.0
+      case 6: 2.0 / 3.0
+      case 7: 9.0 / 16.0
       default: nil
       }
     guard extent.width > 0, extent.height > 0 else { return result }

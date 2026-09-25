@@ -53,6 +53,10 @@ struct FramingProbe {
     precondition(abs(clamped.normalizedBounds.maxY - 1) < 0.001)
     let square = framed(0, 10, 1)
     precondition(square.extent.width == square.extent.height)
+    let portrait = framed(0, 0, 6)
+    precondition(portrait.extent.width == 300 && portrait.extent.height == 450)
+    let tall = framed(0, 0, 7)
+    precondition(tall.extent.width == 253 && tall.extent.height == 450)
     func sourceLocation(
       _ x: Double, _ y: Double, turns: Int = 0, degrees: Double = 0,
       aspect: Int = 0
@@ -77,6 +81,9 @@ struct FramingProbe {
     let croppedPoint = sourceLocation(0.5, 0, aspect: 1)
     precondition(abs(croppedPoint.x - 0.5) < 0.001)
     precondition(abs(croppedPoint.y - 5.0 / 6.0) < 0.001)
+    let tallPoint = sourceLocation(0, 0.5, aspect: 7)
+    precondition(abs(tallPoint.x - 23.0 / 300.0) < 0.001)
+    precondition(abs(tallPoint.y - 0.5) < 0.001)
     precondition(
       Framing.sourceLocation(
         displayX: 1.1, displayY: 0.5, sourceExtent: source.extent,

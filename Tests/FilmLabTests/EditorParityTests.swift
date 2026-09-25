@@ -78,20 +78,66 @@ final class EditorParityTests: XCTestCase {
           hueRangeEnabled: true, hueCenter: 210,
           hueWidth: 60, hueFeather: 20)
       ]
-      editor.frameRotation = 1
-      editor.frameAspect = 2
-      editor.preview = nil
-      editor.editsChanged()
-      try await waitUntil { !editor.isRendering && editor.preview != nil }
-      XCTAssertNil(editor.error)
+      for scenario in ["rotatedPortrait", "darkFreeCrop", "brightWideCrop", "tallPortrait"] {
+        switch scenario {
+        case "darkFreeCrop":
+          editor.shotExposure = -1.5
+          editor.shadowLight = 0.6
+          editor.highlightLight = 0
+          editor.frameRotation = 3
+          editor.frameStraighten = 8
+          editor.frameAspect = 5
+          editor.frameFreeCrop = FreeCrop(
+            centerX: 0.39, centerY: 0.58, width: 0.63, height: 0.73)
+        case "brightWideCrop":
+          editor.shotExposure = 1.25
+          editor.shadowLight = -0.2
+          editor.highlightLight = -0.4
+          editor.frameRotation = 0
+          editor.frameStraighten = -6
+          editor.frameAspect = 4
+          editor.frameOffsetX = 0.6
+          editor.frameOffsetY = -0.35
+        case "tallPortrait":
+          editor.shotExposure = 0.6
+          editor.shadowLight = 0.1
+          editor.highlightLight = -0.1
+          editor.frameRotation = 0
+          editor.frameStraighten = 4
+          editor.frameAspect = 7
+          editor.frameOffsetX = -0.6
+          editor.frameOffsetY = 0.25
+        default:
+          editor.frameRotation = 1
+          editor.frameAspect = 2
+        }
+        editor.preview = nil
+        editor.editsChanged()
+        try await waitUntil { !editor.isRendering && editor.preview != nil }
+        XCTAssertNil(editor.error)
 
-      let preview = try XCTUnwrap(editor.preview)
-      let previewImage = try XCTUnwrap(
-        preview.cgImage(forProposedRect: nil, context: nil, hints: nil))
-      let summary = await editor.exportBatch([input.path], to: directory, format: .tiff16SRGB) {
-        _, _ in
+        let preview = try XCTUnwrap(editor.preview)
+        let previewImage = try XCTUnwrap(
+          preview.cgImage(forProposedRect: nil, context: nil, hints: nil))
+        let outputDirectory = directory.appendingPathComponent("\(kind)-\(scenario)")
+        try FileManager.default.createDirectory(
+          at: outputDirectory, withIntermediateDirectories: true)
+        let summary = await editor.exportBatch(
+          [input.path], to: outputDirectory, format: .tiff16SRGB
+        ) { _, _ in }
+        XCTAssertTrue(summary.contains("Exported 1 photo"), summary)
+        let output = outputDirectory.appendingPathComponent("\(kind)-FilmLab.tiff")
+        let exported = try XCTUnwrap(CIImage(contentsOf: output))
+        XCTAssertEqual(
+          Double(previewImage.width) / Double(previewImage.height),
+          Double(exported.extent.width / exported.extent.height), accuracy: 0.005)
+        let difference = compare(preview: previewImage, export: exported)
+        print(
+          "Full graph \(kind) \(scenario): mean \(difference.mean), max \(difference.maximum) / 255"
+        )
+        XCTAssertLessThan(
+          difference.mean, 2.5, "\(kind) \(scenario) preview/export color drift")
       }
-      XCTAssertTrue(summary.contains("Exported 1 photo"), summary)
       let savedData = try Data(contentsOf: location.primaryURL)
       let saved = try XCTUnwrap(
         JSONSerialization.jsonObject(with: savedData) as? [String: Any])
@@ -101,11 +147,6 @@ final class EditorParityTests: XCTestCase {
       XCTAssertEqual(area["toneWidth"] as? Double, 4)
       XCTAssertEqual(area["hueRangeEnabled"] as? Bool, true)
       XCTAssertEqual(area["hueCenter"] as? Double, 210)
-      let output = directory.appendingPathComponent("\(kind)-FilmLab.tiff")
-      let exported = try XCTUnwrap(CIImage(contentsOf: output))
-      let difference = compare(preview: previewImage, export: exported)
-      print("Full graph \(kind): mean \(difference.mean), max \(difference.maximum) / 255")
-      XCTAssertLessThan(difference.mean, 2.5, "\(kind) preview/export color drift")
     }
   }
 
@@ -129,10 +170,8 @@ final class EditorParityTests: XCTestCase {
       .workingFormat: CIFormat.RGBAf,
     ])
     let bounds = CGRect(x: 0, y: 0, width: width, height: height)
-    let reduced = export.transformed(
-      by: CGAffineTransform(
-        scaleX: CGFloat(width) / export.extent.width,
-        y: CGFloat(height) / export.extent.height))
+    let scale = min(1, 1800 / max(export.extent.width, export.extent.height))
+    let reduced = export.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
     let space = CGColorSpace(name: CGColorSpace.sRGB)!
     func pixels(_ image: CIImage) -> [UInt8] {
       var result = [UInt8](repeating: 0, count: width * height * 4)

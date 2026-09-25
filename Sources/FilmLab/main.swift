@@ -3605,6 +3605,8 @@ struct ContentView: View {
             Text("Original").tag(0)
             Text("Square 1:1").tag(1)
             Text("Portrait 4:5").tag(2)
+            Text("Portrait 2:3").tag(6)
+            Text("Tall 9:16").tag(7)
             Text("Landscape 3:2").tag(3)
             Text("Wide 16:9").tag(4)
             Text("Freeform").tag(5)
