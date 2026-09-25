@@ -24,3 +24,46 @@ struct FreeCrop: Codable, Equatable {
     return CGRect(x: x, y: y, width: width, height: height)
   }
 }
+
+enum FreeCropCorner: CaseIterable {
+  case topLeft
+  case topRight
+  case bottomLeft
+  case bottomRight
+
+  func point(in bounds: CGRect) -> CGPoint {
+    switch self {
+    case .topLeft: CGPoint(x: bounds.minX, y: bounds.minY)
+    case .topRight: CGPoint(x: bounds.maxX, y: bounds.minY)
+    case .bottomLeft: CGPoint(x: bounds.minX, y: bounds.maxY)
+    case .bottomRight: CGPoint(x: bounds.maxX, y: bounds.maxY)
+    }
+  }
+}
+
+extension FreeCrop {
+  func resized(corner: FreeCropCorner, dx: Double, dy: Double) -> FreeCrop {
+    let bounds = normalizedBounds
+    var left = Double(bounds.minX)
+    var right = Double(bounds.maxX)
+    var top = Double(bounds.minY)
+    var bottom = Double(bounds.maxY)
+    switch corner {
+    case .topLeft:
+      left = min(max(left + dx, 0), right - 0.1)
+      top = min(max(top + dy, 0), bottom - 0.1)
+    case .topRight:
+      right = max(min(right + dx, 1), left + 0.1)
+      top = min(max(top + dy, 0), bottom - 0.1)
+    case .bottomLeft:
+      left = min(max(left + dx, 0), right - 0.1)
+      bottom = max(min(bottom + dy, 1), top + 0.1)
+    case .bottomRight:
+      right = max(min(right + dx, 1), left + 0.1)
+      bottom = max(min(bottom + dy, 1), top + 0.1)
+    }
+    return FreeCrop(
+      centerX: (left + right) / 2, centerY: (top + bottom) / 2,
+      width: right - left, height: bottom - top)
+  }
+}

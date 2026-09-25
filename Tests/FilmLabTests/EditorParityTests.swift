@@ -47,6 +47,15 @@ final class EditorParityTests: XCTestCase {
         !editor.isOpening && editor.sourceURL == input && editor.preview != nil
       }
       XCTAssertNil(editor.error)
+      editor.frameAspect = 5
+      editor.inspectPixel = true
+      editor.selectedPixel = CGPoint(x: 0.5, y: 0.5)
+      editor.setCropBoundsPreview(true)
+      XCTAssertTrue(editor.showCropBounds)
+      XCTAssertFalse(editor.inspectPixel)
+      XCTAssertNil(editor.selectedPixel)
+      editor.setCropBoundsPreview(false)
+      editor.frameAspect = 0
       editor.highPrecisionPreview = false
       if kind == "JPEG" {
         editor.inputTone = 1.15

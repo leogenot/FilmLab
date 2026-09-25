@@ -1596,6 +1596,11 @@ final class PhotoEditor {
     setPickingNeutralArea(false)
     showCropBounds = visible && frameAspect == 5 && source != nil
     if showCropBounds {
+      inspectPixel = false
+      selectedPixel = nil
+      pixelReadout = nil
+      pixelTask?.cancel()
+      pixelVersion += 1
       showOriginal = false
       showLocalMask = false
       placingLocalArea = false
@@ -1612,6 +1617,12 @@ final class PhotoEditor {
       max(original.centerX + dx, frameFreeCrop.width / 2), 1 - frameFreeCrop.width / 2)
     frameFreeCrop.centerY = min(
       max(original.centerY + dy, frameFreeCrop.height / 2), 1 - frameFreeCrop.height / 2)
+    editsChanged()
+  }
+
+  func resizeFreeCrop(corner: FreeCropCorner, dx: Double, dy: Double, from original: FreeCrop) {
+    guard showCropBounds else { return }
+    frameFreeCrop = original.resized(corner: corner, dx: dx, dy: dy)
     editsChanged()
   }
 
@@ -2509,6 +2520,7 @@ struct ContentView: View {
   @State private var selectedColorBand = 0
   @State private var selectedCurveChannel = 0
   @State private var cropDragOrigin: FreeCrop?
+  @State private var cropResizeOrigin: FreeCrop?
   @State private var paintDragPoints: [CGPoint] = []
   @Environment(\.displayScale) private var displayScale
   @Environment(\.scenePhase) private var scenePhase
@@ -4054,25 +4066,49 @@ struct ContentView: View {
                   let left = (geometry.size.width - imageWidth) / 2
                   let top = (geometry.size.height - imageHeight) / 2
                   let bounds = editor.frameFreeCrop.normalizedBounds
-                  Rectangle()
-                    .fill(.clear)
-                    .strokeBorder(.white, lineWidth: 2)
-                    .background(Color.white.opacity(0.02))
-                    .frame(width: imageWidth * bounds.width, height: imageHeight * bounds.height)
-                    .position(
-                      x: left + imageWidth * bounds.midX,
-                      y: top + imageHeight * bounds.midY
-                    )
-                    .contentShape(Rectangle())
-                    .gesture(
-                      DragGesture().onChanged { value in
-                        if cropDragOrigin == nil { cropDragOrigin = editor.frameFreeCrop }
-                        guard let cropDragOrigin else { return }
-                        editor.moveFreeCrop(
-                          dx: value.translation.width / imageWidth,
-                          dy: value.translation.height / imageHeight,
-                          from: cropDragOrigin)
-                      }.onEnded { _ in cropDragOrigin = nil })
+                  ZStack {
+                    Rectangle()
+                      .fill(.clear)
+                      .strokeBorder(.white, lineWidth: 2)
+                      .background(Color.white.opacity(0.02))
+                      .frame(width: imageWidth * bounds.width, height: imageHeight * bounds.height)
+                      .position(
+                        x: left + imageWidth * bounds.midX,
+                        y: top + imageHeight * bounds.midY
+                      )
+                      .contentShape(Rectangle())
+                      .gesture(
+                        DragGesture().onChanged { value in
+                          if cropDragOrigin == nil { cropDragOrigin = editor.frameFreeCrop }
+                          guard let cropDragOrigin else { return }
+                          editor.moveFreeCrop(
+                            dx: value.translation.width / imageWidth,
+                            dy: value.translation.height / imageHeight,
+                            from: cropDragOrigin)
+                        }.onEnded { _ in cropDragOrigin = nil })
+                    ForEach(FreeCropCorner.allCases, id: \.self) { corner in
+                      let point = corner.point(in: bounds)
+                      Circle()
+                        .fill(Color.white)
+                        .strokeBorder(Color.black.opacity(0.75), lineWidth: 1)
+                        .frame(width: 14, height: 14)
+                        .position(
+                          x: left + imageWidth * point.x,
+                          y: top + imageHeight * point.y
+                        )
+                        .highPriorityGesture(
+                          DragGesture().onChanged { value in
+                            if cropResizeOrigin == nil { cropResizeOrigin = editor.frameFreeCrop }
+                            guard let cropResizeOrigin else { return }
+                            editor.resizeFreeCrop(
+                              corner: corner,
+                              dx: value.translation.width / imageWidth,
+                              dy: value.translation.height / imageHeight,
+                              from: cropResizeOrigin)
+                          }.onEnded { _ in cropResizeOrigin = nil })
+                    }
+                  }
+                  .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
               }
               .overlay {
@@ -4736,8 +4772,10 @@ struct ContentView: View {
             control("Height", value: freeCropBinding(\.height), range: 0.1...1)
             control("Horizontal center", value: freeCropBinding(\.centerX), range: 0...1)
             control("Vertical center", value: freeCropBinding(\.centerY), range: 0...1)
-            Text("Show bounds to move the rectangle on the photo. Export uses the selected crop.")
-              .font(.caption).foregroundStyle(.secondary)
+            Text(
+              "Show bounds to move or resize the crop on the photo. Export uses the selected crop."
+            )
+            .font(.caption).foregroundStyle(.secondary)
           } else if editor.frameAspect != 0 {
             control("Horizontal position", value: $editor.frameOffsetX, range: -1...1)
             control("Vertical position", value: $editor.frameOffsetY, range: -1...1)
