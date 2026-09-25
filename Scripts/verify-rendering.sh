@@ -34,6 +34,11 @@ DEVELOPER_DIR="$developer_dir" swiftc \
   -o "$project_dir/.build/FilmLabExporterProbe"
 "$project_dir/.build/FilmLabExporterProbe"
 DEVELOPER_DIR="$developer_dir" swiftc \
+  "$project_dir/Sources/FilmLab/ImageDecoder.swift" \
+  "$project_dir/Tests/ImageDecoderProbe.swift" \
+  -o "$project_dir/.build/FilmLabImageDecoderProbe"
+"$project_dir/.build/FilmLabImageDecoderProbe"
+DEVELOPER_DIR="$developer_dir" swiftc \
   "$project_dir/Sources/FilmLab/SavedEditStore.swift" \
   "$project_dir/Tests/SavedEditStoreProbe.swift" \
   -o "$project_dir/.build/FilmLabSavedEditStoreProbe"

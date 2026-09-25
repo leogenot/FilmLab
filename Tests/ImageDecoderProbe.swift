@@ -1,0 +1,46 @@
+import CoreImage
+import Foundation
+import ImageIO
+
+enum EditorError: Error {
+  case unsupported
+}
+
+@main
+struct ImageDecoderProbe {
+  static func main() async throws {
+    let linear = CGColorSpace(name: CGColorSpace.extendedLinearSRGB)!
+    let output = CGColorSpace(name: CGColorSpace.sRGB)!
+    let context = CIContext(options: [.workingColorSpace: linear, .workingFormat: CIFormat.RGBAf])
+    let first = CIImage(color: CIColor(red: 0.5, green: 0.5, blue: 0.5, colorSpace: linear)!)
+      .cropped(to: CGRect(x: 0, y: 0, width: 1, height: 1))
+    let second = CIImage(color: CIColor(red: 0.5005, green: 0.5, blue: 0.5, colorSpace: linear)!)
+      .cropped(to: CGRect(x: 1, y: 0, width: 1, height: 1))
+    let source = first.composited(over: second)
+    let url = FileManager.default.temporaryDirectory
+      .appendingPathComponent("FilmLabDecoderProbe-\(UUID().uuidString).tiff")
+    defer { try? FileManager.default.removeItem(at: url) }
+    try context.writeTIFFRepresentation(
+      of: source, to: url, format: .RGBA16, colorSpace: output, options: [:])
+
+    guard let file = CGImageSourceCreateWithURL(url as CFURL, nil),
+      let metadata = CGImageSourceCopyPropertiesAtIndex(file, 0, nil) as? [String: Any]
+    else { preconditionFailure("TIFF fixture is unreadable") }
+    precondition(metadata[kCGImagePropertyDepth as String] as? Int == 16)
+
+    let decoded = try await ImageDecoder().decode(
+      from: url, isRAW: false, flatRAW: false, highlightRecovery: false,
+      temperature: nil, tint: nil)
+    precondition(decoded.image.extent.size == CGSize(width: 2, height: 1))
+    var pixels = [Float](repeating: 0, count: 8)
+    pixels.withUnsafeMutableBytes { bytes in
+      context.render(
+        decoded.image, toBitmap: bytes.baseAddress!, rowBytes: 32,
+        bounds: CGRect(x: 0, y: 0, width: 2, height: 1), format: .RGBAf,
+        colorSpace: linear)
+    }
+    let difference = pixels[4] - pixels[0]
+    precondition(difference > 0.0002 && difference < 0.001, "16-bit input was quantized")
+    print("File-backed 16-bit TIFF decode retained sub-8-bit detail: \(difference)")
+  }
+}

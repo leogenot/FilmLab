@@ -887,7 +887,7 @@ final class PhotoEditor {
       balance.neutral = CIVector(x: 6500, y: 0)
       balance.targetNeutral = CIVector(x: 6500 - inputWarmth * 1000, y: inputTint * 100)
       guard let balanced = balance.outputImage else {
-        error = "The JPEG input balance could not be rendered."
+        error = "The rendered-image input balance could not be rendered."
         return nil
       }
       image = balanced
@@ -1517,11 +1517,11 @@ struct ContentView: View {
             Divider()
           }
           if !editor.isRAWSource {
-            Text("JPEG input balance").font(.headline)
+            Text("Rendered input balance").font(.headline)
             control("Input warmth", value: $editor.inputWarmth, range: -1...1)
             control("Input tint", value: $editor.inputTint, range: -1...1)
             Text(
-              "Balances the rendered JPEG before film processing; clipped source detail stays lost."
+              "Balances non-RAW color before film processing; clipped source detail stays lost."
             )
             .font(.caption).foregroundStyle(.secondary)
             Divider()

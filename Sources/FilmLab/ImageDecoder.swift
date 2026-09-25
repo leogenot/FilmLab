@@ -46,8 +46,7 @@ actor ImageDecoder {
         image: image, cameraTemperature: cameraTemperature, cameraTint: cameraTint,
         highlightRecoverySupported: highlightRecoverySupported)
     }
-    let data = try Data(contentsOf: url)
-    guard let image = CIImage(data: data, options: [.applyOrientationProperty: true]) else {
+    guard let image = CIImage(contentsOf: url, options: [.applyOrientationProperty: true]) else {
       throw EditorError.unsupported
     }
     try Task.checkCancellation()
