@@ -15,6 +15,18 @@ struct ExporterProbe {
     try original.write(to: sourceURL)
     let image = CIImage(color: CIColor(red: 0.2, green: 0.4, blue: 0.6))
       .cropped(to: CGRect(x: 0, y: 0, width: 32, height: 24))
+      .settingProperties([
+        kCGImagePropertyOrientation as String: 8,
+        kCGImagePropertyExifDictionary as String: [
+          kCGImagePropertyExifPixelXDimension as String: 100,
+          kCGImagePropertyExifPixelYDimension as String: 200,
+          kCGImagePropertyExifDateTimeOriginal as String: "2025:03:09 15:13:37",
+        ],
+        kCGImagePropertyTIFFDictionary as String: [
+          kCGImagePropertyTIFFMake as String: "FilmLab Test Camera",
+          kCGImagePropertyTIFFOrientation as String: 8,
+        ],
+      ])
     let exporter = ImageExporter()
 
     do {
@@ -29,7 +41,19 @@ struct ExporterProbe {
     let jpegURL = directory.appendingPathComponent("output.jpg")
     try await exporter.export(
       ExportRequest(image: image, url: jpegURL, format: .jpeg, sourceURL: sourceURL))
-    precondition(CGImageSourceCreateWithURL(jpegURL as CFURL, nil) != nil)
+    guard let jpeg = CGImageSourceCreateWithURL(jpegURL as CFURL, nil),
+      let jpegProperties = CGImageSourceCopyPropertiesAtIndex(jpeg, 0, nil) as? [String: Any],
+      let jpegExif = jpegProperties[kCGImagePropertyExifDictionary as String] as? [String: Any],
+      let jpegTIFF = jpegProperties[kCGImagePropertyTIFFDictionary as String] as? [String: Any]
+    else { preconditionFailure("JPEG metadata is unreadable") }
+    precondition(jpegProperties[kCGImagePropertyPixelWidth as String] as? Int == 32)
+    precondition(jpegProperties[kCGImagePropertyPixelHeight as String] as? Int == 24)
+    precondition(jpegExif[kCGImagePropertyExifPixelXDimension as String] as? Int == 32)
+    precondition(jpegExif[kCGImagePropertyExifPixelYDimension as String] as? Int == 24)
+    precondition(
+      jpegExif[kCGImagePropertyExifDateTimeOriginal as String] as? String == "2025:03:09 15:13:37")
+    precondition(jpegTIFF[kCGImagePropertyTIFFMake as String] as? String == "FilmLab Test Camera")
+    precondition(jpegProperties[kCGImagePropertyOrientation as String] as? Int == 1)
 
     let tiffURL = directory.appendingPathComponent("output.tiff")
     try await exporter.export(

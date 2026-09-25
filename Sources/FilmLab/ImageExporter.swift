@@ -32,11 +32,21 @@ actor ImageExporter {
     defer { if accessing { request.sourceURL?.stopAccessingSecurityScopedResource() } }
     switch request.format {
     case .jpeg:
+      let extent = request.image.extent.integral
+      var properties = request.image.properties
+      var exif = properties[kCGImagePropertyExifDictionary as String] as? [String: Any] ?? [:]
+      exif[kCGImagePropertyExifPixelXDimension as String] = Int(extent.width)
+      exif[kCGImagePropertyExifPixelYDimension as String] = Int(extent.height)
+      properties[kCGImagePropertyExifDictionary as String] = exif
+      properties[kCGImagePropertyOrientation as String] = 1
+      var tiff = properties[kCGImagePropertyTIFFDictionary as String] as? [String: Any] ?? [:]
+      tiff[kCGImagePropertyTIFFOrientation as String] = 1
+      properties[kCGImagePropertyTIFFDictionary as String] = tiff
       let quality = CIImageRepresentationOption(
         rawValue: kCGImageDestinationLossyCompressionQuality as String)
       guard
         let data = context.jpegRepresentation(
-          of: request.image,
+          of: request.image.settingProperties(properties),
           colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!, options: [quality: 0.95]
         )
       else {
