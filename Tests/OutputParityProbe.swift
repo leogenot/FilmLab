@@ -76,6 +76,10 @@ struct OutputParityProbe {
         guard let widePreviewImage = widePreview?.image else { throw ProbeError.unreadable }
         precondition(widePreviewImage.bitsPerComponent == 16)
         precondition(widePreviewImage.colorSpace?.name == CGColorSpace.displayP3)
+        precondition(preview?.histogram?.displayP3 == false)
+        precondition(widePreview?.histogram?.displayP3 == true)
+        precondition(widePreview?.histogram?.bins.count == 64)
+        precondition(widePreview?.histogram?.waveform.intensities.count == 64 * 64)
         let widePreviewPixels = pixels(CIImage(cgImage: widePreviewImage))
 
         for format in [ExportFormat.tiff16SRGB, .tiff16DisplayP3, .jpeg] {

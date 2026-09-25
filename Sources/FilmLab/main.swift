@@ -3939,6 +3939,7 @@ struct ContentView: View {
           switch outputScope {
           case .histogram:
             OutputHistogram(
+              displayP3: histogram.displayP3,
               bins: histogram.bins,
               redBins: histogram.redBins,
               greenBins: histogram.greenBins,
@@ -3951,12 +3952,13 @@ struct ContentView: View {
               outsideSRGBFraction: histogram.outsideSRGBFraction
             )
           case .waveform:
-            OutputWaveform(distribution: histogram.waveform)
+            OutputWaveform(distribution: histogram.waveform, displayP3: histogram.displayP3)
           case .rgbParade:
             OutputRGBParade(
               red: histogram.redWaveform,
               green: histogram.greenWaveform,
-              blue: histogram.blueWaveform)
+              blue: histogram.blueWaveform,
+              displayP3: histogram.displayP3)
           }
         }
         Toggle("Float preview", isOn: $editor.highPrecisionPreview)
@@ -3968,7 +3970,7 @@ struct ContentView: View {
         Toggle("Display P3 canvas", isOn: $editor.displayP3Preview)
           .font(.caption)
           .help(
-            "Render the photo canvas in Display P3 for a compatible display. The histogram, scopes and gamut warning remain based on sRGB."
+            "Render the photo canvas in Display P3 for a compatible display. The scopes follow the canvas color space. The gamut warning still diagnoses sRGB output."
           )
           .disabled(editor.preview == nil)
         if editor.preview != nil {

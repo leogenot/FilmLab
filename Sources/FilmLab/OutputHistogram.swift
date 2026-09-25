@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// Distribution of the current sRGB preview, from displayed black to white.
+/// Distribution of the current canvas output, from displayed black to white.
 struct OutputHistogram: View {
+  let displayP3: Bool
   let bins: [Double]
   let redBins: [Double]
   let greenBins: [Double]
@@ -19,7 +20,7 @@ struct OutputHistogram: View {
         Text("OUTPUT HISTOGRAM")
           .tracking(1)
         Spacer()
-        Text("sRGB")
+        Text(displayP3 ? "Display P3" : "sRGB")
       }
       .font(.caption2.weight(.medium))
       .foregroundStyle(.secondary)

@@ -1,12 +1,13 @@
 import SwiftUI
 
-/// Display-space luminance by horizontal position in the developed photo.
+/// Display-space luma by horizontal position in the developed photo.
 struct OutputWaveform: View {
   let distribution: WaveformDistribution
+  let displayP3: Bool
 
   var body: some View {
     VStack(alignment: .leading, spacing: 7) {
-      scopeHeading("OUTPUT WAVEFORM")
+      scopeHeading("OUTPUT WAVEFORM", displayP3: displayP3)
       WaveformCanvas(distribution: distribution, color: .white)
         .frame(height: 112)
       scopeAxis
@@ -19,10 +20,11 @@ struct OutputRGBParade: View {
   let red: WaveformDistribution
   let green: WaveformDistribution
   let blue: WaveformDistribution
+  let displayP3: Bool
 
   var body: some View {
     VStack(alignment: .leading, spacing: 7) {
-      scopeHeading("OUTPUT RGB PARADE")
+      scopeHeading("OUTPUT RGB PARADE", displayP3: displayP3)
       HStack(spacing: 3) {
         channel("R", distribution: red, color: .red)
         channel("G", distribution: green, color: .green)
@@ -82,11 +84,11 @@ private struct WaveformCanvas: View {
   }
 }
 
-private func scopeHeading(_ title: String) -> some View {
+private func scopeHeading(_ title: String, displayP3: Bool) -> some View {
   HStack {
     Text(title).tracking(1)
     Spacer()
-    Text("sRGB")
+    Text(displayP3 ? "Display P3" : "sRGB")
   }
   .font(.caption2.weight(.medium))
   .foregroundStyle(.secondary)

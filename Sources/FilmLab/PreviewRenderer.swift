@@ -33,6 +33,7 @@ struct PreviewResult: @unchecked Sendable {
 }
 
 struct PreviewHistogram: Sendable {
+  let displayP3: Bool
   let bins: [Double]
   let redBins: [Double]
   let greenBins: [Double]
@@ -55,7 +56,8 @@ struct WaveformDistribution: Sendable {
   let intensities: [Double]
 
   static func make(
-    from pixels: [UInt8], width: Int, height: Int, component: Int? = nil
+    from pixels: [UInt8], width: Int, height: Int, component: Int? = nil,
+    displayP3: Bool = false
   ) -> WaveformDistribution {
     var counts = [Int](repeating: 0, count: columns * levels)
     let validComponent = component.map { (0...2).contains($0) } ?? true
@@ -69,9 +71,10 @@ struct WaveformDistribution: Sendable {
       if let component {
         value = Double(pixels[offset + component])
       } else {
+        let weights = displayP3 ? (0.22897, 0.69174, 0.07929) : (0.2126, 0.7152, 0.0722)
         value =
-          0.2126 * Double(pixels[offset]) + 0.7152 * Double(pixels[offset + 1])
-          + 0.0722 * Double(pixels[offset + 2])
+          weights.0 * Double(pixels[offset]) + weights.1 * Double(pixels[offset + 1])
+          + weights.2 * Double(pixels[offset + 2])
       }
       let column = min(columns - 1, index % width * columns / width)
       let level = min(levels - 1, Int(value * Double(levels) / 256))
@@ -102,7 +105,7 @@ actor PreviewRenderer {
     guard !Task.isCancelled else { return nil }
     let context = request.highPrecision ? floatContext : halfContext
     let scopedImage: CIImage
-    if request.compressSRGBGamut {
+    if request.compressSRGBGamut && !request.displayP3 {
       guard let mapped = OutputGamutMap.apply(to: request.image) else { return nil }
       scopedImage = mapped
     } else {
@@ -136,11 +139,12 @@ actor PreviewRenderer {
     return PreviewResult(
       image: image, original: original,
       histogram: histogram(
-        for: scopedImage, gamutSource: request.image, context: context))
+        for: request.displayP3 ? request.image : scopedImage,
+        gamutSource: request.image, context: context, displayP3: request.displayP3))
   }
 
   private func histogram(
-    for source: CIImage, gamutSource: CIImage, context: CIContext
+    for source: CIImage, gamutSource: CIImage, context: CIContext, displayP3: Bool
   ) -> PreviewHistogram? {
     let scale = min(1, 256 / max(source.extent.width, source.extent.height))
     let reduced = downsampled(source, scale: scale)
@@ -153,7 +157,8 @@ actor PreviewRenderer {
       if let base = bytes.baseAddress {
         context.render(
           reduced, toBitmap: base, rowBytes: width * 4, bounds: bounds,
-          format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
+          format: .RGBA8,
+          colorSpace: CGColorSpace(name: displayP3 ? CGColorSpace.displayP3 : CGColorSpace.sRGB)!)
       }
     }
     var counts = [Int](repeating: 0, count: 64)
@@ -165,13 +170,14 @@ actor PreviewRenderer {
     var redNearWhite = 0
     var greenNearWhite = 0
     var blueNearWhite = 0
+    let lumaWeights = displayP3 ? (0.22897, 0.69174, 0.07929) : (0.2126, 0.7152, 0.0722)
     for offset in stride(from: 0, to: pixels.count, by: 4) {
       let red = pixels[offset]
       let green = pixels[offset + 1]
       let blue = pixels[offset + 2]
       let luminance =
-        0.2126 * Double(red) + 0.7152 * Double(green)
-        + 0.0722 * Double(blue)
+        lumaWeights.0 * Double(red) + lumaWeights.1 * Double(green)
+        + lumaWeights.2 * Double(blue)
       counts[min(63, Int(luminance / 4))] += 1
       redCounts[min(63, Int(red) / 4)] += 1
       greenCounts[min(63, Int(green) / 4)] += 1
@@ -206,6 +212,7 @@ actor PreviewRenderer {
       }
     }
     return PreviewHistogram(
+      displayP3: displayP3,
       bins: counts.map { Double($0) / peak },
       redBins: redCounts.map { Double($0) / peak },
       greenBins: greenCounts.map { Double($0) / peak },
@@ -216,7 +223,8 @@ actor PreviewRenderer {
       greenNearWhiteFraction: Double(greenNearWhite) / total,
       blueNearWhiteFraction: Double(blueNearWhite) / total,
       outsideSRGBFraction: Double(outside) / total,
-      waveform: WaveformDistribution.make(from: pixels, width: width, height: height),
+      waveform: WaveformDistribution.make(
+        from: pixels, width: width, height: height, displayP3: displayP3),
       redWaveform: WaveformDistribution.make(
         from: pixels, width: width, height: height, component: 0),
       greenWaveform: WaveformDistribution.make(

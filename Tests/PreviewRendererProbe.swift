@@ -72,7 +72,31 @@ struct PreviewRendererProbe {
     precondition(p3Image.colorSpace?.name == CGColorSpace.displayP3)
     precondition(p3Image.bitsPerComponent == 16)
     precondition(p3Canvas?.original?.colorSpace?.name == CGColorSpace.displayP3)
-    precondition(srgbCanvas?.histogram?.greenBins == p3Canvas?.histogram?.greenBins)
+    precondition(srgbCanvas?.histogram?.displayP3 == false)
+    precondition(p3Canvas?.histogram?.displayP3 == true)
+    precondition(
+      srgbCanvas?.histogram?.outsideSRGBFraction == p3Canvas?.histogram?.outsideSRGBFraction)
+    let wideOrange = CIImage(
+      color: CIColor(red: 1, green: 0.5, blue: 0, colorSpace: p3Space)!
+    ).cropped(to: CGRect(x: 0, y: 0, width: 1, height: 1))
+    let orangeSRGB = await renderer.render(
+      PreviewRequest(
+        image: wideOrange, scale: 1, sourceURL: nil, originalImage: nil,
+        showGamutWarning: false))
+    let orangeP3 = await renderer.render(
+      PreviewRequest(
+        image: wideOrange, scale: 1, sourceURL: nil, originalImage: nil,
+        showGamutWarning: false, displayP3: true))
+    precondition(
+      orangeSRGB?.histogram?.greenBins != orangeP3?.histogram?.greenBins,
+      "P3 scopes did not follow the P3 canvas values")
+    precondition(
+      orangeSRGB?.histogram?.outsideSRGBFraction == orangeP3?.histogram?.outsideSRGBFraction,
+      "The sRGB gamut diagnostic changed with the canvas space")
+    precondition(
+      orangeSRGB?.histogram?.waveform.intensities
+        != orangeP3?.histogram?.waveform.intensities,
+      "P3 waveform did not follow the P3 canvas values")
     let p3Context = CIContext(options: [
       .workingColorSpace: CGColorSpace(name: CGColorSpace.extendedLinearSRGB)!,
       .workingFormat: CIFormat.RGBAf,
@@ -96,6 +120,8 @@ struct PreviewRendererProbe {
     precondition(
       p3WithSRGBCompression?.image.dataProvider?.data as Data?
         == p3Image.dataProvider?.data as Data?)
+    precondition(
+      p3WithSRGBCompression?.histogram?.greenBins == p3Canvas?.histogram?.greenBins)
     func neutralPatch(_ value: CGFloat) -> CIImage {
       CIImage(
         color: CIColor(
