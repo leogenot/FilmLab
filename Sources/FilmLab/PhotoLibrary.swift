@@ -1,6 +1,6 @@
 import Foundation
 
-struct PhotoCatalog: Codable, Identifiable, Equatable {
+struct PhotoCatalog: Codable, Identifiable, Equatable, Sendable {
   var id: UUID
   var name: String
   var photoPaths: [String]
@@ -45,7 +45,7 @@ enum CatalogPhotoSelection {
   }
 }
 
-struct PhotoLibrary: Codable, Equatable {
+struct PhotoLibrary: Codable, Equatable, Sendable {
   var catalogs: [PhotoCatalog]
   var selectedCatalogID: UUID
   var favoritePaths: Set<String>

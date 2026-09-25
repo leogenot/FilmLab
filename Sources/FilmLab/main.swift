@@ -2419,6 +2419,8 @@ struct ContentView: View {
   @State private var showingRelinkImporter = false
   @State private var libraryNotice: String?
   @State private var importingFolder = false
+  @State private var reconnectingPhotos = false
+  @State private var reconnectTask: Task<Void, Never>?
   @State private var folderImportTask: Task<Void, Never>?
   @State private var folderScanner = PhotoFolderScanner()
   @State private var selectingPhotos = false
@@ -2475,6 +2477,11 @@ struct ContentView: View {
           URL(fileURLWithPath: $1).lastPathComponent)
         return comparison == .orderedSame ? $0 < $1 : comparison == .orderedAscending
       }
+    }
+  }
+  private var missingCatalogPaths: [String] {
+    (library.selectedCatalog?.photoPaths ?? []).filter {
+      !FileManager.default.fileExists(atPath: $0)
     }
   }
   private var availableCatalogPaths: [String] {
@@ -3329,6 +3336,71 @@ struct ContentView: View {
     libraryNotice = notice
   }
 
+  private func reconnectMovedOriginals() {
+    guard !reconnectingPhotos, !importingFolder, !applyingBatch, !exportingBatch,
+      !missingCatalogPaths.isEmpty, let catalog = library.selectedCatalog
+    else { return }
+    guard editor.flushEdits() else {
+      libraryNotice = "Current edits could not be saved. Reconnection was not started."
+      return
+    }
+    let startingLibrary = library
+    let directory = editsDirectory
+    reconnectingPhotos = true
+    libraryNotice = nil
+    reconnectTask = Task { @MainActor in
+      let work = Task.detached(priority: .utility) {
+        await PhotoLibraryReconnect.run(
+          startingLibrary, in: catalog.id, editsDirectory: directory)
+      }
+      let result = await withTaskCancellationHandler {
+        await work.value
+      } onCancel: {
+        work.cancel()
+      }
+      reconnectingPhotos = false
+      reconnectTask = nil
+      guard library == startingLibrary else {
+        libraryNotice =
+          "The library changed during reconnection. No catalog paths were updated; try again."
+        return
+      }
+      if !result.relinked.isEmpty {
+        guard updateLibrary({ $0 = result.library }) else { return }
+        let replacements = Dictionary(
+          uniqueKeysWithValues: result.relinked.map {
+            ($0.oldPath, $0.newURL.standardizedFileURL.path)
+          })
+        for catalogID in Array(lastPhotoByCatalog.keys) {
+          if let oldPath = lastPhotoByCatalog[catalogID], let newPath = replacements[oldPath] {
+            lastPhotoByCatalog[catalogID] = newPath
+          }
+        }
+        CatalogPhotoMemory.save(lastPhotoByCatalog)
+        selectedPhotoPaths = Set(selectedPhotoPaths.map { replacements[$0] ?? $0 })
+        if let selectionAnchor {
+          self.selectionAnchor = replacements[selectionAnchor] ?? selectionAnchor
+        }
+        if let openPath = editor.sourceURL?.standardizedFileURL.path,
+          let replacement = replacements[openPath]
+        {
+          editor.open(URL(fileURLWithPath: replacement))
+        }
+      }
+      var notice =
+        "Reconnected \(result.relinked.count) original\(result.relinked.count == 1 ? "" : "s")."
+      if result.unresolved > 0 { notice += " \(result.unresolved) still need Locate Original." }
+      if result.unavailableEdits > 0 {
+        notice += " \(result.unavailableEdits) had no valid saved edit backup."
+      }
+      if !result.failures.isEmpty {
+        notice += " Could not reconnect: \(result.failures.joined(separator: ", "))."
+      }
+      if result.cancelled { notice += " Reconnection was cancelled." }
+      libraryNotice = notice
+    }
+  }
+
   private var libraryView: some View {
     HStack(spacing: 0) {
       VStack(alignment: .leading, spacing: 12) {
@@ -3444,6 +3516,24 @@ struct ContentView: View {
             Spacer()
             Button("Locate Folder…") { locateImportedFolder(path) }
               .disabled(importingFolder)
+          }
+          .font(.caption)
+          .foregroundStyle(.orange)
+        }
+        if !missingCatalogPaths.isEmpty || reconnectingPhotos {
+          HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle")
+            Text(
+              "\(missingCatalogPaths.count) missing original\(missingCatalogPaths.count == 1 ? "" : "s")"
+            )
+            Spacer()
+            if reconnectingPhotos {
+              ProgressView().controlSize(.small)
+              Button("Cancel") { reconnectTask?.cancel() }
+            } else {
+              Button("Reconnect Moved Originals") { reconnectMovedOriginals() }
+                .disabled(importingFolder || applyingBatch || exportingBatch)
+            }
           }
           .font(.caption)
           .foregroundStyle(.orange)
