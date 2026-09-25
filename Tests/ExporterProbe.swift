@@ -13,6 +13,13 @@ struct ExporterProbe {
     let sourceURL = directory.appendingPathComponent("source.jpg")
     let original = Data("unchanged source".utf8)
     try original.write(to: sourceURL)
+    let firstBatchURL = BatchExportDestination.availableURL(
+      for: sourceURL, in: directory, format: .jpeg)
+    precondition(firstBatchURL.lastPathComponent == "source-FilmLab.jpg")
+    try Data("preexisting export".utf8).write(to: firstBatchURL)
+    let nextBatchURL = BatchExportDestination.availableURL(
+      for: sourceURL, in: directory, format: .jpeg)
+    precondition(nextBatchURL.lastPathComponent == "source-FilmLab-2.jpg")
     let image = CIImage(color: CIColor(red: 0.2, green: 0.4, blue: 0.6))
       .cropped(to: CGRect(x: 0, y: 0, width: 32, height: 24))
       .settingProperties([

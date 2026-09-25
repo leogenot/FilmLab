@@ -6,6 +6,25 @@ enum ExportFormat: Sendable, Equatable {
   case jpeg
   case tiff16SRGB
   case tiff16DisplayP3
+
+  var fileExtension: String {
+    self == .jpeg ? "jpg" : "tiff"
+  }
+}
+
+enum BatchExportDestination {
+  static func availableURL(for source: URL, in directory: URL, format: ExportFormat) -> URL {
+    let base = source.deletingPathExtension().lastPathComponent + "-FilmLab"
+    var candidate = directory.appendingPathComponent(base).appendingPathExtension(
+      format.fileExtension)
+    var suffix = 2
+    while FileManager.default.fileExists(atPath: candidate.path) {
+      candidate = directory.appendingPathComponent("\(base)-\(suffix)")
+        .appendingPathExtension(format.fileExtension)
+      suffix += 1
+    }
+    return candidate
+  }
 }
 
 struct ExportRequest: @unchecked Sendable {

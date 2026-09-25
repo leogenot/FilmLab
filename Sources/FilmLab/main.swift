@@ -228,6 +228,19 @@ private struct BatchSettingsResult {
   }
 }
 
+private struct BatchExportResult {
+  var exported = 0
+  var failed: [String] = []
+  var cancelled = false
+
+  var summary: String {
+    var parts = ["Exported \(exported) photo\(exported == 1 ? "" : "s")."]
+    if cancelled { parts.append("Export stopped.") }
+    if !failed.isEmpty { parts.append("Could not export: \(failed.joined(separator: ", ")).") }
+    return parts.joined(separator: " ")
+  }
+}
+
 @MainActor @Observable
 final class PhotoEditor {
   var sourceURL: URL?
@@ -338,6 +351,7 @@ final class PhotoEditor {
   var canExport: Bool {
     preview != nil && !isOpening && rawDecodeTask == nil && !isExporting
   }
+  var canBatchExport: Bool { !isOpening && rawDecodeTask == nil && !isExporting }
   private var scopedURL: URL?
   private var saveTask: Task<Void, Never>?
   private var historyTask: Task<Void, Never>?
@@ -537,9 +551,10 @@ final class PhotoEditor {
     UserDefaults.standard.removeObject(forKey: lastPhotoKey)
   }
 
-  func flushEdits() {
+  @discardableResult
+  func flushEdits() -> Bool {
     saveTask?.cancel()
-    saveEdits()
+    return saveEdits()
   }
 
   private var editsDirectory: URL {
@@ -749,17 +764,20 @@ final class PhotoEditor {
     return edits
   }
 
-  private func saveEdits() {
-    guard sourceURL != nil, let sourceEditLocation else { return }
-    guard !editSavingBlocked else { return }
+  @discardableResult
+  private func saveEdits() -> Bool {
+    guard sourceURL != nil, let sourceEditLocation else { return true }
+    guard !editSavingBlocked else { return false }
     let edits = currentEdits()
     do {
       try SavedEditStore.save(edits, to: sourceEditLocation.primaryURL)
       if sourceEditLocation.pathURL != sourceEditLocation.primaryURL {
         try SavedEditStore.save(edits, to: sourceEditLocation.pathURL)
       }
+      return true
     } catch {
       self.error = "Could not save edits: \(error.localizedDescription)"
+      return false
     }
   }
 
@@ -1599,6 +1617,67 @@ final class PhotoEditor {
     }
   }
 
+  func exportBatch(
+    _ paths: [String], to directory: URL, format: ExportFormat,
+    progress: @MainActor (Int, Int) -> Void
+  ) async -> String {
+    let currentPhotoSaved = flushEdits()
+    var result = BatchExportResult()
+    for (index, path) in paths.enumerated() {
+      if Task.isCancelled {
+        result.cancelled = true
+        break
+      }
+      progress(index + 1, paths.count)
+      let url = URL(fileURLWithPath: path)
+      let access = url.startAccessingSecurityScopedResource()
+      do {
+        defer { if access { url.stopAccessingSecurityScopedResource() } }
+        if !currentPhotoSaved, url.standardizedFileURL == sourceURL?.standardizedFileURL {
+          result.failed.append(url.lastPathComponent + " (current edits could not be saved)")
+          continue
+        }
+        guard FileManager.default.fileExists(atPath: path) else {
+          result.failed.append(url.lastPathComponent + " (missing original)")
+          continue
+        }
+        let isRAW = await imageDecoder.isRAWFile(url)
+        let location = EditRecordLocator.locate(sourceURL: url, directory: editsDirectory)
+        let loaded = SavedEditStore.load(
+          from: location.primaryURL, fallbackURL: location.pathURL,
+          defaultValue: PhotoEdits.defaults(forRAW: isRAW))
+        guard loaded.notice == nil else {
+          result.failed.append(url.lastPathComponent + " (saved edits need review)")
+          continue
+        }
+        let decoded = try await imageDecoder.decode(
+          from: url, isRAW: isRAW, flatRAW: loaded.value.flatRAW,
+          highlightRecovery: loaded.value.rawHighlightRecovery,
+          temperature: loaded.value.rawTemperature, tint: loaded.value.rawTint)
+        try Task.checkCancellation()
+        let worker = PhotoEditor()
+        worker.source = decoded.image
+        worker.sourceIsRAW = isRAW
+        worker.restoreEdits(loaded.value)
+        guard let image = worker.developedImage() else {
+          result.failed.append(url.lastPathComponent + " (render failed)")
+          continue
+        }
+        let output = BatchExportDestination.availableURL(
+          for: url, in: directory, format: format)
+        try await exporter.export(
+          ExportRequest(image: image, url: output, format: format, sourceURL: url))
+        result.exported += 1
+      } catch is CancellationError {
+        result.cancelled = true
+        break
+      } catch {
+        result.failed.append(url.lastPathComponent + " (\(error.localizedDescription))")
+      }
+    }
+    return result.summary
+  }
+
 }
 
 enum EditorError: LocalizedError {
@@ -1654,6 +1733,9 @@ struct ContentView: View {
   @State private var librarySort: LibrarySort = .importOrder
   @State private var showFavoritesOnly = false
   @State private var applyingBatch = false
+  @State private var exportingBatch = false
+  @State private var batchExportProgress = ""
+  @State private var batchExportTask: Task<Void, Never>?
   @State private var panel: EditorPanel = .film
   @State private var selectedColorBand = 0
   @State private var cropDragOrigin: FreeCrop?
@@ -2030,6 +2112,28 @@ struct ContentView: View {
     }
   }
 
+  private func exportSelection(format: ExportFormat) {
+    let paths = library.selectedCatalog?.photoPaths.filter { selectedPhotoPaths.contains($0) } ?? []
+    guard !paths.isEmpty, !exportingBatch, editor.canBatchExport else { return }
+    let panel = NSOpenPanel()
+    panel.canChooseDirectories = true
+    panel.canChooseFiles = false
+    panel.canCreateDirectories = true
+    panel.prompt = "Export Here"
+    guard panel.runModal() == .OK, let directory = panel.url else { return }
+    exportingBatch = true
+    batchExportProgress = "Preparing exports…"
+    batchExportTask = Task {
+      libraryNotice = await editor.exportBatch(paths, to: directory, format: format) {
+        current, total in
+        batchExportProgress = "Exporting \(current) of \(total)…"
+      }
+      exportingBatch = false
+      batchExportProgress = ""
+      batchExportTask = nil
+    }
+  }
+
   private func transferPhotos(_ paths: [String], to destination: PhotoCatalog, move: Bool) {
     let previousLibrary = library
     let transferred = library.transferPhotos(paths, to: destination.id, removeFromSource: move)
@@ -2154,7 +2258,7 @@ struct ContentView: View {
             selectingPhotos.toggle()
             if !selectingPhotos { selectedPhotoPaths.removeAll() }
           }
-          .disabled(applyingBatch)
+          .disabled(applyingBatch || exportingBatch)
           Button("Import Photos…", systemImage: "plus") { showingImporter = true }
         }
         HStack(spacing: 10) {
@@ -2177,11 +2281,21 @@ struct ContentView: View {
               Button("Select All") {
                 selectedPhotoPaths.formUnion(visibleLibraryPaths)
               }
-              .disabled(applyingBatch)
+              .disabled(applyingBatch || exportingBatch)
               Button("Paste to \(selectedPhotoPaths.count) Photos") {
                 applySettingsToSelection()
               }
-              .disabled(selectedPhotoPaths.isEmpty || applyingBatch)
+              .disabled(selectedPhotoPaths.isEmpty || applyingBatch || exportingBatch)
+              Menu("Export Selected…") {
+                Button("JPEG (sRGB)") { exportSelection(format: .jpeg) }
+                Button("16-bit TIFF (sRGB)") { exportSelection(format: .tiff16SRGB) }
+                Button("16-bit TIFF (Display P3)") {
+                  exportSelection(format: .tiff16DisplayP3)
+                }
+              }
+              .disabled(
+                selectedPhotoPaths.isEmpty || applyingBatch || exportingBatch
+                  || !editor.canBatchExport)
               if library.catalogs.count > 1, !selectedPhotoPaths.isEmpty {
                 catalogTransferMenu(for: Array(selectedPhotoPaths))
               }
@@ -2196,6 +2310,13 @@ struct ContentView: View {
           }
         }
         if applyingBatch { ProgressView("Applying copied settings…") }
+        if exportingBatch {
+          HStack {
+            ProgressView(batchExportProgress)
+            Spacer()
+            Button("Cancel Export") { batchExportTask?.cancel() }
+          }
+        }
         if let notice = libraryLoad.notice {
           Text(notice)
             .font(.caption)
@@ -2253,7 +2374,7 @@ struct ContentView: View {
                     }
                   }
                   .buttonStyle(.plain)
-                  .disabled(applyingBatch)
+                  .disabled(applyingBatch || exportingBatch)
                   .contextMenu {
                     Button(
                       library.favoritePaths.contains(path) ? "Remove Favorite" : "Add Favorite"
@@ -2287,7 +2408,7 @@ struct ContentView: View {
                   }
                   .buttonStyle(.plain)
                   .foregroundStyle(library.favoritePaths.contains(path) ? .yellow : .secondary)
-                  .disabled(applyingBatch)
+                  .disabled(applyingBatch || exportingBatch)
                   if !FileManager.default.fileExists(atPath: path) {
                     Button("Locate Original…") {
                       pathToRelink = path
