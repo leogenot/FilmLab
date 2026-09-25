@@ -86,6 +86,8 @@ struct PhotoEdits: Codable, Equatable {
   var flatRAW = false
   var rawHighlightRecovery = true
   var rawDecoderSharpening = true
+  var rawLuminanceNoiseReduction = true
+  var rawColorNoiseReduction = true
   var rawTemperature: Double?
   var rawTint: Double?
 
@@ -105,6 +107,8 @@ struct PhotoEdits: Codable, Equatable {
     result.flatRAW = destination.flatRAW
     result.rawHighlightRecovery = destination.rawHighlightRecovery
     result.rawDecoderSharpening = destination.rawDecoderSharpening
+    result.rawLuminanceNoiseReduction = destination.rawLuminanceNoiseReduction
+    result.rawColorNoiseReduction = destination.rawColorNoiseReduction
     result.rawTemperature = destination.rawTemperature
     result.rawTint = destination.rawTint
     result.inputWarmth = destination.inputWarmth
@@ -148,6 +152,8 @@ struct PhotoEdits: Codable, Equatable {
       result.flatRAW = source.flatRAW
       result.rawHighlightRecovery = source.rawHighlightRecovery
       result.rawDecoderSharpening = source.rawDecoderSharpening
+      result.rawLuminanceNoiseReduction = source.rawLuminanceNoiseReduction
+      result.rawColorNoiseReduction = source.rawColorNoiseReduction
       result.rawTemperature = source.rawTemperature
       result.rawTint = source.rawTint
       result.inputTone = source.inputTone
@@ -276,6 +282,10 @@ struct PhotoEdits: Codable, Equatable {
       try values.decodeIfPresent(Bool.self, forKey: .rawHighlightRecovery) ?? true
     rawDecoderSharpening =
       try values.decodeIfPresent(Bool.self, forKey: .rawDecoderSharpening) ?? true
+    rawLuminanceNoiseReduction =
+      try values.decodeIfPresent(Bool.self, forKey: .rawLuminanceNoiseReduction) ?? true
+    rawColorNoiseReduction =
+      try values.decodeIfPresent(Bool.self, forKey: .rawColorNoiseReduction) ?? true
     rawTemperature = try values.decodeIfPresent(Double.self, forKey: .rawTemperature)
     rawTint = try values.decodeIfPresent(Double.self, forKey: .rawTint)
   }
@@ -416,6 +426,10 @@ final class PhotoEditor {
   var rawHighlightRecoverySupported = false
   var rawDecoderSharpening = true
   var rawDecoderSharpeningSupported = false
+  var rawLuminanceNoiseReduction = true
+  var rawLuminanceNoiseReductionSupported = false
+  var rawColorNoiseReduction = true
+  var rawColorNoiseReductionSupported = false
   var rawTemperature = 6500.0
   var rawTint = 0.0
   var error: String?
@@ -447,6 +461,8 @@ final class PhotoEditor {
   private var decodedFlatRAW = false
   private var decodedHighlightRecovery = true
   private var decodedRawDecoderSharpening = true
+  private var decodedRawLuminanceNoiseReduction = true
+  private var decodedRawColorNoiseReduction = true
   private var decodedRawTemperature = 6500.0
   private var decodedRawTint = 0.0
   private var cameraRawTemperature = 6500.0
@@ -564,6 +580,8 @@ final class PhotoEditor {
           from: url, isRAW: isRAW, flatRAW: saved.flatRAW,
           highlightRecovery: saved.rawHighlightRecovery,
           decoderSharpening: saved.rawDecoderSharpening,
+          luminanceNoiseReduction: saved.rawLuminanceNoiseReduction,
+          colorNoiseReduction: saved.rawColorNoiseReduction,
           temperature: saved.rawTemperature,
           tint: saved.rawTint, includeDiagnostics: true)
         try Task.checkCancellation()
@@ -620,8 +638,12 @@ final class PhotoEditor {
         decodedFlatRAW = saved.flatRAW
         decodedHighlightRecovery = saved.rawHighlightRecovery
         decodedRawDecoderSharpening = saved.rawDecoderSharpening
+        decodedRawLuminanceNoiseReduction = saved.rawLuminanceNoiseReduction
+        decodedRawColorNoiseReduction = saved.rawColorNoiseReduction
         rawHighlightRecoverySupported = decoded.highlightRecoverySupported
         rawDecoderSharpeningSupported = decoded.decoderSharpeningSupported
+        rawLuminanceNoiseReductionSupported = decoded.luminanceNoiseReductionSupported
+        rawColorNoiseReductionSupported = decoded.colorNoiseReductionSupported
         cameraRawTemperature = decoded.cameraTemperature ?? 6500
         cameraRawTint = decoded.cameraTint ?? 0
         decodedRawTemperature = saved.rawTemperature ?? cameraRawTemperature
@@ -810,6 +832,8 @@ final class PhotoEditor {
     flatRAW = saved.flatRAW
     rawHighlightRecovery = saved.rawHighlightRecovery
     rawDecoderSharpening = saved.rawDecoderSharpening
+    rawLuminanceNoiseReduction = saved.rawLuminanceNoiseReduction
+    rawColorNoiseReduction = saved.rawColorNoiseReduction
     rawTemperature = saved.rawTemperature ?? cameraRawTemperature
     rawTint = saved.rawTint ?? cameraRawTint
   }
@@ -819,6 +843,8 @@ final class PhotoEditor {
     let requestedFlatRAW = flatRAW
     let requestedHighlightRecovery = rawHighlightRecovery
     let requestedDecoderSharpening = rawDecoderSharpening
+    let requestedLuminanceNoiseReduction = rawLuminanceNoiseReduction
+    let requestedColorNoiseReduction = rawColorNoiseReduction
     let requestedTemperature = rawTemperature
     let requestedTint = rawTint
     let needsDecode =
@@ -826,6 +852,10 @@ final class PhotoEditor {
       || (rawHighlightRecoverySupported && requestedHighlightRecovery != decodedHighlightRecovery)
       || (rawDecoderSharpeningSupported
         && requestedDecoderSharpening != decodedRawDecoderSharpening)
+      || (rawLuminanceNoiseReductionSupported
+        && requestedLuminanceNoiseReduction != decodedRawLuminanceNoiseReduction)
+      || (rawColorNoiseReductionSupported
+        && requestedColorNoiseReduction != decodedRawColorNoiseReduction)
       || abs(requestedTemperature - decodedRawTemperature) > 0.01
       || abs(requestedTint - decodedRawTint) > 0.01
     guard needsDecode else {
@@ -853,6 +883,8 @@ final class PhotoEditor {
           from: url, isRAW: true, flatRAW: requestedFlatRAW,
           highlightRecovery: requestedHighlightRecovery,
           decoderSharpening: requestedDecoderSharpening,
+          luminanceNoiseReduction: requestedLuminanceNoiseReduction,
+          colorNoiseReduction: requestedColorNoiseReduction,
           temperature: requestedTemperature,
           tint: requestedTint, includeDiagnostics: true
         )
@@ -864,6 +896,8 @@ final class PhotoEditor {
         decodedFlatRAW = requestedFlatRAW
         decodedHighlightRecovery = requestedHighlightRecovery
         decodedRawDecoderSharpening = requestedDecoderSharpening
+        decodedRawLuminanceNoiseReduction = requestedLuminanceNoiseReduction
+        decodedRawColorNoiseReduction = requestedColorNoiseReduction
         decodedRawTemperature = requestedTemperature
         decodedRawTint = requestedTint
         rawDecodeTask = nil
@@ -873,6 +907,8 @@ final class PhotoEditor {
         flatRAW = decodedFlatRAW
         rawHighlightRecovery = decodedHighlightRecovery
         rawDecoderSharpening = decodedRawDecoderSharpening
+        rawLuminanceNoiseReduction = decodedRawLuminanceNoiseReduction
+        rawColorNoiseReduction = decodedRawColorNoiseReduction
         rawTemperature = decodedRawTemperature
         rawTint = decodedRawTint
         isRendering = false
@@ -964,6 +1000,8 @@ final class PhotoEditor {
     edits.flatRAW = flatRAW
     edits.rawHighlightRecovery = rawHighlightRecovery
     edits.rawDecoderSharpening = rawDecoderSharpening
+    edits.rawLuminanceNoiseReduction = rawLuminanceNoiseReduction
+    edits.rawColorNoiseReduction = rawColorNoiseReduction
     if isRAWSource {
       edits.rawTemperature = rawTemperature
       edits.rawTint = rawTint
@@ -1197,6 +1235,8 @@ final class PhotoEditor {
     settings.flatRAW = false
     settings.rawHighlightRecovery = true
     settings.rawDecoderSharpening = true
+    settings.rawLuminanceNoiseReduction = true
+    settings.rawColorNoiseReduction = true
     settings.rawTemperature = nil
     settings.rawTint = nil
     settings.inputWarmth = 0
@@ -1325,6 +1365,8 @@ final class PhotoEditor {
     flatRAW = defaults.flatRAW
     rawHighlightRecovery = defaults.rawHighlightRecovery
     rawDecoderSharpening = defaults.rawDecoderSharpening
+    rawLuminanceNoiseReduction = defaults.rawLuminanceNoiseReduction
+    rawColorNoiseReduction = defaults.rawColorNoiseReduction
     rawTemperature = cameraRawTemperature
     rawTint = cameraRawTint
     showOriginal = false
@@ -2082,6 +2124,8 @@ final class PhotoEditor {
         from: url, isRAW: isRAW, flatRAW: loaded.value.flatRAW,
         highlightRecovery: loaded.value.rawHighlightRecovery,
         decoderSharpening: loaded.value.rawDecoderSharpening,
+        luminanceNoiseReduction: loaded.value.rawLuminanceNoiseReduction,
+        colorNoiseReduction: loaded.value.rawColorNoiseReduction,
         temperature: loaded.value.rawTemperature, tint: loaded.value.rawTint,
         maxDimension: 1024)
     else { return nil }
@@ -2132,6 +2176,8 @@ final class PhotoEditor {
           from: url, isRAW: isRAW, flatRAW: loaded.value.flatRAW,
           highlightRecovery: loaded.value.rawHighlightRecovery,
           decoderSharpening: loaded.value.rawDecoderSharpening,
+          luminanceNoiseReduction: loaded.value.rawLuminanceNoiseReduction,
+          colorNoiseReduction: loaded.value.rawColorNoiseReduction,
           temperature: loaded.value.rawTemperature, tint: loaded.value.rawTint)
         try Task.checkCancellation()
         let worker = PhotoEditor()
@@ -2571,6 +2617,8 @@ struct ContentView: View {
     .onChange(of: editor.flatRAW) { editor.rawModeChanged() }
     .onChange(of: editor.rawHighlightRecovery) { editor.rawModeChanged() }
     .onChange(of: editor.rawDecoderSharpening) { editor.rawModeChanged() }
+    .onChange(of: editor.rawLuminanceNoiseReduction) { editor.rawModeChanged() }
+    .onChange(of: editor.rawColorNoiseReduction) { editor.rawModeChanged() }
     .onChange(of: editor.rawTemperature) { editor.rawModeChanged() }
     .onChange(of: editor.rawTint) { editor.rawModeChanged() }
   }
@@ -3956,12 +4004,28 @@ struct ContentView: View {
             Toggle("Linear RAW input", isOn: $editor.flatRAW)
             Text("Removes the decoder's global and shadow tone curves before film processing.")
               .font(.caption).foregroundStyle(.secondary)
-            if editor.rawDecoderSharpeningSupported {
-              Toggle("Camera sharpening", isOn: $editor.rawDecoderSharpening)
-              Text(
-                "Off skips the camera decoder's edge sharpening; FilmLab acutance remains separate. Older grades retain their decoder setting."
-              )
-              .font(.caption).foregroundStyle(.secondary)
+            if editor.rawDecoderSharpeningSupported
+              || editor.rawLuminanceNoiseReductionSupported
+              || editor.rawColorNoiseReductionSupported
+            {
+              DisclosureGroup("RAW decoder detail") {
+                VStack(alignment: .leading, spacing: 10) {
+                  if editor.rawDecoderSharpeningSupported {
+                    Toggle("Camera sharpening", isOn: $editor.rawDecoderSharpening)
+                  }
+                  if editor.rawLuminanceNoiseReductionSupported {
+                    Toggle("Luminance noise reduction", isOn: $editor.rawLuminanceNoiseReduction)
+                  }
+                  if editor.rawColorNoiseReductionSupported {
+                    Toggle("Color noise reduction", isOn: $editor.rawColorNoiseReduction)
+                  }
+                  Text(
+                    "Decoder sharpening is separate from FilmLab acutance. Noise reduction runs before film grain; turning it off can reveal high-ISO sensor noise."
+                  )
+                  .font(.caption).foregroundStyle(.secondary)
+                }
+                .padding(.top, 6)
+              }
             }
             Divider()
           }
