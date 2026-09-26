@@ -157,11 +157,6 @@ actor EditedThumbnailRenderer {
   private let context = CIContext(options: [
     .useSoftwareRenderer: false,
     .workingColorSpace: CGColorSpace(name: CGColorSpace.extendedLinearSRGB)!,
-    .workingFormat: CIFormat.RGBAh,
-  ])
-  private let floatContext = CIContext(options: [
-    .useSoftwareRenderer: false,
-    .workingColorSpace: CGColorSpace(name: CGColorSpace.extendedLinearSRGB)!,
     .workingFormat: CIFormat.RGBAf,
   ])
 
@@ -177,7 +172,7 @@ actor EditedThumbnailRenderer {
         "CILanczosScaleTransform",
         parameters: [kCIInputScaleKey: scale, kCIInputAspectRatioKey: 1])
       : source
-    return (highPrecision ? floatContext : context).createCGImage(
+    return context.createCGImage(
       reduced, from: reduced.extent, format: highPrecision ? .RGBA16 : .RGBA8,
       colorSpace: CGColorSpace(name: displayP3 ? CGColorSpace.displayP3 : CGColorSpace.sRGB)!)
   }
