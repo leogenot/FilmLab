@@ -155,6 +155,14 @@ struct RenderingProbe {
         outputToneCurve.apply(
           extent: source.extent, arguments: [source, shadow, midtone, highlight])!)[0]
     }
+    for shadow in [-0.14, 0.14] {
+      let below = curved(0.000001 * 0.999, shadow, 0, 0)
+      let above = curved(0.000001 * 1.001, shadow, 0, 0)
+      precondition(
+        abs(below - above) < 0.00000001,
+        "Output tone curve has a near-black jump at shadow \(shadow)")
+      precondition(curved(0, shadow, 0, 0) == 0)
+    }
     precondition(abs(curved(0.18, 0, 0, 0) - 0.18) < 0.001)
     precondition(abs(curved(0.2, 0.1, 0, 0) - 0.3) < 0.001)
     precondition(abs(curved(0.5, 0, -0.1, 0) - 0.4) < 0.001)

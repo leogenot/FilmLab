@@ -189,7 +189,7 @@ enum FilmKernels {
     [[stitchable]] float4 outputToneCurve(coreimage::sample_t pixel,
                                           float shadow, float midtone, float highlight) {
         float luminance = dot(pixel.rgb, float3(0.2126, 0.7152, 0.0722));
-        if (luminance <= 0.000001) return pixel;
+        if (luminance <= 0.0) return pixel;
         float position[5] = {0.0, 0.2, 0.5, 0.8, 1.0};
         float value[5] = {
             0.0,
@@ -202,6 +202,11 @@ enum FilmKernels {
         for (int i = 0; i < 4; i++) {
             delta[i] = (value[i + 1] - value[i])
                      / (position[i + 1] - position[i]);
+        }
+        // Follow the first segment's slope to black. The previous identity
+        // cutoff caused a jump where near-black rendered pixels entered the curve.
+        if (luminance <= 0.000001) {
+            return float4(pixel.rgb * delta[0], pixel.a);
         }
         float tangent[5] = {
             delta[0],
