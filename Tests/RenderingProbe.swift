@@ -102,6 +102,16 @@ struct RenderingProbe {
     precondition(inputTone(1, 0.5) < 1, "Input tone did not compress bright values")
     precondition(inputTone(0.01, 1.5) < 0.01, "Expanded input tone did not lower shadows")
     precondition(inputTone(1, 1.5) > 1, "Expanded input tone did not raise highlights")
+    for slope in [0.5, 1.5] {
+      let below = inputTone(0.000001 * 0.999, slope)
+      let above = inputTone(0.000001 * 1.001, slope)
+      precondition(
+        abs(below - above) < 0.000002,
+        "Rendered-input tone has a dark-boundary jump at slope \(slope)")
+      precondition(inputTone(0, slope) == 0, "Rendered-input tone changed black")
+    }
+    precondition(inputTone(0.0000001, 0.5) > 0.0000001)
+    precondition(inputTone(0.0000001, 1.5) < 0.0000001)
     let coloredInput = CIImage(
       color: CIColor(red: 0.4, green: 0.2, blue: 0.1, colorSpace: space)!
     ).cropped(to: CGRect(x: 0, y: 0, width: 1, height: 1))

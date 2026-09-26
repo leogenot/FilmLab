@@ -67,7 +67,13 @@ enum FilmKernels {
     [[stitchable]] float4 renderedInputTone(coreimage::sample_t pixel, float slope) {
         float3 rgb = pixel.rgb;
         float luminance = dot(rgb, float3(0.2126, 0.7152, 0.0722));
-        if (!all(isfinite(rgb)) || luminance <= 0.000001) return pixel;
+        if (!all(isfinite(rgb)) || luminance <= 0.0) return pixel;
+        // Continue linearly to black below the smallest modeled luminance.
+        // Leaving that interval untouched creates a visible jump at the cutoff.
+        if (luminance <= 0.000001) {
+            float atFloor = 0.18 * pow(0.000001 / 0.18, slope);
+            return float4(rgb * (atFloor / 0.000001), pixel.a);
+        }
         float relative = clamp(luminance / 0.18, 0.000001, 1000000.0);
         float target = 0.18 * pow(relative, slope);
         return float4(rgb * (target / luminance), pixel.a);
