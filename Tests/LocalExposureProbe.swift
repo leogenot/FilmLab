@@ -58,6 +58,19 @@ struct LocalExposureProbe {
       abs(red(resizedTool, 20, 73) - red(painted, 20, 73)) < 0.002,
       "Changing the brush tool resized an existing stroke")
     precondition(red(painted, 80, 20) < 0.01, "Painted mask spills into untouched area")
+    let smallStroke = BrushStroke(points: [BrushPoint(x: 0.2, y: 0.7)], size: 0.03)
+    let largeStroke = BrushStroke(points: [BrushPoint(x: 0.8, y: 0.7)], size: 0.15)
+    let smallOnly = LocalExposure.mask(
+      for: source, centerX: 0.5, centerY: 0.5, radius: 0.35,
+      feather: 0.7, shape: 2, strokes: [smallStroke])!
+    let mixedSizes = LocalExposure.mask(
+      for: source, centerX: 0.5, centerY: 0.5, radius: 0.35,
+      feather: 0.7, shape: 2, strokes: [smallStroke, largeStroke])!
+    precondition(
+      abs(red(smallOnly, 20, 72) - red(mixedSizes, 20, 72)) < 0.03,
+      "A distant large stroke changed a small stroke's soft edge")
+    precondition(red(mixedSizes, 80, 60) > 0.05, "Large stroke has no outward feather")
+    precondition(red(mixedSizes, 80, 70) > 0.7, "Large stroke is missing from the mask")
     let erased = LocalExposure.mask(
       for: source, centerX: 0.5, centerY: 0.5, radius: 0.35,
       feather: 0, shape: 2,

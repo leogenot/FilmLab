@@ -22,7 +22,7 @@ enum LocalExposure {
     if shape == 2 {
       guard
         let mask = paintedMask(
-          extent: extent, brushSize: brushSize, feather: feather, strokes: strokes)
+          extent: extent, feather: feather, strokes: strokes)
       else { return nil }
       let geometric = inverted ? mask.applyingFilter("CIColorInvert").cropped(to: extent) : mask
       return rangedMask(
@@ -100,57 +100,67 @@ enum LocalExposure {
   }
 
   private static func paintedMask(
-    extent: CGRect, brushSize: Double, feather: Double, strokes: [BrushStroke]
+    extent: CGRect, feather: Double, strokes: [BrushStroke]
   ) -> CIImage? {
     let scale = min(1, 4096 / max(extent.width, extent.height))
     let width = max(1, Int(ceil(extent.width * scale)))
     let height = max(1, Int(ceil(extent.height * scale)))
-    var pixels = [UInt8](repeating: 0, count: width * height)
-    let bitmap = pixels.withUnsafeMutableBytes { bytes -> CGImage? in
-      guard
-        let context = CGContext(
-          data: bytes.baseAddress, width: width, height: height,
-          bitsPerComponent: 8, bytesPerRow: width,
-          space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue)
-      else { return nil }
-      context.setStrokeColor(gray: 1, alpha: 1)
-      context.setFillColor(gray: 1, alpha: 1)
-      context.setLineCap(.round)
-      context.setLineJoin(.round)
-      for stroke in strokes where !stroke.points.isEmpty {
-        context.setStrokeColor(gray: stroke.erasing ? 0 : 1, alpha: 1)
-        context.setFillColor(gray: stroke.erasing ? 0 : 1, alpha: 1)
-        let diameter = min(max(stroke.size, 0.003), 0.15) * Double(min(width, height))
-        context.setLineWidth(diameter)
-        let points = stroke.points.map {
-          CGPoint(
-            x: min(max($0.x, 0), 1) * Double(width),
-            y: min(max($0.y, 0), 1) * Double(height))
+    func bitmap(shadingSize: Bool) -> CGImage? {
+      var pixels = [UInt8](repeating: 0, count: width * height)
+      return pixels.withUnsafeMutableBytes { bytes -> CGImage? in
+        guard
+          let context = CGContext(
+            data: bytes.baseAddress, width: width, height: height,
+            bitsPerComponent: 8, bytesPerRow: width,
+            space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue)
+        else { return nil }
+        context.setStrokeColor(gray: 1, alpha: 1)
+        context.setFillColor(gray: 1, alpha: 1)
+        context.setLineCap(.round)
+        context.setLineJoin(.round)
+        for stroke in strokes where !stroke.points.isEmpty {
+          let size = min(max(stroke.size, 0.003), 0.15)
+          let gray = shadingSize ? size / 0.15 : (stroke.erasing ? 0 : 1)
+          context.setStrokeColor(gray: gray, alpha: 1)
+          context.setFillColor(gray: gray, alpha: 1)
+          let diameter = size * Double(min(width, height))
+          context.setLineWidth(diameter)
+          let points = stroke.points.map {
+            CGPoint(
+              x: min(max($0.x, 0), 1) * Double(width),
+              y: min(max($0.y, 0), 1) * Double(height))
+          }
+          if points.count == 1 {
+            context.fillEllipse(
+              in: CGRect(
+                x: points[0].x - diameter / 2, y: points[0].y - diameter / 2,
+                width: diameter, height: diameter))
+          } else {
+            context.beginPath()
+            context.move(to: points[0])
+            for point in points.dropFirst() { context.addLine(to: point) }
+            context.strokePath()
+          }
         }
-        if points.count == 1 {
-          context.fillEllipse(
-            in: CGRect(
-              x: points[0].x - diameter / 2, y: points[0].y - diameter / 2,
-              width: diameter, height: diameter))
-        } else {
-          context.beginPath()
-          context.move(to: points[0])
-          for point in points.dropFirst() { context.addLine(to: point) }
-          context.strokePath()
-        }
+        return context.makeImage()
       }
-      return context.makeImage()
     }
-    guard let bitmap else { return nil }
-    let base = CIImage(cgImage: bitmap)
-    let largestStrokeSize = strokes.map(\.size).max() ?? brushSize
-    let softness =
-      min(max(feather, 0), 1) * min(max(largestStrokeSize, 0.003), 0.15)
-      * Double(min(width, height)) * 0.35
-    let softened =
-      softness > 0.5
-      ? base.applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: softness])
-      : base
+    guard let baseBitmap = bitmap(shadingSize: false) else { return nil }
+    let base = CIImage(cgImage: baseBitmap)
+    let softness = min(max(feather, 0), 1) * 0.15 * Double(min(width, height)) * 0.35
+    let softened: CIImage
+    if softness > 0.5, let sizeBitmap = bitmap(shadingSize: true) {
+      let featherReach = CIImage(cgImage: sizeBitmap).applyingFilter(
+        "CIMorphologyMaximum", parameters: [kCIInputRadiusKey: softness])
+      softened = base.applyingFilter(
+        "CIMaskedVariableBlur",
+        parameters: [
+          "inputMask": featherReach,
+          kCIInputRadiusKey: softness,
+        ])
+    } else {
+      softened = base
+    }
     let transformed = softened.transformed(
       by: CGAffineTransform(
         a: extent.width / Double(width), b: 0,
