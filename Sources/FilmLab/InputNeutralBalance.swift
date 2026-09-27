@@ -59,6 +59,9 @@ actor NeutralPatchSampler {
     let y = min(
       max(floor(centerY - CGFloat(height) / 2), extent.minY), extent.maxY - CGFloat(height))
     let bounds = CGRect(x: x, y: y, width: CGFloat(width), height: CGFloat(height))
+    let centerColumn = min(width - 1, max(0, Int(floor(centerX - x))))
+    let centerRow = min(height - 1, max(0, Int(floor(centerY - y))))
+    let centerOffset = (centerRow * width + centerColumn) * 4
     var pixels = [Float](repeating: 0, count: width * height * 4)
     pixels.withUnsafeMutableBytes { bytes in
       if let base = bytes.baseAddress {
@@ -89,7 +92,27 @@ actor NeutralPatchSampler {
       return values.count.isMultiple(of: 2)
         ? (values[middle - 1] + values[middle]) / 2 : values[middle]
     }
-    return InputNeutralBalance.fromSample(
-      red: median(&reds), green: median(&greens), blue: median(&blues))
+    let red = median(&reds)
+    let green = median(&greens)
+    let blue = median(&blues)
+    let center = pixels[centerOffset..<(centerOffset + 3)].map(Double.init)
+    guard pixels[centerOffset + 3] > 0.5,
+      center.allSatisfy({ $0.isFinite && $0 > 0.005 && $0 < 0.98 }),
+      Self.matchesClickedColor(
+        median: [red, green, blue], clicked: center)
+    else { return nil }
+    return InputNeutralBalance.fromSample(red: red, green: green, blue: blue)
+  }
+
+  private static func matchesClickedColor(median: [Double], clicked: [Double]) -> Bool {
+    let weights = [0.2126, 0.7152, 0.0722]
+    let medianLight = zip(median, weights).reduce(0) { $0 + $1.0 * $1.1 }
+    let clickedLight = zip(clicked, weights).reduce(0) { $0 + $1.0 * $1.1 }
+    guard medianLight > 0.005, clickedLight > 0.005 else { return false }
+    return zip(median, clicked).allSatisfy { medianChannel, clickedChannel in
+      let medianChroma = medianChannel / medianLight
+      let clickedChroma = clickedChannel / clickedLight
+      return abs(clickedChroma - medianChroma) <= 0.3 * medianChroma
+    }
   }
 }

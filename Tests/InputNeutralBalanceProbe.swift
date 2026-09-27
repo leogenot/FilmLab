@@ -55,6 +55,32 @@ enum InputNeutralBalanceProbe {
     precondition(abs(robust.red - balance.red) < 0.0001)
     precondition(abs(robust.green - balance.green) < 0.0001)
     precondition(abs(robust.blue - balance.blue) < 0.0001)
-    print("Neutral patch balance resisted colored contamination and rejected unstable samples")
+    var brighterCenter = mixed
+    brighterCenter[36] = [0.45, 0.60, 0.30, 1]
+    let brighterCenterPixels = brighterCenter.flatMap { $0 }
+    let brighterCenterImage = brighterCenterPixels.withUnsafeBytes { bytes in
+      CIImage(
+        bitmapData: Data(bytes), bytesPerRow: 8 * 4 * MemoryLayout<Float>.size,
+        size: CGSize(width: 8, height: 8), format: .RGBAf,
+        colorSpace: CGColorSpace(name: CGColorSpace.extendedLinearSRGB)!)
+    }
+    let brighter = await NeutralPatchSampler().sample(
+      NeutralSampleRequest(
+        image: brighterCenterImage, location: CGPoint(x: 0.5, y: 0.5), sourceURL: nil))
+    precondition(brighter != nil, "Picker rejected the same surface at a different brightness")
+    var wrongCenter = mixed
+    wrongCenter[36] = [0.9, 0.05, 0.05, 1]
+    let wrongCenterPixels = wrongCenter.flatMap { $0 }
+    let wrongCenterImage = wrongCenterPixels.withUnsafeBytes { bytes in
+      CIImage(
+        bitmapData: Data(bytes), bytesPerRow: 8 * 4 * MemoryLayout<Float>.size,
+        size: CGSize(width: 8, height: 8), format: .RGBAf,
+        colorSpace: CGColorSpace(name: CGColorSpace.extendedLinearSRGB)!)
+    }
+    let rejected = await NeutralPatchSampler().sample(
+      NeutralSampleRequest(
+        image: wrongCenterImage, location: CGPoint(x: 0.5, y: 0.5), sourceURL: nil))
+    precondition(rejected == nil, "Picker corrected a different surface than the clicked one")
+    print("Neutral patch balance resisted colored contamination and rejected mismatched clicks")
   }
 }
