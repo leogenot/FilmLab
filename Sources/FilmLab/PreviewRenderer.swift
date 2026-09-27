@@ -67,6 +67,7 @@ struct WaveformDistribution: Sendable {
     }
     for index in 0..<(width * height) {
       let offset = index * 4
+      guard pixels[offset + 3] != 0 else { continue }
       let value: Double
       if let component {
         value = Double(pixels[offset + component])
@@ -170,8 +171,11 @@ actor PreviewRenderer {
     var redNearWhite = 0
     var greenNearWhite = 0
     var blueNearWhite = 0
+    var visibleCount = 0
     let lumaWeights = displayP3 ? (0.22897, 0.69174, 0.07929) : (0.2126, 0.7152, 0.0722)
     for offset in stride(from: 0, to: pixels.count, by: 4) {
+      guard pixels[offset + 3] != 0 else { continue }
+      visibleCount += 1
       let red = pixels[offset]
       let green = pixels[offset + 1]
       let blue = pixels[offset + 2]
@@ -188,12 +192,13 @@ actor PreviewRenderer {
       if green >= 251 { greenNearWhite += 1 }
       if blue >= 251 { blueNearWhite += 1 }
     }
+    guard visibleCount > 0 else { return nil }
     let peak = Double(
       [
         1, counts.max() ?? 0, redCounts.max() ?? 0,
         greenCounts.max() ?? 0, blueCounts.max() ?? 0,
       ].max()!)
-    let total = Double(width * height)
+    let total = Double(visibleCount)
     var linearPixels = [Float](repeating: 0, count: width * height * 4)
     let gamutReduced = downsampled(gamutSource, scale: scale)
     linearPixels.withUnsafeMutableBytes { bytes in
@@ -206,6 +211,7 @@ actor PreviewRenderer {
     }
     var outside = 0
     for offset in stride(from: 0, to: linearPixels.count, by: 4) {
+      guard pixels[offset + 3] != 0 else { continue }
       let channels = linearPixels[offset..<(offset + 3)]
       if channels.contains(where: { !$0.isFinite || $0 < -0.0001 || $0 > 1.0001 }) {
         outside += 1

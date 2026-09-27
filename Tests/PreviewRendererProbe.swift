@@ -32,6 +32,24 @@ struct PreviewRendererProbe {
     precondition(result?.histogram?.redWaveform.intensities.count == 64 * 64)
     precondition(result?.histogram?.greenWaveform.intensities.count == 64 * 64)
     precondition(result?.histogram?.blueWaveform.intensities.count == 64 * 64)
+    let transparentValues: [Float] = [
+      0, 0, 0, 0,
+      1, 1, 1, 1,
+    ]
+    let transparentImage = transparentValues.withUnsafeBytes { bytes in
+      CIImage(
+        bitmapData: Data(bytes), bytesPerRow: 2 * 4 * MemoryLayout<Float>.size,
+        size: CGSize(width: 2, height: 1), format: .RGBAf,
+        colorSpace: CGColorSpace(name: CGColorSpace.extendedLinearSRGB)!)
+    }
+    let transparentPreview = await renderer.render(
+      PreviewRequest(
+        image: transparentImage, scale: 1, sourceURL: nil, originalImage: nil,
+        showGamutWarning: false))
+    precondition(transparentPreview?.histogram?.blackFraction == 0)
+    precondition(transparentPreview?.histogram?.whiteFraction == 1)
+    precondition(transparentPreview?.histogram?.waveform.intensities[0] == 0)
+
     let warning = await renderer.render(
       PreviewRequest(
         image: image, scale: 1, sourceURL: nil, originalImage: nil,

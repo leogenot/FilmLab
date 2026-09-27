@@ -20,6 +20,17 @@ final class WaveformDistributionTests: XCTestCase {
     XCTAssertEqual(waveform.intensities[63 * columns], 0)
   }
 
+  func testTransparentPixelsAreAbsentFromWaveform() {
+    let pixels: [UInt8] = [
+      0, 0, 0, 0,
+      255, 255, 255, 255,
+    ]
+    let waveform = WaveformDistribution.make(from: pixels, width: 2, height: 1)
+    let columns = WaveformDistribution.columns
+    XCTAssertEqual(waveform.intensities[0], 0)
+    XCTAssertEqual(waveform.intensities[63 * columns + 32], 1)
+  }
+
   func testInvalidBufferProducesEmptyDistribution() {
     let waveform = WaveformDistribution.make(from: [], width: 4, height: 1)
     XCTAssertTrue(waveform.intensities.allSatisfy { $0 == 0 })
