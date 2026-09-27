@@ -2073,6 +2073,7 @@ final class PhotoEditor {
     let version = exposureStudyVersion
     let sourceURL = scopedURL
     let displayP3 = displayP3Preview
+    let highPrecision = highPrecisionPreview
     let compress = compressSRGBGamut
     isBuildingExposureStudy = true
     exposureStudyTask = Task { @MainActor in
@@ -2088,8 +2089,8 @@ final class PhotoEditor {
         let result = await exposureStudyRenderer.render(
           PreviewRequest(
             image: image, scale: scale, sourceURL: sourceURL, originalImage: nil,
-            showGamutWarning: false, displayP3: displayP3,
-            compressSRGBGamut: compress))
+            showGamutWarning: false, highPrecision: highPrecision,
+            displayP3: displayP3, compressSRGBGamut: compress))
         guard !Task.isCancelled, version == exposureStudyVersion else { return }
         guard let rendered = result?.image else {
           exposureStudyFrames = []
@@ -3050,6 +3051,7 @@ struct ContentView: View {
     }
     .onChange(of: editor.highPrecisionPreview) {
       UserDefaults.standard.set(editor.highPrecisionPreview, forKey: "FilmLab.highPrecisionPreview")
+      editor.clearExposureStudy()
       editor.renderPreview()
     }
     .onChange(of: editor.displayP3Preview) {

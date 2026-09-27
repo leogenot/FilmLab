@@ -33,6 +33,7 @@ final class ExposureStudyTests: XCTestCase {
       try await waitUntil { !editor.isOpening && editor.preview != nil }
       XCTAssertNil(editor.error)
       editor.stockIndex = kind == "RAW" ? 1 : 2
+      editor.highPrecisionPreview = true
       editor.editsChanged()
       try await waitUntil { !editor.isRendering && editor.preview != nil }
       editor.buildExposureStudy()
@@ -41,6 +42,12 @@ final class ExposureStudyTests: XCTestCase {
       }
       XCTAssertNil(editor.error)
       XCTAssertEqual(editor.exposureStudyFrames.map(\.ev), [-2, -1, 0, 1, 2])
+      for frame in editor.exposureStudyFrames {
+        let image = try XCTUnwrap(
+          frame.image.cgImage(
+            forProposedRect: nil, context: nil, hints: nil))
+        XCTAssertEqual(image.bitsPerComponent, 16)
+      }
       let dark = try XCTUnwrap(
         editor.exposureStudyFrames.first?.image.cgImage(
           forProposedRect: nil, context: nil, hints: nil)?.dataProvider?.data as Data?)
@@ -53,6 +60,17 @@ final class ExposureStudyTests: XCTestCase {
       XCTAssertTrue(editor.exposureStudyFrames.isEmpty)
       try await waitUntil { !editor.isRendering && editor.preview != nil }
       XCTAssertNil(editor.error)
+      editor.highPrecisionPreview = false
+      editor.buildExposureStudy()
+      try await waitUntil {
+        !editor.isBuildingExposureStudy && editor.exposureStudyFrames.count == 5
+      }
+      for frame in editor.exposureStudyFrames {
+        let image = try XCTUnwrap(
+          frame.image.cgImage(
+            forProposedRect: nil, context: nil, hints: nil))
+        XCTAssertEqual(image.bitsPerComponent, 8)
+      }
       editor.buildExposureStudy()
       editor.shotExposure = -0.5
       editor.editsChanged()
