@@ -4728,7 +4728,7 @@ struct ContentView: View {
 
   private var photoCanvas: some View {
     ZStack {
-      Color(white: 0.065)
+      isLightAppearance ? Color.white : Color(white: 0.065)
       if editor.isOpening || editor.isRendering || editor.isExporting {
         ProgressView(
           editor.isExporting

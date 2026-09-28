@@ -2,7 +2,7 @@
 
 A small native macOS photo editor focused on film rendering and color grading.
 
-The sidebar's Appearance menu offers Dark, Light, and System themes. The choice persists across launches; System follows the current macOS appearance. The photo canvas stays dark in every theme for a steady image-viewing surround.
+The sidebar's Appearance menu offers Dark, Light, and System themes. The choice persists across launches; System follows the current macOS appearance. The photo canvas is pure white in Light mode and dark in Dark mode.
 
 Sliders show intermediate image previews while dragging. Fit view uses a 1000-pixel fast preview during a drag, then restores the selected precision, full preview size, and output scopes on release. At 100% zoom it renders a padded tile around the visible source pixels; scrolling requests another tile only when the visible region leaves the current one.
 
