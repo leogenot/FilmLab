@@ -55,10 +55,16 @@ Open `Package.swift` in Xcode and run the `FilmLab` executable target. For a sig
 
 The full-editor RAW/JPEG preview/export test runs with `FILMLAB_TEST_RAW=/path/to/disposable.arw FILMLAB_TEST_JPEG=/path/to/disposable.jpg DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter EditorParityTests`. It copies both inputs to a temporary folder, then checks several exposure and crop configurations, including rotation, straighten, freeform, wide and tall crops.
 
+## Automated DMG builds
+
+Each new commit on `main` runs [Publish macOS DMG](.github/workflows/publish-dmg.yml) on a GitHub-hosted Apple Silicon Mac. It verifies the renderer and Swift tests, builds the full app bundle, packages a drag-to-Applications DMG, and publishes the DMG plus SHA-256 checksum in a private GitHub prerelease tagged `build-<commit SHA prefix>`. The package currently supports macOS 15 or later on Apple Silicon. Rerunning the workflow replaces the assets for the same commit. To package a local signed build, run `bash Scripts/package-dmg.sh Dist/FilmLab.app /path/to/FilmLab.dmg`.
+
+These builds are ad-hoc signed and not notarized. They are suitable for private testing, but macOS may require manual approval after download. Developer ID signing and Apple notarization need dedicated credentials before this becomes a frictionless public distribution path.
+
 ## Next image-quality milestone
 
 1. Expand the full-editor RAW/JPEG parity probe to additional scenes and Macs; investigate any remaining localized differences and refine input normalization where warranted.
-2. Refine camera-RGB-to-film-layer sensitivity using each stock's published spectral plots, while documenting the scene-spectrum reconstruction assumption.
+2. Independently re-read the published layer-sensitivity plots and test how their reading uncertainty affects several daylight and tungsten-like scenes; retain the declared RGB spectral-surrogate assumption.
 3. Compare the completed Premier optical-print study against legally usable public references across exposures and lighting conditions.
 4. Characterize stock-dependent grain, halation, and edge response at 100% zoom, including scanner and enlarger effects where public evidence permits.
 5. Compare RAW and JPEG renderings of the same scenes and tune input normalization.

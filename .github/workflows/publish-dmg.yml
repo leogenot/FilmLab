@@ -1,0 +1,75 @@
+name: Publish macOS DMG
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: film-lab-dmg-main
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - name: Check out commit
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Select Xcode
+        run: |
+          echo "DEVELOPER_DIR=$(xcode-select -p)" >> "$GITHUB_ENV"
+          xcodebuild -version
+          swift --version
+
+      - name: Verify rendering and tests
+        run: |
+          bash Scripts/verify-rendering.sh
+          swift test
+
+      - name: Build signed app
+        run: |
+          test "$(uname -m)" = arm64
+          FILMLAB_OUTPUT_DIR="$RUNNER_TEMP/FilmLab-release" bash Scripts/build-app.sh
+          codesign --verify --deep --strict "$RUNNER_TEMP/FilmLab-release/FilmLab.app"
+
+      - name: Package disk image
+        run: |
+          short_sha="${GITHUB_SHA:0:12}"
+          dmg_name="FilmLab-macOS-AppleSilicon-${short_sha}.dmg"
+          dmg_path="$RUNNER_TEMP/FilmLab-release/$dmg_name"
+          bash Scripts/package-dmg.sh "$RUNNER_TEMP/FilmLab-release/FilmLab.app" "$dmg_path"
+          cd "$RUNNER_TEMP/FilmLab-release"
+          shasum -a 256 "$dmg_name" > "$dmg_name.sha256"
+
+      - name: Publish GitHub prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          short_sha="${GITHUB_SHA:0:12}"
+          tag="build-${short_sha}"
+          dmg_name="FilmLab-macOS-AppleSilicon-${short_sha}.dmg"
+          release_dir="$RUNNER_TEMP/FilmLab-release"
+          cat > "$RUNNER_TEMP/FilmLab-release-notes.md" <<EOF
+          Automated FilmLab build for commit ${GITHUB_SHA}.
+
+          Requires macOS 15 or later on Apple Silicon. The app is ad-hoc signed and is not notarized; macOS may require manual approval to open it after download.
+          EOF
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" \
+              "$release_dir/$dmg_name" "$release_dir/$dmg_name.sha256" --clobber
+          else
+            gh release create "$tag" \
+              "$release_dir/$dmg_name" "$release_dir/$dmg_name.sha256" \
+              --target "$GITHUB_SHA" \
+              --title "FilmLab ${short_sha}" \
+              --notes-file "$RUNNER_TEMP/FilmLab-release-notes.md" \
+              --prerelease --latest=false
+          fi
