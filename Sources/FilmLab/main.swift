@@ -5,16 +5,32 @@ import ImageIO
 import SwiftUI
 import UniformTypeIdentifiers
 
+private enum AppAppearance: String, CaseIterable, Identifiable {
+  case system = "System"
+  case light = "Light"
+  case dark = "Dark"
+
+  var id: Self { self }
+  var colorScheme: ColorScheme? {
+    switch self {
+    case .system: nil
+    case .light: .light
+    case .dark: .dark
+    }
+  }
+}
+
 @main
 struct FilmLabApp: App {
   @State private var editor = PhotoEditor()
   @State private var showingImporter = false
+  @AppStorage("FilmLab.appearance") private var appearance: AppAppearance = .dark
 
   var body: some Scene {
     WindowGroup("FilmLab") {
       ContentView(editor: editor, showingImporter: $showingImporter)
         .frame(minWidth: 960, minHeight: 600)
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(appearance.colorScheme)
     }
     .commands {
       CommandGroup(replacing: .newItem) {
@@ -2870,6 +2886,7 @@ struct ContentView: View {
   @State private var batchExportProgress = ""
   @State private var batchExportTask: Task<Void, Never>?
   @AppStorage("FilmLab.jpegQualityPercent") private var jpegQualityPercent = 95
+  @AppStorage("FilmLab.appearance") private var appearance: AppAppearance = .dark
   @State private var panel: EditorPanel = .film
   @State private var outputScope: OutputScopeKind = .histogram
   @AppStorage("FilmLab.showScopes") private var showScopes = false
@@ -2889,7 +2906,30 @@ struct ContentView: View {
   @State private var cropResizeOrigin: FreeCrop?
   @State private var paintDragPoints: [CGPoint] = []
   @Environment(\.displayScale) private var displayScale
+  @Environment(\.colorScheme) private var colorScheme
   @Environment(\.scenePhase) private var scenePhase
+
+  private var isLightAppearance: Bool {
+    appearance == .light || (appearance == .system && colorScheme == .light)
+  }
+  private var selectedSurface: Color {
+    isLightAppearance ? Color.black.opacity(0.08) : Color.white.opacity(0.11)
+  }
+  private var railSurface: Color {
+    isLightAppearance ? Color(red: 0.94, green: 0.93, blue: 0.91) : Color(white: 0.10)
+  }
+  private var catalogSurface: Color {
+    isLightAppearance ? Color(red: 0.97, green: 0.96, blue: 0.94) : Color(white: 0.085)
+  }
+  private var librarySurface: Color {
+    isLightAppearance ? Color(red: 0.99, green: 0.98, blue: 0.97) : Color(white: 0.065)
+  }
+  private var inspectorSurface: Color {
+    isLightAppearance ? Color(red: 0.98, green: 0.97, blue: 0.95) : Color(white: 0.11)
+  }
+  private var stripSurface: Color {
+    isLightAppearance ? Color(red: 0.95, green: 0.94, blue: 0.92) : Color(white: 0.095)
+  }
 
   private static var libraryURL: URL {
     FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -3340,7 +3380,7 @@ struct ContentView: View {
         .buttonStyle(.plain)
         .padding(.horizontal, 10)
         .padding(.vertical, 9)
-        .background(showingLibrary ? Color.white.opacity(0.11) : Color.clear)
+        .background(showingLibrary ? selectedSurface : Color.clear)
         .clipShape(RoundedRectangle(cornerRadius: 7))
         Button {
           showingLibrary = false
@@ -3351,7 +3391,7 @@ struct ContentView: View {
         .buttonStyle(.plain)
         .padding(.horizontal, 10)
         .padding(.vertical, 9)
-        .background(!showingLibrary ? Color.white.opacity(0.11) : Color.clear)
+        .background(!showingLibrary ? selectedSurface : Color.clear)
         .clipShape(RoundedRectangle(cornerRadius: 7))
         Divider()
         ForEach(EditorPanel.allCases) { item in
@@ -3365,11 +3405,18 @@ struct ContentView: View {
           .buttonStyle(.plain)
           .padding(.horizontal, 10)
           .padding(.vertical, 9)
-          .background(panel == item ? Color.white.opacity(0.11) : Color.clear)
+          .background(panel == item ? selectedSurface : Color.clear)
           .clipShape(RoundedRectangle(cornerRadius: 7))
         }
       }
       Spacer()
+      Picker("Appearance", selection: $appearance) {
+        ForEach(AppAppearance.allCases) { choice in
+          Text(choice.rawValue).tag(choice)
+        }
+      }
+      .pickerStyle(.menu)
+      .help("Choose a light or dark interface, or follow macOS appearance")
       Text(library.selectedCatalog?.name ?? "")
         .font(.caption)
         .foregroundStyle(.secondary)
@@ -3381,7 +3428,7 @@ struct ContentView: View {
     }
     .padding(16)
     .frame(width: 160)
-    .background(Color(white: 0.10))
+    .background(railSurface)
   }
 
   @discardableResult
@@ -4143,8 +4190,8 @@ struct ContentView: View {
             .padding(9)
             .background(
               catalogDropTarget == catalog.id
-                ? Color.white.opacity(0.20)
-                : library.selectedCatalogID == catalog.id ? Color.white.opacity(0.11) : .clear
+                ? (isLightAppearance ? Color.black.opacity(0.14) : Color.white.opacity(0.20))
+                : library.selectedCatalogID == catalog.id ? selectedSurface : .clear
             )
             .clipShape(RoundedRectangle(cornerRadius: 7))
           }
@@ -4171,7 +4218,7 @@ struct ContentView: View {
       }
       .padding(16)
       .frame(width: 210)
-      .background(Color(white: 0.085))
+      .background(catalogSurface)
 
       VStack(alignment: .leading, spacing: 18) {
         HStack {
@@ -4413,13 +4460,16 @@ struct ContentView: View {
                       )
                       .frame(height: 135)
                       .frame(maxWidth: .infinity)
-                      .background(Color(white: 0.13))
+                      .background(
+                        isLightAppearance ? Color.black.opacity(0.06) : Color(white: 0.13)
+                      )
                       .clipShape(RoundedRectangle(cornerRadius: 7))
                       .overlay {
                         RoundedRectangle(cornerRadius: 7)
                           .strokeBorder(
                             selectedPhotoPaths.contains(path)
-                              ? Color.white.opacity(0.85) : .clear,
+                              ? (isLightAppearance
+                                ? Color.black.opacity(0.75) : Color.white.opacity(0.85)) : .clear,
                             lineWidth: 2)
                       }
                       Text(URL(fileURLWithPath: path).lastPathComponent)
@@ -4520,7 +4570,7 @@ struct ContentView: View {
       }
       .padding(22)
       .frame(maxWidth: .infinity, maxHeight: .infinity)
-      .background(Color(white: 0.065))
+      .background(librarySurface)
     }
   }
 
@@ -4577,13 +4627,15 @@ struct ContentView: View {
                     activePreview: liveThumbnail(for: path)
                   )
                   .frame(width: 90, height: 62)
-                  .background(Color(white: 0.14))
+                  .background(isLightAppearance ? Color.black.opacity(0.06) : Color(white: 0.14))
                   .clipShape(RoundedRectangle(cornerRadius: 5))
                   .overlay {
                     RoundedRectangle(cornerRadius: 5)
                       .strokeBorder(
                         editor.sourceURL?.standardizedFileURL.path == path
-                          ? Color.white.opacity(0.8) : .clear, lineWidth: 1.5)
+                          ? (isLightAppearance
+                            ? Color.black.opacity(0.75) : Color.white.opacity(0.8)) : .clear,
+                        lineWidth: 1.5)
                   }
                   Text(URL(fileURLWithPath: path).lastPathComponent)
                     .font(.caption2)
@@ -4622,7 +4674,7 @@ struct ContentView: View {
     .padding(.horizontal, 14)
     .padding(.vertical, 9)
     .frame(height: applyingBatch || stripPasteNotice != nil ? 142 : 118)
-    .background(Color(white: 0.095))
+    .background(stripSurface)
   }
 
   private func referencePanel(for path: String) -> some View {
@@ -4671,7 +4723,7 @@ struct ContentView: View {
     }
     .padding(14)
     .frame(width: 280)
-    .background(Color(white: 0.09))
+    .background(inspectorSurface)
   }
 
   private var photoCanvas: some View {
@@ -5218,7 +5270,7 @@ struct ContentView: View {
                     .resizable()
                     .aspectRatio(contentMode: .fit)
                     .frame(width: 100, height: 68)
-                    .background(Color.white.opacity(0.04))
+                    .background(Color.primary.opacity(0.04))
                   Text(
                     "\(frame.ev.formatted(.number.sign(strategy: .always()).precision(.fractionLength(0)))) EV"
                   )
@@ -5792,7 +5844,7 @@ struct ContentView: View {
       .padding(22)
     }
     .frame(width: 310)
-    .background(Color(white: 0.11))
+    .background(inspectorSurface)
   }
 
   private func freeCropBinding(_ keyPath: WritableKeyPath<FreeCrop, Double>) -> Binding<Double> {

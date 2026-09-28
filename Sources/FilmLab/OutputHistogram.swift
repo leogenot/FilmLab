@@ -35,7 +35,7 @@ struct OutputHistogram: View {
         }
         path.addLine(to: CGPoint(x: size.width, y: size.height))
         path.closeSubpath()
-        context.fill(path, with: .color(.white.opacity(0.22)))
+        context.fill(path, with: .color(.primary.opacity(0.22)))
         for (channel, color) in [
           (redBins, Color.red), (greenBins, Color.green), (blueBins, Color.blue),
         ] where channel.count == bins.count {
@@ -53,7 +53,7 @@ struct OutputHistogram: View {
         }
       }
       .frame(height: 68)
-      .background(Color.white.opacity(0.05))
+      .background(Color.primary.opacity(0.05))
       .clipShape(RoundedRectangle(cornerRadius: 5))
       HStack {
         Text("Near black \(blackFraction.formatted(.percent.precision(.fractionLength(1))))")

@@ -31,7 +31,7 @@ struct NumericControlField: View {
       .frame(width: fractionDigits == 0 ? 72 : 62)
       .padding(.horizontal, 5)
       .padding(.vertical, 3)
-      .background(Color.white.opacity(0.055))
+      .background(Color.primary.opacity(0.055))
       .clipShape(RoundedRectangle(cornerRadius: 4))
       .accessibilityLabel("\(title) value")
       .focused($isFocused)

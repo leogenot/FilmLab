@@ -8,7 +8,7 @@ struct OutputWaveform: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 7) {
       scopeHeading("OUTPUT WAVEFORM", displayP3: displayP3)
-      WaveformCanvas(distribution: distribution, color: .white)
+      WaveformCanvas(distribution: distribution, color: .primary)
         .frame(height: 112)
       scopeAxis
     }
@@ -62,7 +62,7 @@ private struct WaveformCanvas: View {
         var line = Path()
         line.move(to: CGPoint(x: 0, y: y))
         line.addLine(to: CGPoint(x: size.width, y: y))
-        context.stroke(line, with: .color(.white.opacity(0.12)), lineWidth: 0.5)
+        context.stroke(line, with: .color(.primary.opacity(0.12)), lineWidth: 0.5)
       }
       let cellWidth = size.width / CGFloat(columns)
       let cellHeight = size.height / CGFloat(levels)
@@ -79,7 +79,7 @@ private struct WaveformCanvas: View {
         }
       }
     }
-    .background(Color.white.opacity(0.05))
+    .background(Color.primary.opacity(0.05))
     .clipShape(RoundedRectangle(cornerRadius: 5))
   }
 }
