@@ -66,11 +66,54 @@ struct TextureProbe {
     let negativeKernel = FilmKernels.kernel("measuredNegative")!
     let negativeGrain = FilmKernels.kernel("applyNegativeGrain")!
     let positiveKernel = FilmKernels.kernel("portraPositive")!
+    func negativeTexture(_ stock: Double, version: Double, grain: Double) -> [Float] {
+      let negative = negativeKernel.apply(
+        extent: source.extent, arguments: [source, 0.0, 0.0, stock])!
+      let textured = negativeGrain.apply(
+        extent: source.extent, arguments: [negative, grain, 1.0, 17.0, stock, version])!
+      return pixels(textured, context: export)
+    }
+    let oldEktar = negativeTexture(2, version: 2, grain: 0.75)
+    let newEktar = negativeTexture(2, version: 3, grain: 0.75)
+    let plainEktar = negativeTexture(2, version: 3, grain: 0)
+    func textureRMS(_ rendered: [Float], baseline: [Float]) -> Double {
+      let changes = stride(from: 0, to: rendered.count, by: 4).map {
+        Double(rendered[$0] - baseline[$0])
+      }
+      return sqrt(changes.map { $0 * $0 }.reduce(0, +) / Double(changes.count))
+    }
+    precondition(
+      textureRMS(newEktar, baseline: plainEktar)
+        < textureRMS(oldEktar, baseline: plainEktar) * 0.8,
+      "New Ektar texture is not quieter")
+    func textureNeighborCorrelation(_ rendered: [Float], baseline: [Float]) -> Double {
+      var covariance = 0.0
+      var variance = 0.0
+      for y in 8..<56 {
+        for x in 8..<55 {
+          let index = (y * 64 + x) * 4
+          let next = index + 4
+          let currentDelta = Double(rendered[index] - baseline[index])
+          let neighborDelta = Double(rendered[next] - baseline[next])
+          covariance += currentDelta * neighborDelta
+          variance += currentDelta * currentDelta
+        }
+      }
+      return covariance / variance
+    }
+    precondition(
+      textureNeighborCorrelation(newEktar, baseline: plainEktar)
+        < textureNeighborCorrelation(oldEktar, baseline: plainEktar),
+      "New Ektar texture is not spatially finer")
+    precondition(
+      negativeTexture(1, version: 2, grain: 0.75)
+        == negativeTexture(1, version: 3, grain: 0.75),
+      "Portra texture changed with Ektar revision")
     func developed(_ stock: Double, _ exposure: Double, _ grain: Double) -> CIImage {
       let negative = negativeKernel.apply(
         extent: source.extent, arguments: [source, exposure, 0.0, stock])!
       let textured = negativeGrain.apply(
-        extent: source.extent, arguments: [negative, grain, 1.0, 17.0, stock])!
+        extent: source.extent, arguments: [negative, grain, 1.0, 17.0, stock, 2.0])!
       return positiveKernel.apply(
         extent: source.extent,
         arguments: [textured, source, exposure, 1.0, 0.0, 0.0, stock])!

@@ -10,9 +10,9 @@ final class GrainVersionTests: XCTestCase {
     XCTAssertEqual(legacy.grainSpatialVersion, 1)
     XCTAssertEqual(legacy.grainFrameIndex, 0)
     XCTAssertEqual(PhotoEdits().grainVersion, 2)
-    XCTAssertEqual(PhotoEdits().grainSpatialVersion, 2)
+    XCTAssertEqual(PhotoEdits().grainSpatialVersion, 3)
     XCTAssertEqual(legacy.resetting(.texture, isRAW: false).grainVersion, 2)
-    XCTAssertEqual(legacy.resetting(.texture, isRAW: false).grainSpatialVersion, 2)
+    XCTAssertEqual(legacy.resetting(.texture, isRAW: false).grainSpatialVersion, 3)
 
     let destination = PhotoEdits.defaults(forRAW: false)
     let transferred = PhotoEdits.transferring(legacy, panel: .texture, onto: destination)
@@ -21,7 +21,7 @@ final class GrainVersionTests: XCTestCase {
     let saved = try JSONDecoder().decode(
       PhotoEdits.self, from: JSONEncoder().encode(PhotoEdits()))
     XCTAssertEqual(saved.grainVersion, 2)
-    XCTAssertEqual(saved.grainSpatialVersion, 2)
+    XCTAssertEqual(saved.grainSpatialVersion, 3)
   }
 
   func testFrameScaleTracksPixelDimensionsAndFilmFormat() {

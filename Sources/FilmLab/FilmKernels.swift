@@ -960,14 +960,18 @@ enum FilmKernels {
     // specify grain size or variance. The same spatial noise is used by preview/export.
     [[stitchable]] float4 applyNegativeGrain(coreimage::sample_t negative,
                                             float amount, float size, float seed, float stock,
+                                            float textureVersion,
                                             coreimage::destination destination) {
         float2 coord = destination.coord();
         uint photoSeed = uint(seed);
         float fine = grainHash(int2(floor(coord)), 0xcb1ab31fu ^ photoSeed);
         float noise = fine;
-        // The finer 100TMX texture is a qualitative scale choice. Kodak's RMS
-        // granularity is not a pixel-noise calibration for this virtual scan.
-        float effectiveSize = stock > 4.5 ? size * 0.7 : size;
+        // Kodak describes Ektar as the finest-grained color negative. The
+        // extra fine-grain choice is versioned because its exact scale is
+        // not established by the public scanner-convolved reference scan.
+        bool fineEktar = textureVersion >= 3.0 && stock > 1.5 && stock < 2.5;
+        // The finer 100TMX texture is also a qualitative scale choice.
+        float effectiveSize = (stock > 4.5 || fineEktar) ? size * 0.7 : size;
         if (effectiveSize > 0.001) {
             float2 lattice = coord / (2.5 * effectiveSize);
             int2 cell = int2(floor(lattice));
@@ -999,8 +1003,9 @@ enum FilmKernels {
             grainHash(int2(floor(coord)), 0x9e3779b9u ^ photoSeed),
             grainHash(int2(floor(coord)), 0x7f4a7c15u ^ photoSeed),
             grainHash(int2(floor(coord)), 0x94d049bbu ^ photoSeed));
+        float strength = fineEktar ? 0.075 : 0.12;
         float3 variation = (float3(noise) * 0.85 + dyeNoise * 0.15)
-            * clamp(amount, 0.0, 1.0) * 0.12;
+            * clamp(amount, 0.0, 1.0) * strength;
         return float4(max(negative.rgb + variation, float3(0.0)), negative.a);
     }
     [[stitchable]] float4 applyGrain(coreimage::sample_t pixel,

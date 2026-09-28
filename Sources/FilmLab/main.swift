@@ -69,7 +69,7 @@ struct PhotoEdits: Codable, Equatable {
   var grain = 0.0
   var grainSize = 1.0
   var grainVersion = 2
-  var grainSpatialVersion = 2
+  var grainSpatialVersion = 3
   var grainFrameIndex = 0
   var grainSeed = 0.0
   var halation = 0.0
@@ -483,7 +483,7 @@ final class PhotoEditor {
   var grain = 0.0
   var grainSize = 1.0
   var grainVersion = 2
-  var grainSpatialVersion = 2
+  var grainSpatialVersion = 3
   var grainFrameIndex = 0
   var grainSeed = 0.0
   var halation = 0.0
@@ -1984,7 +1984,7 @@ final class PhotoEditor {
                 frameIndex: grainFrameIndex,
                 spatialVersion: grainSpatialVersion,
                 thumbnailSpatialScale: thumbnailSpatialScale),
-              grainSeed, Double(stockIndex),
+              grainSeed, Double(stockIndex), Double(grainSpatialVersion),
             ]
           )
         else {
@@ -2448,6 +2448,12 @@ final class PhotoEditor {
   func useFrameScaledGrain() {
     guard grainSpatialVersion < 2 else { return }
     grainSpatialVersion = 2
+    editsChanged()
+  }
+
+  func useFineEktarGrain() {
+    guard grainSpatialVersion < 3 else { return }
+    grainSpatialVersion = 3
     editsChanged()
   }
 
@@ -5558,6 +5564,13 @@ struct ContentView: View {
                 "Frame size sets grain scale in source coordinates; Grain sets its strength. Sizes are creative, not stock measurements."
               )
               .font(.caption).foregroundStyle(.secondary)
+              if editor.stockIndex == 2 && editor.grainSpatialVersion < 3 {
+                Button("Use finer Ektar grain") { editor.useFineEktarGrain() }
+                Text(
+                  "This changes this saved grade's Ektar texture. Undo restores its earlier render."
+                )
+                .font(.caption).foregroundStyle(.secondary)
+              }
             } else {
               Button("Use frame-scaled grain") { editor.useFrameScaledGrain() }
               Text("This changes this saved grade's grain scale. Undo restores the earlier render.")
