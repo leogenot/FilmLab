@@ -9,11 +9,12 @@ struct PreviewRequest: @unchecked Sendable {
   let highPrecision: Bool
   let displayP3: Bool
   let compressSRGBGamut: Bool
+  let includeHistogram: Bool
 
   init(
     image: CIImage, scale: CGFloat, sourceURL: URL?, originalImage: CIImage?,
     showGamutWarning: Bool, highPrecision: Bool = false, displayP3: Bool = false,
-    compressSRGBGamut: Bool = false
+    compressSRGBGamut: Bool = false, includeHistogram: Bool = true
   ) {
     self.image = image
     self.scale = scale
@@ -23,6 +24,7 @@ struct PreviewRequest: @unchecked Sendable {
     self.highPrecision = highPrecision
     self.displayP3 = displayP3
     self.compressSRGBGamut = compressSRGBGamut
+    self.includeHistogram = includeHistogram
   }
 }
 
@@ -139,9 +141,11 @@ actor PreviewRenderer {
     guard !Task.isCancelled, request.originalImage == nil || original != nil else { return nil }
     return PreviewResult(
       image: image, original: original,
-      histogram: histogram(
-        for: request.displayP3 ? request.image : scopedImage,
-        gamutSource: request.image, context: context, displayP3: request.displayP3))
+      histogram: request.includeHistogram
+        ? histogram(
+          for: request.displayP3 ? request.image : scopedImage,
+          gamutSource: request.image, context: context, displayP3: request.displayP3)
+        : nil)
   }
 
   private func histogram(

@@ -32,6 +32,13 @@ struct PreviewRendererProbe {
     precondition(result?.histogram?.redWaveform.intensities.count == 64 * 64)
     precondition(result?.histogram?.greenWaveform.intensities.count == 64 * 64)
     precondition(result?.histogram?.blueWaveform.intensities.count == 64 * 64)
+    let live = await renderer.render(
+      PreviewRequest(
+        image: image, scale: 1, sourceURL: nil, originalImage: nil,
+        showGamutWarning: false, includeHistogram: false))
+    precondition(
+      live?.image.dataProvider?.data as Data? == result?.image.dataProvider?.data as Data?)
+    precondition(live?.histogram == nil)
     let transparentValues: [Float] = [
       0, 0, 0, 0,
       1, 1, 1, 1,

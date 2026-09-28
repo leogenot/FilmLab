@@ -589,12 +589,13 @@ final class PhotoEditor {
   var canUndo: Bool { !undoStack.isEmpty }
   var canRedo: Bool { !redoStack.isEmpty }
   private var previewTask: Task<Void, Never>?
+  private var pendingPreview: (request: PreviewRequest, fast: Bool)?
+  private var isAdjustingSlider = false
   private var rawDecodeTask: Task<Void, Never>?
   private var openTask: Task<Void, Never>?
   private var openVersion = 0
   private let imageDecoder = ImageDecoder()
   private var rawDecodeVersion = 0
-  private var renderVersion = 0
   private let previewRenderer = PreviewRenderer()
   private let exposureStudyRenderer = PreviewRenderer()
   private var exposureStudyTask: Task<Void, Never>?
@@ -706,7 +707,9 @@ final class PhotoEditor {
         rawDecodeTask = nil
         rawDecodeVersion += 1
         previewTask?.cancel()
-        renderVersion += 1
+        previewTask = nil
+        pendingPreview = nil
+        isAdjustingSlider = false
         pixelTask?.cancel()
         pixelVersion += 1
         pixelReadout = nil
@@ -817,7 +820,8 @@ final class PhotoEditor {
     rawDecodeVersion += 1
     previewTask?.cancel()
     previewTask = nil
-    renderVersion += 1
+    pendingPreview = nil
+    isAdjustingSlider = false
     historyTask?.cancel()
     historyOpen = false
     undoStack.removeAll()
@@ -1002,7 +1006,9 @@ final class PhotoEditor {
     neutralTask?.cancel()
     neutralVersion += 1
     previewTask?.cancel()
-    renderVersion += 1
+    previewTask = nil
+    pendingPreview = nil
+    isAdjustingSlider = false
     let version = rawDecodeVersion
     isRendering = true
     rawDecodeTask = Task {
@@ -1020,7 +1026,9 @@ final class PhotoEditor {
         )
         guard !Task.isCancelled, version == rawDecodeVersion, sourceURL == url else { return }
         previewTask?.cancel()
-        renderVersion += 1
+        previewTask = nil
+        pendingPreview = nil
+        isAdjustingSlider = false
         source = decoded.image
         inputExposureRange = decoded.inputExposureRange
         sourceFileInfo = decoded.sourceFileInfo
@@ -2208,50 +2216,68 @@ final class PhotoEditor {
   }
 
   func renderPreview() {
-    renderVersion += 1
     pixelTask?.cancel()
     pixelVersion += 1
     pixelReadout = nil
-    let version = renderVersion
-    previewTask?.cancel()
     let image =
       showLocalMask
       ? localMaskImage()
       : (showOriginal
         ? source.map { framedImage($0) } : developedImage(previewUncropped: showCropBounds))
     guard let image else {
+      previewTask?.cancel()
+      previewTask = nil
+      pendingPreview = nil
       isRendering = false
       return
     }
     isRendering = true
-    let scale = zoom100 ? 1 : min(1, 1800 / max(image.extent.width, image.extent.height))
+    let fast = isAdjustingSlider && !zoom100
+    let scale =
+      zoom100 ? 1 : min(1, (fast ? 1000 : 1800) / max(image.extent.width, image.extent.height))
     let request = PreviewRequest(
       image: image, scale: scale, sourceURL: scopedURL,
       originalImage: compareEnabled ? source.map { framedImage($0) } : nil,
       showGamutWarning: showGamutWarning && !showOriginal && !showLocalMask && !showCropBounds,
-      highPrecision: highPrecisionPreview, displayP3: displayP3Preview,
-      compressSRGBGamut: compressSRGBGamut && !showOriginal && !showLocalMask && !showCropBounds
+      highPrecision: highPrecisionPreview && !fast, displayP3: displayP3Preview,
+      compressSRGBGamut: compressSRGBGamut && !showOriginal && !showLocalMask && !showCropBounds,
+      includeHistogram: !fast
     )
-    previewTask = Task {
-      do { try await Task.sleep(for: .milliseconds(60)) } catch { return }
-      let result = await previewRenderer.render(request)
-      guard !Task.isCancelled, version == renderVersion else { return }
+    pendingPreview = (request, fast)
+    guard previewTask == nil else { return }
+    previewTask = Task { await renderPendingPreviews() }
+  }
+
+  func sliderEditingChanged(_ editing: Bool) {
+    guard isAdjustingSlider != editing else { return }
+    isAdjustingSlider = editing
+    if !editing { renderPreview() }
+  }
+
+  private func renderPendingPreviews() async {
+    while !Task.isCancelled, let pending = pendingPreview {
+      pendingPreview = nil
+      let result = await previewRenderer.render(pending.request)
+      guard !Task.isCancelled else { return }
       if let result {
         let image = result.image
         preview = NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
         comparisonPreview = result.original.map {
           NSImage(cgImage: $0, size: NSSize(width: $0.width, height: $0.height))
         }
-        histogram = showLocalMask || showCropBounds ? nil : result.histogram
+        if !pending.fast {
+          histogram = showLocalMask || showCropBounds ? nil : result.histogram
+        }
         error = nil
-        if inspectPixel, let selectedPixel {
+        if !pending.fast, inspectPixel, let selectedPixel {
           inspect(displayX: Double(selectedPixel.x), displayY: Double(selectedPixel.y))
         }
-      } else {
+      } else if pendingPreview == nil {
         error = "Could not render this photo."
       }
-      isRendering = false
     }
+    previewTask = nil
+    isRendering = false
   }
 
   func inspect(displayX: Double, displayY: Double) {
@@ -5715,7 +5741,7 @@ struct ContentView: View {
           title: title, value: value, range: range, fractionDigits: fractionDigits)
       }
       .font(.subheadline)
-      Slider(value: value, in: range)
+      Slider(value: value, in: range, onEditingChanged: editor.sliderEditingChanged)
     }
   }
 }

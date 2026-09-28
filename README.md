@@ -2,6 +2,8 @@
 
 A small native macOS photo editor focused on film rendering and color grading.
 
+Sliders show intermediate image previews while dragging. Fit view uses a 1000-pixel fast preview during a drag, then restores the selected precision, full preview size, and output scopes on release. At 100% zoom it retains native scale, so updates can be slower on large files.
+
 ## Current prototype
 
 - Opens JPEG, 16-bit TIFF, and RAW formats supported by the Mac's Core Image decoder, identifying RAW through the file's ImageIO type. Non-RAW files use a file-backed Core Image decode. Develop shows a sampled display-space near-white channel readout for JPEG input, so bright input limits remain visible after the film curve rolls off output highlights. Verified with a Sony ILCE-7M4 ARW at 4672 × 7008 pixels and a 3737 × 5606, 16-bit TIFF.
