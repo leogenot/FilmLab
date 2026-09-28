@@ -215,7 +215,7 @@ struct RenderingProbe {
     precondition(abs(extendedColor[0] - 1.4) < 0.001)
     precondition(abs(extendedColor[2] + 0.1) < 0.001)
 
-    for stock in [1.0, 2.0, 3.0, 4.0] {
+    for stock in [1.0, 2.0, 3.0, 4.0, 5.0] {
       let under = rendered(stock, -2)
       let normal = rendered(stock, 0)
       let over = rendered(stock, 2)
@@ -232,26 +232,28 @@ struct RenderingProbe {
       abs(rendered(1, 2)[0] - rendered(2, 2)[0]) > 0.01,
       "Portra and Ektar have indistinguishable bright response")
 
-    func ektarPaper(_ paperExposure: Double) -> [Float] {
+    func premierPaper(_ stock: Double, _ paperExposure: Double) -> [Float] {
       let source = patch(0.18)
       let density = negative.apply(
-        extent: source.extent, arguments: [source, 0.0, 0.0, 2.0])!
+        extent: source.extent, arguments: [source, 0.0, 0.0, stock])!
       return channels(
         positive.apply(
           extent: source.extent,
-          arguments: [density, source, 0.0, 1.0, 1.0, paperExposure, 2.0])!)
+          arguments: [density, source, 0.0, 1.0, 1.0, paperExposure, stock])!)
     }
-    let paperUnder = ektarPaper(-2)
-    let paperNormal = ektarPaper(0)
-    let paperOver = ektarPaper(2)
-    for channel in 0..<3 {
-      precondition(
-        paperUnder[channel] > paperNormal[channel]
-          && paperNormal[channel] > paperOver[channel],
-        "Endura Premier paper exposure response is reversed")
-      precondition(
-        abs(paperNormal[channel] - 0.18) < 0.004,
-        "Endura Premier reference gray is not neutral")
+    for stock in [2.0, 3.0] {
+      let paperUnder = premierPaper(stock, -2)
+      let paperNormal = premierPaper(stock, 0)
+      let paperOver = premierPaper(stock, 2)
+      for channel in 0..<3 {
+        precondition(
+          paperUnder[channel] > paperNormal[channel]
+            && paperNormal[channel] > paperOver[channel],
+          "Stock \(stock) Endura Premier paper exposure response is reversed")
+        precondition(
+          abs(paperNormal[channel] - 0.18) < 0.004,
+          "Stock \(stock) Endura Premier reference gray is not neutral")
+      }
     }
 
     func shaped(_ light: Double, _ shadowEV: Double, _ highlightEV: Double) -> Float {
@@ -388,28 +390,32 @@ struct RenderingProbe {
         }
       }
     }
-    let trixURL = URL(fileURLWithPath: #filePath)
-      .deletingLastPathComponent().deletingLastPathComponent()
-      .appendingPathComponent("Research/trix400-density.csv")
-    let trixRows = try! String(contentsOf: trixURL, encoding: .utf8)
-      .split(whereSeparator: \.isNewline).dropFirst().map { row -> (Double, Float) in
-        let values = row.split(separator: ",").compactMap { Double($0) }
-        precondition(values.count == 2)
-        return (values[0], Float(values[1]))
+    for (stock, filename, expectedCount) in [
+      (4.0, "trix400-density.csv", 9), (5.0, "tmax100-density.csv", 10),
+    ] {
+      let url = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("Research/\(filename)")
+      let rows = try! String(contentsOf: url, encoding: .utf8)
+        .split(whereSeparator: \.isNewline).dropFirst().map { row -> (Double, Float) in
+          let values = row.split(separator: ",").compactMap { Double($0) }
+          precondition(values.count == 2)
+          return (values[0], Float(values[1]))
+        }
+      precondition(rows.count == expectedCount)
+      for (logH, expected) in rows {
+        let actual = negativeDensity(stock, logH)
+        precondition(
+          actual.allSatisfy { abs($0 - expected) < 0.0003 },
+          "Stock \(stock) density differs from \(filename) at \(logH)")
       }
-    precondition(trixRows.count == 9)
-    for (logH, expected) in trixRows {
-      let actual = negativeDensity(4, logH)
-      precondition(
-        actual.allSatisfy { abs($0 - expected) < 0.0003 },
-        "Tri-X negative density differs from the digitized chart at \(logH)")
-    }
-    for index in 0..<(trixRows.count - 1) {
-      let midpoint = (trixRows[index].0 + trixRows[index + 1].0) / 2
-      let actual = negativeDensity(4, midpoint)[0]
-      precondition(
-        actual >= trixRows[index].1 && actual <= trixRows[index + 1].1,
-        "Tri-X density reversed between chart samples")
+      for index in 0..<(rows.count - 1) {
+        let midpoint = (rows[index].0 + rows[index + 1].0) / 2
+        let actual = negativeDensity(stock, midpoint)[0]
+        precondition(
+          actual >= rows[index].1 && actual <= rows[index + 1].1,
+          "Stock \(stock) density reversed between chart samples")
+      }
     }
     let trixColor = colorPatch(0.5, 0.2, 0.05)
     let trixNegative = negative.apply(
@@ -421,10 +427,22 @@ struct RenderingProbe {
     precondition(
       trixPositive.max()! - trixPositive.min()! < 0.0001,
       "Tri-X positive is not monochrome")
+    let tmaxNegative = negative.apply(
+      extent: trixColor.extent, arguments: [trixColor, 0.0, 0.0, 5.0])!
+    let tmaxPositive = channels(
+      positive.apply(
+        extent: trixColor.extent,
+        arguments: [tmaxNegative, trixColor, 0.0, 1.0, 0.0, 0.0, 5.0])!)
+    precondition(
+      tmaxPositive.max()! - tmaxPositive.min()! < 0.0001,
+      "T-Max positive is not monochrome")
+    precondition(
+      abs(rendered(4, 2)[0] - rendered(5, 2)[0]) > 0.01,
+      "Tri-X and T-Max bright responses are indistinguishable")
     precondition(
       abs(rendered(4, 2)[0] - rendered(1, 2)[0]) > 0.01,
       "Tri-X is indistinguishable from Portra overexposure")
-    for (stock, upperEnd) in [(1.0, 0.5), (2.0, 1.0), (3.0, 0.85), (4.0, 0.3)] {
+    for (stock, upperEnd) in [(1.0, 0.5), (2.0, 1.0), (3.0, 0.85), (4.0, 0.3), (5.0, 0.65)] {
       let distance = 0.005
       let before = negativeDensity(stock, upperEnd - distance)
       let atEnd = negativeDensity(stock, upperEnd)
@@ -452,7 +470,7 @@ struct RenderingProbe {
           extent: density.extent,
           arguments: [density, patch(0.18), 0.0, 1.0, 1.0, paperEV, stock])!)
     }
-    for stock in [1.0, 2.0] {
+    for stock in [1.0, 2.0, 3.0] {
       let endpoint = -0.25
       let distance = 0.01
       let before = paperOutput(stock, endpoint - distance)

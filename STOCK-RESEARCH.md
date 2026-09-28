@@ -54,6 +54,23 @@ Source: Kodak Alaris, [*KODAK PROFESSIONAL T-MAX 100 Film*, F-4016, June 2018](h
 
 **Implementation consequence.** Use its own digitized 100TMX density curve and process condition. A T-Max 100 mode should differ from Tri-X in its actual curve and texture scale, not only in final contrast and grain amount. The RMS values 8 and 17 justify an ordering under their respective Kodak measurement methods, but the sheets use different developers; they do **not** yield a defensible 8:17 pixel-amplitude ratio. If offering reciprocity, require known shutter duration and make it an opt-in physical-film study rather than silently inferring it from RAW exposure compensation.
 
+**Initial graph readings for 100TMX, D-76 small tank, 20°C, 7.5 minutes.** I rendered PDF page 8 at 240 dpi and sampled the middle, short-dashed characteristic line. In a 700 × 700 crop of the plot, x≈65 represents log H −4, x≈188 is −3, x≈557 is 0, and y≈635/481/327 represent density 0/1/2. Individual dashes and line thickness leave roughly ±0.05 density and ±0.05 log-H uncertainty. The anchor at −1.5 log H used in FilmLab is a **virtual midgray alignment**, not a manufacturer reference mark.
+
+| log H | Diffuse visual negative density |
+| ---: | ---: |
+| −3.1 | 0.21 |
+| −3.0 | 0.22 |
+| −2.5 | 0.24 |
+| −2.0 | 0.38 |
+| −1.5 | 0.74 |
+| −1.0 | 1.10 |
+| −0.5 | 1.44 |
+| 0.0 | 1.77 |
+| +0.5 | 2.09 |
+| +0.65 | 2.16 |
+
+FilmLab uses a smaller procedural grain scale and lower perturbation for this study than for Tri-X. That is a qualitative expression of the published fine-grain ordering; the chosen factors are **not** derived from Kodak's RMS values or measured scanner samples.
+
 ## Model and verification boundaries
 
 1. **Negative response:** for each color-sensitive layer or panchromatic B&W layer, map scene-linear exposure to `log10(H)`, then through a monotone digitization of the relevant manufacturer's characteristic curve. Preserve the recorded chart reference and process condition. Each exposure stop shifts log H by `log10(2) ≈ 0.301`, so a −2/0/+2 EV study must traverse different parts of the toe and straight section, rather than reuse one rendered look.

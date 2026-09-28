@@ -1905,7 +1905,7 @@ final class PhotoEditor {
       image = normalized
     }
     let imageBeforeFilm = image
-    if (1...4).contains(stockIndex) {
+    if (1...5).contains(stockIndex) {
       guard let measuredNegativeKernel,
         let portraPositiveKernel,
         let negative = measuredNegativeKernel.apply(
@@ -2027,7 +2027,7 @@ final class PhotoEditor {
       halationExposureEV: shotExposureEV,
       halationVersion: halationVersion,
       acutance: acutance, spatialScale: thumbnailSpatialScale,
-      monochrome: stockIndex == 4 && filmAmount >= 0.999)
+      monochrome: (stockIndex == 4 || stockIndex == 5) && filmAmount >= 0.999)
     if outputShoulder > 0.001 {
       guard let outputShoulderKernel,
         let rolled = outputShoulderKernel.apply(
@@ -4913,6 +4913,7 @@ struct ContentView: View {
             Text("Ektar 100 density study").tag(2)
             Text("Gold 200 density study").tag(3)
             Text("Tri-X 400 density study").tag(4)
+            Text("T-Max 100 density study").tag(5)
           }
           .pickerStyle(.menu)
           if editor.stockIndex == 1 {
@@ -4972,9 +4973,11 @@ struct ContentView: View {
             "Each frame runs through the current stock and grade at the labeled Shot Exposure. Click a frame to use it. Other edits clear this comparison."
           )
           .font(.caption2).foregroundStyle(.secondary)
-          if editor.stockIndex == 4 {
+          if editor.stockIndex == 4 || editor.stockIndex == 5 {
             Text(
-              "400TX 35 mm · D-76 large tank · 20°C · 8 minutes. Development is fixed to the published curve."
+              editor.stockIndex == 4
+                ? "400TX 35 mm · D-76 large tank · 20°C · 8 minutes. Development is fixed to the published curve."
+                : "100TMX · D-76 small tank · 20°C · 7.5 minutes. Development is fixed to the published curve."
             )
             .font(.caption).foregroundStyle(.secondary)
           } else {
@@ -4996,7 +4999,9 @@ struct ContentView: View {
                     : "Kodak Gold negative-density curves with provisional positive rendering.")
                   : (editor.stockIndex == 4
                     ? "Kodak Tri-X negative-density curve with a virtual monochrome print or scan. Set stock amount to 1 for full monochrome."
-                    : "Exposure-dependent study stock. Film measurements will replace this model.")))
+                    : (editor.stockIndex == 5
+                      ? "Kodak T-Max negative-density curve with a virtual monochrome print or scan. Set stock amount to 1 for full monochrome."
+                      : "Exposure-dependent study stock. Film measurements will replace this model."))))
           )
           .font(.caption).foregroundStyle(.secondary)
         case .develop:

@@ -83,7 +83,7 @@ struct TextureProbe {
       }
       return sqrt(delta.map { $0 * $0 }.reduce(0, +) / Double(delta.count))
     }
-    for stock in [1.0, 2.0, 3.0, 4.0] {
+    for stock in [1.0, 2.0, 3.0, 4.0, 5.0] {
       let midtone = developed(stock, 0, 0.75)
       let baseline = pixels(developed(stock, 0, 0), context: export)
       let rendered = pixels(midtone, context: export)
@@ -95,14 +95,14 @@ struct TextureProbe {
       precondition(
         zip(rendered, baseline).map { abs($0 - $1) }.max()! > 0.005,
         "Density-stage grain is not visible")
-      if stock == 4 {
+      if stock >= 4 {
         var channelDifference: Float = 0
         for index in stride(from: 0, to: rendered.count, by: 4) {
           let redGreen = abs(rendered[index] - rendered[index + 1])
           let greenBlue = abs(rendered[index + 1] - rendered[index + 2])
           channelDifference = max(channelDifference, max(redGreen, greenBlue))
         }
-        precondition(channelDifference < 0.0001, "Tri-X grain added color")
+        precondition(channelDifference < 0.0001, "Monochrome stock grain added color")
       }
       let darkSpread = grainSpread(stock, -2)
       let lightSpread = grainSpread(stock, 2)
@@ -111,6 +111,10 @@ struct TextureProbe {
         "Density-stage grain did not react to stock exposure")
       print("Density grain stock \(stock): -2 EV \(darkSpread), +2 EV \(lightSpread)")
     }
+
+    precondition(
+      grainSpread(5, 0) < grainSpread(4, 0),
+      "T-Max study texture is not finer than Tri-X")
 
     let dark = CIImage(color: CIColor(red: 0.12, green: 0.12, blue: 0.12, colorSpace: space)!)
       .cropped(to: CGRect(x: 0, y: 0, width: 32, height: 64))

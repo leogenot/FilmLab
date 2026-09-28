@@ -464,6 +464,23 @@ enum FilmKernels {
         // Provisional continuation beyond the published graph.
         return trixD[8] + trixTangent[8] * (logH - 0.3);
     }
+    // Kodak F-4016 page 8: 100TMX, D-76 small tank, 20 C, 7.5 minutes.
+    // Approximate diffuse-visual density readings in Research/tmax100-density.csv.
+    constant float tmaxH[10] = {-3.10, -3.00, -2.50, -2.00, -1.50, -1.00, -0.50, 0.00, 0.50, 0.65};
+    constant float tmaxD[10] = {0.210000, 0.220000, 0.240000, 0.380000, 0.740000, 1.100000, 1.440000, 1.770000, 2.090000, 2.160000};
+    constant float tmaxTangent[10] = {0.000000, 0.063158, 0.070000, 0.403200, 0.720000, 0.699429, 0.669851, 0.649846, 0.525000, 0.426667};
+    inline float tmaxDensityAt(float logH) {
+        if (logH <= tmaxH[0]) return tmaxD[0];
+        for (int i = 0; i < 9; i++) {
+            if (logH <= tmaxH[i + 1]) {
+                return smoothDensity(logH, tmaxH[i], tmaxH[i + 1],
+                                     float3(tmaxD[i]), float3(tmaxD[i + 1]),
+                                     float3(tmaxTangent[i]), float3(tmaxTangent[i + 1])).r;
+            }
+        }
+        // Provisional continuation beyond the published graph.
+        return tmaxD[9] + tmaxTangent[9] * (logH - 0.65);
+    }
     [[stitchable]] float4 measuredNegative(coreimage::sample_t pixel, float ev,
                                             float dev, float stock) {
         float3 light = max(pixel.rgb, float3(0.0));
@@ -473,7 +490,8 @@ enum FilmKernels {
             float exposure = dot(light, float3(0.2126, 0.7152, 0.0722));
             float logH = log10(max(exposure, 0.000001) / 0.18)
                        - 1.5 + ev * 0.30103;
-            return float4(float3(trixDensityAt(logH)), pixel.a);
+            float density = stock > 4.5 ? tmaxDensityAt(logH) : trixDensityAt(logH);
+            return float4(float3(density), pixel.a);
         }
         // Approximate spectral-layer overlap from E-4050's broad sensitivity bands.
         // These RGB weights are a modeling assumption, not digitized Kodak measurements.
@@ -514,7 +532,7 @@ enum FilmKernels {
                                           float paperExposure, float stock) {
         if (stock > 3.5) {
             float density = dot(negative.rgb, float3(0.333333));
-            float reference = trixDensityAt(-1.5);
+            float reference = stock > 4.5 ? tmaxDensityAt(-1.5) : trixDensityAt(-1.5);
             // Virtual monochrome scan/print transform, not a measured paper.
             float linear = 0.18 * exp2(clamp((density - reference) * (0.8 / 0.17),
                                               -20.0, 20.0));
@@ -746,8 +764,11 @@ enum FilmKernels {
         uint photoSeed = uint(seed);
         float fine = grainHash(int2(floor(coord)), 0xcb1ab31fu ^ photoSeed);
         float noise = fine;
-        if (size > 0.001) {
-            float2 lattice = coord / (2.5 * size);
+        // The finer 100TMX texture is a qualitative scale choice. Kodak's RMS
+        // granularity is not a pixel-noise calibration for this virtual scan.
+        float effectiveSize = stock > 4.5 ? size * 0.7 : size;
+        if (effectiveSize > 0.001) {
+            float2 lattice = coord / (2.5 * effectiveSize);
             int2 cell = int2(floor(lattice));
             float2 fraction = fract(lattice);
             float2 blend = fraction * fraction * (3.0 - 2.0 * fraction);
@@ -768,7 +789,8 @@ enum FilmKernels {
         // One panchromatic layer gets one density field. Color negatives retain
         // shared structure plus restrained dye-layer variation.
         if (stock > 3.5) {
-            float variation = noise * clamp(amount, 0.0, 1.0) * 0.12;
+            float strength = stock > 4.5 ? 0.075 : 0.12;
+            float variation = noise * clamp(amount, 0.0, 1.0) * strength;
             return float4(max(negative.rgb + float3(variation), float3(0.0)), negative.a);
         }
         // Shared spatial structure with restrained independent dye variation.
