@@ -21,6 +21,12 @@ actor RenderWorkQueue<Key: Hashable & Sendable, Value: Sendable> {
     self.render = render
   }
 
+  /// Useful for diagnosing coalesced work and waiting for registration in tests.
+  func waiterCount(for key: Key) -> Int {
+    guard let jobID = jobIDs[key] else { return 0 }
+    return jobs[jobID]?.waiters.count ?? 0
+  }
+
   func value(for key: Key) async -> Value? {
     let waiterID = UUID()
     return await withTaskCancellationHandler {
