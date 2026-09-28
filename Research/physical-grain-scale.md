@@ -1,0 +1,11 @@
+# Negative grain scale study
+
+FilmLab's stock-specific texture is generated in negative density before its positive scan or print. Kodak's print-grain-index and RMS-granularity figures do not determine a unique spatial-frequency spectrum, grain correlation length, or scanner response; amplitude and form remain creative parameters. See `PRINT-SCAN-RESEARCH.md` for the evidence and boundaries.
+
+New grades can place the procedural density-grain correlation lattice in approximate film-plane coordinates. **Grain Size 1** has a 2.5-source-pixel lattice at a 7008-pixel long edge on a virtual 36 mm frame, corresponding to about **13 µm**. This is a reference scale chosen to preserve FilmLab's prior appearance on the test RAW, not a measured Kodak grain diameter. The pixel lattice width scales with the decoded image's long edge and inversely with the chosen frame's long edge. Thus a higher-resolution export of the same virtual frame does not make grains physically smaller.
+
+The Texture panel offers 35 mm (36 mm long edge), 120 6×6 (about 56 mm), and 120 6×7 (about 70 mm). Kodak documents 35 mm negatives as 24×36 mm in its grain-index methods; Nikon's [Super Coolscan 8000 ED specifications](https://www.nikonusa.com/fileuploads/pdfs/8000.pdf) list approximately 56–57 mm and 69–70 mm scan apertures for 6×6 and 6×7. These sizes describe output geometry; they do not claim a specific Kodak stock was tested in each format.
+
+Saved grades without `grainSpatialVersion` retain their original pixel-relative grain until **Use frame-scaled grain** is selected. The upgrade is undoable and copies with Texture settings. Thumbnail amplitude still tapers with its decode scale; the physical-size calculation uses the thumbnail's smaller source dimensions directly, so the spatial pattern follows the full-resolution frame proportion.
+
+Remaining work: characterize autocorrelation/power spectra across source resolutions and zoom levels, choose and validate a stock-specific density variance only if suitable reference measurements become available, and model a separately specified scanner/enlarger MTF. A Kodak Print Grain Index must not be converted directly into a per-pixel noise amplitude.

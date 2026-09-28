@@ -65,6 +65,8 @@ struct PhotoEdits: Codable, Equatable {
   var grain = 0.0
   var grainSize = 1.0
   var grainVersion = 2
+  var grainSpatialVersion = 2
+  var grainFrameIndex = 0
   var grainSeed = 0.0
   var halation = 0.0
   var halationVersion = 2
@@ -206,6 +208,8 @@ struct PhotoEdits: Codable, Equatable {
       result.grain = source.grain
       result.grainSize = source.grainSize
       result.grainVersion = source.grainVersion
+      result.grainSpatialVersion = source.grainSpatialVersion
+      result.grainFrameIndex = source.grainFrameIndex
       result.halation = source.halation
       result.halationVersion = source.halationVersion
       result.acutance = source.acutance
@@ -279,6 +283,9 @@ struct PhotoEdits: Codable, Equatable {
     grain = try values.decodeIfPresent(Double.self, forKey: .grain) ?? 0
     grainSize = try values.decodeIfPresent(Double.self, forKey: .grainSize) ?? 0
     grainVersion = try values.decodeIfPresent(Int.self, forKey: .grainVersion) ?? 1
+    grainSpatialVersion = try values.decodeIfPresent(Int.self, forKey: .grainSpatialVersion) ?? 1
+    grainFrameIndex = min(
+      2, max(0, try values.decodeIfPresent(Int.self, forKey: .grainFrameIndex) ?? 0))
     grainSeed = try values.decodeIfPresent(Double.self, forKey: .grainSeed) ?? 0
     halation = try values.decodeIfPresent(Double.self, forKey: .halation) ?? 0
     halationVersion = try values.decodeIfPresent(Int.self, forKey: .halationVersion) ?? 1
@@ -459,6 +466,8 @@ final class PhotoEditor {
   var grain = 0.0
   var grainSize = 1.0
   var grainVersion = 2
+  var grainSpatialVersion = 2
+  var grainFrameIndex = 0
   var grainSeed = 0.0
   var halation = 0.0
   var halationVersion = 2
@@ -891,6 +900,8 @@ final class PhotoEditor {
     grain = saved.grain
     grainSize = saved.grainSize
     grainVersion = saved.grainVersion
+    grainSpatialVersion = saved.grainSpatialVersion
+    grainFrameIndex = saved.grainFrameIndex
     grainSeed = saved.grainSeed
     halation = saved.halation
     halationVersion = saved.halationVersion
@@ -1071,6 +1082,8 @@ final class PhotoEditor {
     edits.grain = grain
     edits.grainSize = grainSize
     edits.grainVersion = grainVersion
+    edits.grainSpatialVersion = grainSpatialVersion
+    edits.grainFrameIndex = grainFrameIndex
     edits.grainSeed = grainSeed
     edits.halation = halation
     edits.halationVersion = halationVersion
@@ -1504,6 +1517,8 @@ final class PhotoEditor {
     grain = defaults.grain
     grainSize = defaults.grainSize
     grainVersion = defaults.grainVersion
+    grainSpatialVersion = defaults.grainSpatialVersion
+    grainFrameIndex = defaults.grainFrameIndex
     grainSeed = sourceURL.map { EditRecordLocator.grainSeed(for: $0) } ?? 0
     halation = defaults.halation
     halationVersion = defaults.halationVersion
@@ -1932,7 +1947,13 @@ final class PhotoEditor {
             extent: negative.extent,
             arguments: [
               negative, grain * thumbnailSpatialScale,
-              grainSize * thumbnailSpatialScale, grainSeed, Double(stockIndex),
+              FilmGrainScale.sizeInSourcePixels(
+                grainSize: grainSize,
+                sourceLongEdgePixels: max(negative.extent.width, negative.extent.height),
+                frameIndex: grainFrameIndex,
+                spatialVersion: grainSpatialVersion,
+                thumbnailSpatialScale: thumbnailSpatialScale),
+              grainSeed, Double(stockIndex),
             ]
           )
         else {
@@ -2382,6 +2403,12 @@ final class PhotoEditor {
   func useFilmDensityGrain() {
     guard grainVersion < 2 else { return }
     grainVersion = 2
+    editsChanged()
+  }
+
+  func useFrameScaledGrain() {
+    guard grainSpatialVersion < 2 else { return }
+    grainSpatialVersion = 2
     editsChanged()
   }
 
@@ -3115,6 +3142,7 @@ struct ContentView: View {
     .onChange(of: editor.development) { editor.editsChanged() }
     .onChange(of: editor.grain) { editor.editsChanged() }
     .onChange(of: editor.grainSize) { editor.editsChanged() }
+    .onChange(of: editor.grainFrameIndex) { editor.editsChanged() }
     .onChange(of: editor.halation) { editor.editsChanged() }
     .onChange(of: editor.acutance) { editor.editsChanged() }
     .onChange(of: editor.shadowHue) { editor.editsChanged() }
@@ -5450,6 +5478,24 @@ struct ContentView: View {
         case .texture:
           control("Grain", value: $editor.grain, range: 0...1)
           control("Grain size", value: $editor.grainSize, range: 0...2)
+          if editor.stockIndex > 0 && editor.grainVersion >= 2 {
+            if editor.grainSpatialVersion >= 2 {
+              Picker("Simulated frame", selection: $editor.grainFrameIndex) {
+                Text("35 mm · 24 × 36").tag(0)
+                Text("120 · 6 × 6").tag(1)
+                Text("120 · 6 × 7").tag(2)
+              }
+              .pickerStyle(.menu)
+              Text(
+                "Frame size sets grain scale in source coordinates; Grain sets its strength. Sizes are creative, not stock measurements."
+              )
+              .font(.caption).foregroundStyle(.secondary)
+            } else {
+              Button("Use frame-scaled grain") { editor.useFrameScaledGrain() }
+              Text("This changes this saved grade's grain scale. Undo restores the earlier render.")
+                .font(.caption).foregroundStyle(.secondary)
+            }
+          }
           if editor.grainVersion == 1 && editor.stockIndex > 0 {
             Button("Use film-density grain") { editor.useFilmDensityGrain() }
             Text(
@@ -5480,7 +5526,9 @@ struct ContentView: View {
           }
           control("Edge detail", value: $editor.acutance, range: 0...1)
           Text(
-            "Grain size 0 keeps the earlier fine noise; 1 adds roughly 2–3 source-pixel structure. Inspect texture and edge detail at 100% zoom."
+            editor.grainSpatialVersion >= 2
+              ? "At 35 mm and a 7008-pixel source, Grain size 1 adds roughly 2–3 source-pixel structure. Other frames and resolutions scale with the simulated film. Inspect at 100% zoom."
+              : "Grain size 0 keeps the earlier fine noise; 1 adds roughly 2–3 source-pixel structure. Inspect texture and edge detail at 100% zoom."
           )
           .font(.caption).foregroundStyle(.secondary)
         }
