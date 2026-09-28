@@ -97,6 +97,31 @@ struct RenderingProbe {
         "Shot exposure did not lighten print for stock \(stock)")
     }
 
+    func opticalColor(_ stock: Double, red: Double, green: Double, blue: Double) -> [Float] {
+      let source = CIImage(
+        color: CIColor(red: red, green: green, blue: blue, colorSpace: space)!
+      ).cropped(to: CGRect(x: 0, y: 0, width: 1, height: 1))
+      let density = negative.apply(
+        extent: source.extent, arguments: [source, 0.0, 0.0, stock])!
+      let printImage = opticalPrint.apply(
+        extent: source.extent,
+        arguments: [density, source, 0.0, 1.0, 0.0, stock])!
+      return channels(printImage)
+    }
+    let samplePrints = [1.0, 2.0, 3.0].map {
+      opticalColor($0, red: 0.34, green: 0.12, blue: 0.07)
+    }
+    precondition(
+      samplePrints.allSatisfy { channels in
+        channels.allSatisfy { $0.isFinite && $0 >= 0 }
+      }, "Spectral print generated an invalid color")
+    precondition(
+      zip(samplePrints[0], samplePrints[1]).contains { abs($0 - $1) > 0.001 },
+      "Portra and Ektar used an indistinguishable print response")
+    precondition(
+      zip(samplePrints[1], samplePrints[2]).contains { abs($0 - $1) > 0.001 },
+      "Ektar and Gold used an indistinguishable print response")
+
     let coloredLight = CIImage(
       color: CIColor(red: 0.22, green: 0.18, blue: 0.13, colorSpace: space)!
     ).cropped(to: CGRect(x: 0, y: 0, width: 1, height: 1))

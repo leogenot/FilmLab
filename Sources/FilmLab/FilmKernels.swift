@@ -703,6 +703,98 @@ enum FilmKernels {
             dot(d65, float3(-0.9692660, 1.8760108, 0.0415560)),
             dot(d65, float3(0.0556434, -0.2040259, 1.0572252))), float3(0.0));
     }
+    // BEGIN GENERATED OPTICAL PRINTER (Research/generate-optical-printer.py)
+    constant float3 portraDensityGain[13] = {
+        float3(0.002006498, 0.108735460, 0.621531049),
+        float3(0.007132158, 0.244653819, 0.853282719),
+        float3(0.019555016, 0.416042504, 0.862927617),
+        float3(0.040887059, 0.528644639, 0.635539595),
+        float3(0.078815887, 0.606792384, 0.412104554),
+        float3(0.155283425, 0.697508975, 0.260826674),
+        float3(0.322266926, 0.827539515, 0.166062761),
+        float3(0.391311665, 0.562851803, 0.059075211),
+        float3(0.360402872, 0.284516680, 0.015222748),
+        float3(0.618252744, 0.262472448, 0.006977335),
+        float3(0.994025526, 0.222363420, 0.002862438),
+        float3(1.337042051, 0.154421929, 0.000938199),
+        float3(1.484650512, 0.086743351, 0.000242428),
+    };
+    constant float3 portraPaperWeight[13] = {
+        float3(0.000001515, 0.000000823, 0.031491768),
+        float3(0.000001785, 0.001723845, 0.054876366),
+        float3(0.000001793, 0.003876406, 0.117846414),
+        float3(0.000003406, 0.016480250, 0.794055513),
+        float3(0.000006474, 0.088293971, 0.001509448),
+        float3(0.000007476, 0.114393140, 0.000004378),
+        float3(0.000010048, 0.770651741, 0.000005885),
+        float3(0.008101762, 0.004398837, 0.000015005),
+        float3(0.076694185, 0.000052423, 0.000056547),
+        float3(0.195902080, 0.000053309, 0.000057502),
+        float3(0.214578213, 0.000036842, 0.000039740),
+        float3(0.305056905, 0.000026251, 0.000028316),
+        float3(0.199634356, 0.000012162, 0.000013118),
+    };
+    constant float3 ektarDensityGain[13] = {
+        float3(0.002158109, 0.120259929, 0.691914798),
+        float3(0.007716418, 0.272183475, 0.955526523),
+        float3(0.020977091, 0.458922924, 0.958112397),
+        float3(0.043669144, 0.580587388, 0.702564854),
+        float3(0.075184183, 0.595206664, 0.406888223),
+        float3(0.156884572, 0.724635966, 0.272748349),
+        float3(0.316545698, 0.835842346, 0.168829341),
+        float3(0.358740368, 0.530599049, 0.056055435),
+        float3(0.376784041, 0.305862997, 0.016472227),
+        float3(0.563871495, 0.246157323, 0.006586560),
+        float3(0.892151167, 0.205219775, 0.002659084),
+        float3(1.235807421, 0.146767419, 0.000897544),
+        float3(1.413168852, 0.084902596, 0.000238840),
+    };
+    constant float3 ektarPaperWeight[13] = {
+        float3(0.000001134, 0.000000627, 0.034708815),
+        float3(0.000001191, 0.001170473, 0.053904881),
+        float3(0.000001142, 0.002513579, 0.110550095),
+        float3(0.000002324, 0.011450569, 0.798166715),
+        float3(0.000006842, 0.095015470, 0.002349962),
+        float3(0.000008273, 0.128903067, 0.000007137),
+        float3(0.000009686, 0.756347602, 0.000008356),
+        float3(0.007991340, 0.004417750, 0.000021801),
+        float3(0.065887422, 0.000045855, 0.000071557),
+        float3(0.202338779, 0.000056061, 0.000087484),
+        float3(0.232073579, 0.000040570, 0.000063310),
+        float3(0.307907974, 0.000026978, 0.000042099),
+        float3(0.183770315, 0.000011399, 0.000017788),
+    };
+    constant float3 goldDensityGain[13] = {
+        float3(0.001605402, 0.085761581, 0.590847612),
+        float3(0.006150955, 0.207993581, 0.874343241),
+        float3(0.014698631, 0.308271050, 0.770655856),
+        float3(0.029909769, 0.381212688, 0.552379055),
+        float3(0.067577642, 0.512868135, 0.419820928),
+        float3(0.155244022, 0.687410112, 0.309819818),
+        float3(0.299101765, 0.757126262, 0.183123001),
+        float3(0.345093839, 0.489310804, 0.061899494),
+        float3(0.328979994, 0.256014939, 0.016509796),
+        float3(0.581272080, 0.243261547, 0.007794179),
+        float3(0.883094459, 0.194737370, 0.003021434),
+        float3(1.165943116, 0.132744825, 0.000972064),
+        float3(1.233593400, 0.071049386, 0.000239330),
+    };
+    constant float3 goldPaperWeight[13] = {
+        float3(0.000001476, 0.000000690, 0.022077120),
+        float3(0.000001549, 0.001288381, 0.034287098),
+        float3(0.000002099, 0.003908186, 0.099325727),
+        float3(0.000005019, 0.020917498, 0.842551097),
+        float3(0.000009540, 0.112066804, 0.001601635),
+        float3(0.000010047, 0.132417663, 0.000004237),
+        float3(0.000010977, 0.725110345, 0.000004629),
+        float3(0.008850510, 0.004138889, 0.000011802),
+        float3(0.074670874, 0.000043961, 0.000039642),
+        float3(0.182149442, 0.000042692, 0.000038497),
+        float3(0.208917308, 0.000030895, 0.000027860),
+        float3(0.297009032, 0.000022013, 0.000019851),
+        float3(0.228362128, 0.000011982, 0.000010805),
+    };
+    // END GENERATED OPTICAL PRINTER
     [[stitchable]] float4 opticalPremierPositive(coreimage::sample_t negative,
                                                    coreimage::sample_t original,
                                                    float ev, float amount,
@@ -710,13 +802,21 @@ enum FilmKernels {
         float3 reference = stock > 2.5 ? goldDensityAt(-1.14)
             : (stock > 1.5 ? ektarDensityAt(-0.84) : portraDensityAt(-1.44));
         float3 delta = negative.rgb - reference;
-        // The E-4070 sensitivity curves overlap. This modest layer coupling is
-        // an inferred enlarger exposure matrix, not a measured negative spectrum.
-        float3 layerDelta = float3(
-            dot(delta, float3(0.90, 0.08, 0.02)),
-            dot(delta, float3(0.07, 0.88, 0.05)),
-            dot(delta, float3(0.02, 0.10, 0.88)));
-        float3 logH = float3(-1.4 + paperExposure * 0.30103) - layerDelta;
+        // CIE A tungsten light through a stock-specific negative approximation,
+        // integrated with E-4070 paper-layer sensitivities. Each weight set is
+        // normalized at the assumed midscale negative; this absorbs a neutral
+        // enlarger filter balance but does not identify a physical filter pack.
+        float3 transmitted = float3(0.0);
+        for (int i = 0; i < 13; i++) {
+            float3 gain = stock > 2.5 ? goldDensityGain[i]
+                : (stock > 1.5 ? ektarDensityGain[i] : portraDensityGain[i]);
+            float3 weight = stock > 2.5 ? goldPaperWeight[i]
+                : (stock > 1.5 ? ektarPaperWeight[i] : portraPaperWeight[i]);
+            float relativeTransmission = pow(10.0, -clamp(dot(delta, gain), -6.0, 6.0));
+            transmitted += weight * relativeTransmission;
+        }
+        float3 logH = float3(-1.4 + paperExposure * 0.30103)
+                    + log10(max(transmitted, float3(0.000001)));
         float3 density = float3(premierDensityAt(logH.r).r,
                                 premierDensityAt(logH.g).g,
                                 premierDensityAt(logH.b).b);

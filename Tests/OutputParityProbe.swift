@@ -27,7 +27,10 @@ struct OutputParityProbe {
       .workingFormat: CIFormat.RGBAf,
     ])
     let outputSpace = CGColorSpace(name: CGColorSpace.sRGB)!
-    guard let stock = FilmKernels.kernel("filmResponse") else { throw ProbeError.unreadable }
+    guard let stock = FilmKernels.kernel("filmResponse"),
+      let negative = FilmKernels.kernel("measuredNegative"),
+      let opticalPrint = FilmKernels.kernel("opticalPremierPositive")
+    else { throw ProbeError.unreadable }
 
     for (kind, path) in zip(["RAW", "JPEG"], CommandLine.arguments.dropFirst()) {
       let url = URL(fileURLWithPath: path)
@@ -165,6 +168,40 @@ struct OutputParityProbe {
           precondition(mean < 1, "Compressed sRGB preview/export drift")
         }
       }
+
+      // Exercise the actual stock-negative / optical-paper path on both file types.
+      let stockIndex = kind == "RAW" ? 2.0 : 1.0
+      guard
+        let density = negative.apply(
+          extent: source.extent,
+          arguments: [source, 0.0, 0.0, stockIndex]),
+        let optical = opticalPrint.apply(
+          extent: source.extent,
+          arguments: [density, source, 0.0, 1.0, 0.0, stockIndex])
+      else { throw ProbeError.unreadable }
+      let opticalPreview = await previewRenderer.render(
+        PreviewRequest(
+          image: optical, scale: 0.5, sourceURL: url,
+          originalImage: nil, showGamutWarning: false))
+      guard let opticalImage = opticalPreview?.image else { throw ProbeError.unreadable }
+      let opticalURL = directory.appendingPathComponent("\(kind)-optical-print.tiff")
+      try await exporter.export(
+        ExportRequest(image: optical, url: opticalURL, format: .tiff16SRGB, sourceURL: url))
+      guard let opticalExport = CIImage(contentsOf: opticalURL) else {
+        throw ProbeError.unreadable
+      }
+      let opticalReduced = opticalExport.applyingFilter(
+        "CILanczosScaleTransform",
+        parameters: [kCIInputScaleKey: 0.5, kCIInputAspectRatioKey: 1])
+      let previewRGB = pixels(CIImage(cgImage: opticalImage))
+      let exportRGB = pixels(opticalReduced)
+      let mean =
+        Double(
+          zip(previewRGB, exportRGB).map {
+            abs(Int($0) - Int($1))
+          }.reduce(0, +)) / Double(previewRGB.count)
+      print("\(kind) optical print preview/export: mean \(mean) / 255")
+      precondition(mean < 1, "Optical print preview/export drift")
     }
   }
 }
