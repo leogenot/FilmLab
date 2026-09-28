@@ -6,7 +6,13 @@ Gold 200, Tri-X 400, and T-Max 100 now have separate digitized characteristic cu
 
 A [published paired digital/film dataset](https://arxiv.org/abs/2411.15967) exists for CineStill 800T. It is useful evidence that matched captures can support validation, but it cannot calibrate Portra or Ektar. The current public search found exposure tests and styled scan examples for those Kodak stocks, but no downloadable, licensed set that includes the same scene as digital RAW and controlled film scans across exposure stops. That is a search result, not a claim that no such dataset exists.
 
-## Reference set needed
+## Validation target and evidence boundary
+
+FilmLab's target is a research-grounded film interpretation that responds naturally to exposure, color, development, printing, and grain controls. No matched film/digital capture campaign is assumed for this project. We can finish and assess the application against published manufacturer curves, public scans with clear provenance, numerical invariants, exposure-bracket renders, and independent descriptions of each process stage. Success means those mechanisms work coherently and reliably; it does not mean a named stock is colorimetrically identical to one specific film, development, print, and scan chain.
+
+Use manufacturer sensitometric and spectral plots for the negative response. Treat any unpublished dye-density, cross-layer coupling, scanner, and paper behavior as explicit modeling assumptions. Use licensed public scans to check spatial character and broad appearance, while keeping their scanner and editing effects in view. Compare results at several virtual exposures and across neutral, skin, foliage, and high-contrast digital sources. Keep output-gamut, preview/export, RAW/JPEG, and saved-edit compatibility checks in the release gate.
+
+## What matched references could establish, if independently published
 
 - Capture the same static scene on digital RAW and each target stock at several exposures, with a gray card and color target in at least some frames. Record illuminant and camera settings.
 - Develop the film under a documented process. Scan each negative with fixed scanner settings and retain high-bit-depth, minimally processed files plus the exact scan profile.
@@ -14,7 +20,7 @@ A [published paired digital/film dataset](https://arxiv.org/abs/2411.15967) exis
 - Fit the camera-to-layer mapping and positive print/scan transform only after the reference rendering condition is chosen. Keep Kodak's density samples as constraints, and test exposure response rather than one nominal-exposure appearance.
 - Compare neutral balance, patch color error, highlight and shadow trajectories, clipping, and texture at native scale. Report results by scene and exposure; do not turn one attractive result into a stock-accuracy claim.
 
-Until that set exists, FilmLab should improve its editing workflow and rendering reliability while clearly marking unmeasured color choices as provisional.
+FilmLab will continue its rendering and editing work with the public evidence available. It will keep unmeasured color choices provisional even when the app reaches feature completion.
 
 Public CC0 [uniform-negative scans](Research/public-flatfield-grain.md) now give reproducible spatial texture measurements for Ektar 100, Tri-X 400, and T-Max 100 at 4000 dpi. They qualitatively support the finer T-Max procedural texture already in FilmLab. They include scanner and processing effects, and the monochrome scans were normalized, so they do not calibrate grain strength or the final positive color rendering. The linked research note records source hashes, derived measurements, and the capture data still needed.
 
