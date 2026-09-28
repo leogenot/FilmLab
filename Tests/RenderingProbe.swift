@@ -215,7 +215,7 @@ struct RenderingProbe {
     precondition(abs(extendedColor[0] - 1.4) < 0.001)
     precondition(abs(extendedColor[2] + 0.1) < 0.001)
 
-    for stock in [1.0, 2.0] {
+    for stock in [1.0, 2.0, 3.0] {
       let under = rendered(stock, -2)
       let normal = rendered(stock, 0)
       let over = rendered(stock, 2)
@@ -337,7 +337,7 @@ struct RenderingProbe {
       brightCurve[0] > 1.0 && abs(brightCurve[1] - 0.5) < 0.001,
       "Channel curve lost extended highlight headroom")
     func negativeDensity(_ stock: Double, _ logH: Double) -> [Float] {
-      let anchor = stock == 1 ? -1.44 : -0.84
+      let anchor = stock == 1 ? -1.44 : (stock == 2 ? -0.84 : -1.14)
       let source = patch(0.18)
       let exposure = (logH - anchor) / log10(2)
       let density = negative.apply(
@@ -365,6 +365,7 @@ struct RenderingProbe {
     }
     for (stock, filename) in [
       (1.0, "portra400-density.csv"), (2.0, "ektar100-density.csv"),
+      (3.0, "gold200-density.csv"),
     ] {
       let rows = chartRows(filename)
       precondition(rows.count == 9)
@@ -387,7 +388,7 @@ struct RenderingProbe {
         }
       }
     }
-    for (stock, upperEnd) in [(1.0, 0.5), (2.0, 1.0)] {
+    for (stock, upperEnd) in [(1.0, 0.5), (2.0, 1.0), (3.0, 0.85)] {
       let distance = 0.005
       let before = negativeDensity(stock, upperEnd - distance)
       let atEnd = negativeDensity(stock, upperEnd)
@@ -402,7 +403,7 @@ struct RenderingProbe {
       }
     }
     func paperOutput(_ stock: Double, _ paperLogH: Double) -> [Float] {
-      let reference = negativeDensity(stock, stock == 1 ? -1.44 : -0.84)
+      let reference = negativeDensity(stock, stock == 1 ? -1.44 : (stock == 2 ? -0.84 : -1.14))
       let shift = stock == 1 ? 0.8 : 0.6
       let density = colorPatch(
         Double(reference[0]) - shift,

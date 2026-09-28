@@ -1905,7 +1905,7 @@ final class PhotoEditor {
       image = normalized
     }
     let imageBeforeFilm = image
-    if stockIndex == 1 || stockIndex == 2 {
+    if (1...3).contains(stockIndex) {
       guard let measuredNegativeKernel,
         let portraPositiveKernel,
         let negative = measuredNegativeKernel.apply(
@@ -1936,7 +1936,8 @@ final class PhotoEditor {
           extent: image.extent,
           arguments: [
             texturedNegative, image, shotExposureEV, filmAmount,
-            (stockIndex == 1 && enduraPaperTone) || (stockIndex == 2 && premierPaperTone)
+            (stockIndex == 1 && enduraPaperTone)
+              || ((stockIndex == 2 || stockIndex == 3) && premierPaperTone)
               ? paperStrength : 0.0, paperExposure,
             Double(stockIndex),
           ]
@@ -4909,15 +4910,16 @@ struct ContentView: View {
             Text("Study stock").tag(0)
             Text("Portra 400 density study").tag(1)
             Text("Ektar 100 density study").tag(2)
+            Text("Gold 200 density study").tag(3)
           }
           .pickerStyle(.menu)
           if editor.stockIndex == 1 {
             Toggle("Endura paper response", isOn: $editor.enduraPaperTone)
-          } else if editor.stockIndex == 2 {
+          } else if editor.stockIndex == 2 || editor.stockIndex == 3 {
             Toggle("Endura Premier paper response", isOn: $editor.premierPaperTone)
           }
           if (editor.stockIndex == 1 && editor.enduraPaperTone)
-            || (editor.stockIndex == 2 && editor.premierPaperTone)
+            || ((editor.stockIndex == 2 || editor.stockIndex == 3) && editor.premierPaperTone)
           {
             control("Paper exposure (EV)", value: $editor.paperExposure, range: -2...2)
             control("Paper strength", value: $editor.paperStrength, range: 0...1)
@@ -4979,7 +4981,11 @@ struct ContentView: View {
                 ? (editor.premierPaperTone
                   ? "Kodak negative and Endura Premier paper curves; color balance is approximate."
                   : "Kodak Ektar negative-density curves with provisional positive rendering.")
-                : "Exposure-dependent study stock. Film measurements will replace this model.")
+                : (editor.stockIndex == 3
+                  ? (editor.premierPaperTone
+                    ? "Kodak Gold negative and Endura Premier paper curves; color balance is approximate."
+                    : "Kodak Gold negative-density curves with provisional positive rendering.")
+                  : "Exposure-dependent study stock. Film measurements will replace this model."))
           )
           .font(.caption).foregroundStyle(.secondary)
         case .develop:

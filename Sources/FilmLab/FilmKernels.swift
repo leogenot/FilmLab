@@ -408,6 +408,44 @@ enum FilmKernels {
         // The extension is provisional, but avoids a slope jump at +1.0.
         return ektarD[8] + ektarTangent[8] * (logH - 1.0);
     }
+    // Kodak E-7022 June 2023 page 4: daylight Status M negative density.
+    // Approximate plot readings in Research/gold200-density.csv (R/G/B order).
+    constant float goldH[9] = {-2.8, -2.5, -2.0, -1.5, -1.0, -0.5, 0.0, 0.5, 0.85};
+    constant float3 goldD[9] = {
+        float3(0.260000, 0.670000, 0.980000),
+        float3(0.290000, 0.720000, 1.010000),
+        float3(0.460000, 0.910000, 1.190000),
+        float3(0.730000, 1.180000, 1.490000),
+        float3(0.990000, 1.460000, 1.810000),
+        float3(1.270000, 1.750000, 2.110000),
+        float3(1.550000, 2.020000, 2.420000),
+        float3(1.720000, 2.200000, 2.620000),
+        float3(1.830000, 2.300000, 2.730000)
+    };
+    // Monotone PCHIP tangents, density per log H.
+    constant float3 goldTangent[9] = {
+        float3(0.000000, 0.000000, 0.000000),
+        float3(0.147826, 0.224409, 0.149481),
+        float3(0.417273, 0.446087, 0.450000),
+        float3(0.529811, 0.549818, 0.619355),
+        float3(0.539259, 0.569825, 0.619355),
+        float3(0.560000, 0.559286, 0.609836),
+        float3(0.423111, 0.432000, 0.486275),
+        float3(0.325884, 0.316443, 0.349533),
+        float3(0.303697, 0.255126, 0.278992)
+    };
+    inline float3 goldDensityAt(float logH) {
+        if (logH <= goldH[0]) return goldD[0];
+        for (int i = 0; i < 8; i++) {
+            if (logH <= goldH[i + 1]) {
+                return smoothDensity(logH, goldH[i], goldH[i + 1],
+                                     goldD[i], goldD[i + 1],
+                                     goldTangent[i], goldTangent[i + 1]);
+            }
+        }
+        // Provisional continuation beyond the published graph.
+        return goldD[8] + goldTangent[8] * (logH - 0.85);
+    }
     [[stitchable]] float4 measuredNegative(coreimage::sample_t pixel, float ev,
                                             float dev, float stock) {
         float3 light = max(pixel.rgb, float3(0.0));
@@ -418,18 +456,24 @@ enum FilmKernels {
             dot(light, float3(0.10, 0.82, 0.08)),
             dot(light, float3(0.00, 0.12, 0.88))
         );
-        bool ektar = stock > 1.5;
-        float anchor = ektar ? -0.84 : -1.44;
+        bool ektar = stock > 1.5 && stock < 2.5;
+        bool gold = stock > 2.5;
+        float anchor = gold ? -1.14 : (ektar ? -0.84 : -1.44);
         float3 logH = log10(max(layerLight, float3(0.000001)) / 0.18)
                     + float3(anchor + ev * 0.30103);
-        float3 density = ektar
-            ? float3(ektarDensityAt(logH.r).r,
-                     ektarDensityAt(logH.g).g,
-                     ektarDensityAt(logH.b).b)
-            : float3(portraDensityAt(logH.r).r,
-                     portraDensityAt(logH.g).g,
-                     portraDensityAt(logH.b).b);
-        float3 reference = ektar ? ektarDensityAt(-0.84) : portraDensityAt(-1.44);
+        float3 density = gold
+            ? float3(goldDensityAt(logH.r).r,
+                     goldDensityAt(logH.g).g,
+                     goldDensityAt(logH.b).b)
+            : (ektar
+                ? float3(ektarDensityAt(logH.r).r,
+                         ektarDensityAt(logH.g).g,
+                         ektarDensityAt(logH.b).b)
+                : float3(portraDensityAt(logH.r).r,
+                         portraDensityAt(logH.g).g,
+                         portraDensityAt(logH.b).b));
+        float3 reference = gold ? goldDensityAt(-1.14)
+            : (ektar ? ektarDensityAt(-0.84) : portraDensityAt(-1.44));
         // Development behavior is provisional; the published chart gives one process condition.
         density = reference + (density - reference) * (1.0 + dev * 0.10);
         return float4(density, pixel.a);
@@ -442,7 +486,8 @@ enum FilmKernels {
                                           coreimage::sample_t original,
                                           float ev, float amount, float paperMix,
                                           float paperExposure, float stock) {
-        float3 reference = stock > 1.5 ? ektarDensityAt(-0.84) : portraDensityAt(-1.44);
+        float3 reference = stock > 2.5 ? goldDensityAt(-1.14)
+            : (stock > 1.5 ? ektarDensityAt(-0.84) : portraDensityAt(-1.44));
         // Provisional balanced print/scan transform; 0.18 remains 0.18 at the reference.
         float3 linear = 0.18 * exp2(clamp((negative.rgb - reference) * (0.8 / 0.17),
                                           float3(-20.0), float3(20.0)));
