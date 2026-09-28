@@ -2872,6 +2872,17 @@ struct ContentView: View {
   @AppStorage("FilmLab.jpegQualityPercent") private var jpegQualityPercent = 95
   @State private var panel: EditorPanel = .film
   @State private var outputScope: OutputScopeKind = .histogram
+  @AppStorage("FilmLab.showScopes") private var showScopes = false
+  @AppStorage("FilmLab.showPreviewTools") private var showPreviewTools = false
+  @AppStorage("FilmLab.showPaperControls") private var showPaperControls = false
+  @AppStorage("FilmLab.showExposureStudy") private var showExposureStudy = false
+  @AppStorage("FilmLab.showInputDiagnostics") private var showInputDiagnostics = false
+  @AppStorage("FilmLab.showOutputCurve") private var showOutputCurve = false
+  @AppStorage("FilmLab.showColorMixer") private var showColorMixer = false
+  @AppStorage("FilmLab.showChannelCurves") private var showChannelCurves = false
+  @AppStorage("FilmLab.showColorTiming") private var showColorTiming = false
+  @AppStorage("FilmLab.showSelectiveColor") private var showSelectiveColor = false
+  @AppStorage("FilmLab.showStockNotes") private var showStockNotes = false
   @State private var selectedColorBand = 0
   @State private var selectedCurveChannel = 0
   @State private var cropDragOrigin: FreeCrop?
@@ -4994,121 +5005,127 @@ struct ContentView: View {
             }
           }
         }
-        if let histogram = editor.histogram {
-          Picker("Output scope", selection: $outputScope) {
-            ForEach(OutputScopeKind.allCases, id: \.self) { scope in
-              Text(scope.rawValue).tag(scope)
+        DisclosureGroup("Scopes", isExpanded: $showScopes) {
+          if let histogram = editor.histogram {
+            Picker("Output scope", selection: $outputScope) {
+              ForEach(OutputScopeKind.allCases, id: \.self) { scope in
+                Text(scope.rawValue).tag(scope)
+              }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            switch outputScope {
+            case .histogram:
+              OutputHistogram(
+                displayP3: histogram.displayP3,
+                bins: histogram.bins,
+                redBins: histogram.redBins,
+                greenBins: histogram.greenBins,
+                blueBins: histogram.blueBins,
+                blackFraction: histogram.blackFraction,
+                whiteFraction: histogram.whiteFraction,
+                redNearWhiteFraction: histogram.redNearWhiteFraction,
+                greenNearWhiteFraction: histogram.greenNearWhiteFraction,
+                blueNearWhiteFraction: histogram.blueNearWhiteFraction,
+                outsideSRGBFraction: histogram.outsideSRGBFraction
+              )
+            case .waveform:
+              OutputWaveform(distribution: histogram.waveform, displayP3: histogram.displayP3)
+            case .rgbParade:
+              OutputRGBParade(
+                red: histogram.redWaveform,
+                green: histogram.greenWaveform,
+                blue: histogram.blueWaveform,
+                displayP3: histogram.displayP3)
             }
           }
-          .pickerStyle(.segmented)
-          .labelsHidden()
-          switch outputScope {
-          case .histogram:
-            OutputHistogram(
-              displayP3: histogram.displayP3,
-              bins: histogram.bins,
-              redBins: histogram.redBins,
-              greenBins: histogram.greenBins,
-              blueBins: histogram.blueBins,
-              blackFraction: histogram.blackFraction,
-              whiteFraction: histogram.whiteFraction,
-              redNearWhiteFraction: histogram.redNearWhiteFraction,
-              greenNearWhiteFraction: histogram.greenNearWhiteFraction,
-              blueNearWhiteFraction: histogram.blueNearWhiteFraction,
-              outsideSRGBFraction: histogram.outsideSRGBFraction
-            )
-          case .waveform:
-            OutputWaveform(distribution: histogram.waveform, displayP3: histogram.displayP3)
-          case .rgbParade:
-            OutputRGBParade(
-              red: histogram.redWaveform,
-              green: histogram.greenWaveform,
-              blue: histogram.blueWaveform,
-              displayP3: histogram.displayP3)
-          }
         }
-        Toggle("Float preview", isOn: $editor.highPrecisionPreview)
-          .font(.caption)
-          .help(
-            "Develop previews in 32-bit float and render the canvas at 16 bits per channel. Full-size previews use more memory."
-          )
-          .disabled(editor.preview == nil)
-        Toggle("Display P3 canvas", isOn: $editor.displayP3Preview)
-          .font(.caption)
-          .help(
-            "Render the photo canvas in Display P3 for a compatible display. The scopes follow the canvas color space. The gamut warning still diagnoses sRGB output."
-          )
-          .disabled(editor.preview == nil)
-        if editor.preview != nil {
-          Toggle(
-            "Inspect pixel",
-            isOn: Binding(
-              get: { editor.inspectPixel },
-              set: { enabled in
-                editor.inspectPixel = enabled
-                editor.pixelReadout = nil
-                editor.selectedPixel = nil
-                if enabled {
-                  editor.setPickingNeutralArea(false)
-                  editor.zoom100 = false
-                  editor.compareEnabled = false
-                  editor.placingLocalArea = false
-                  editor.paintingLocalArea = false
-                  editor.showCropBounds = false
-                  editor.renderPreview()
-                }
-              }
+        DisclosureGroup("Preview and output tools", isExpanded: $showPreviewTools) {
+          Toggle("Float preview", isOn: $editor.highPrecisionPreview)
+            .font(.caption)
+            .help(
+              "Develop previews in 32-bit float and render the canvas at 16 bits per channel. Full-size previews use more memory."
             )
-          )
-          .font(.caption)
-          if editor.inspectPixel {
-            if let sample = editor.pixelReadout {
-              VStack(alignment: .leading, spacing: 4) {
-                Text("EXTENDED LINEAR RGB").font(.caption2.weight(.semibold))
-                  .tracking(1).foregroundStyle(.secondary)
+            .disabled(editor.preview == nil)
+          Toggle("Display P3 canvas", isOn: $editor.displayP3Preview)
+            .font(.caption)
+            .help(
+              "Render the photo canvas in Display P3 for a compatible display. The scopes follow the canvas color space. The gamut warning still diagnoses sRGB output."
+            )
+            .disabled(editor.preview == nil)
+          if editor.preview != nil {
+            Toggle(
+              "Inspect pixel",
+              isOn: Binding(
+                get: { editor.inspectPixel },
+                set: { enabled in
+                  editor.inspectPixel = enabled
+                  editor.pixelReadout = nil
+                  editor.selectedPixel = nil
+                  if enabled {
+                    editor.setPickingNeutralArea(false)
+                    editor.zoom100 = false
+                    editor.compareEnabled = false
+                    editor.placingLocalArea = false
+                    editor.paintingLocalArea = false
+                    editor.showCropBounds = false
+                    editor.renderPreview()
+                  }
+                }
+              )
+            )
+            .font(.caption)
+            if editor.inspectPixel {
+              if let sample = editor.pixelReadout {
+                VStack(alignment: .leading, spacing: 4) {
+                  Text("EXTENDED LINEAR RGB").font(.caption2.weight(.semibold))
+                    .tracking(1).foregroundStyle(.secondary)
+                  Text(
+                    "Input  R \(sample.input.red.formatted(.number.precision(.fractionLength(4))))  G \(sample.input.green.formatted(.number.precision(.fractionLength(4))))  B \(sample.input.blue.formatted(.number.precision(.fractionLength(4))))"
+                  )
+                  Text(
+                    "Output R \(sample.output.red.formatted(.number.precision(.fractionLength(4))))  G \(sample.output.green.formatted(.number.precision(.fractionLength(4))))  B \(sample.output.blue.formatted(.number.precision(.fractionLength(4))))"
+                  )
+                  Text(
+                    "Luminance \(sample.input.luminance.formatted(.number.precision(.fractionLength(4)))) → \(sample.output.luminance.formatted(.number.precision(.fractionLength(4))))"
+                  )
+                }
+                .font(.system(.caption2, design: .monospaced))
+                .textSelection(.enabled)
+              } else {
                 Text(
-                  "Input  R \(sample.input.red.formatted(.number.precision(.fractionLength(4))))  G \(sample.input.green.formatted(.number.precision(.fractionLength(4))))  B \(sample.input.blue.formatted(.number.precision(.fractionLength(4))))"
+                  "Click a point on the Fit preview to compare decoded input and developed output."
                 )
-                Text(
-                  "Output R \(sample.output.red.formatted(.number.precision(.fractionLength(4))))  G \(sample.output.green.formatted(.number.precision(.fractionLength(4))))  B \(sample.output.blue.formatted(.number.precision(.fractionLength(4))))"
-                )
-                Text(
-                  "Luminance \(sample.input.luminance.formatted(.number.precision(.fractionLength(4)))) → \(sample.output.luminance.formatted(.number.precision(.fractionLength(4))))"
-                )
+                .font(.caption2).foregroundStyle(.secondary)
               }
-              .font(.system(.caption2, design: .monospaced))
-              .textSelection(.enabled)
-            } else {
               Text(
-                "Click a point on the Fit preview to compare decoded input and developed output."
+                "Linear values can exceed 1 or fall below 0. RAW input is after macOS demosaic and white balance; JPEG input is already rendered."
               )
               .font(.caption2).foregroundStyle(.secondary)
             }
+            Toggle(
+              "Show sRGB gamut warning",
+              isOn: Binding(
+                get: { editor.showGamutWarning },
+                set: { editor.setGamutWarning($0) }
+              )
+            )
+            .font(.caption)
             Text(
-              "Linear values can exceed 1 or fall below 0. RAW input is after macOS demosaic and white balance; JPEG input is already rendered."
+              "Red: above sRGB. Blue: below zero. Preview only; Display P3 TIFF may retain some flagged color."
             )
             .font(.caption2).foregroundStyle(.secondary)
+            Toggle("Compress sRGB colors", isOn: $editor.compressSRGBGamut)
+              .font(.caption)
+              .help(
+                "Smoothly reduce strong chroma near the sRGB boundary while keeping linear luminance when it lies between black and white. Applies to sRGB canvas, JPEG, and sRGB TIFF; P3 TIFF stays unchanged."
+              )
           }
-          Toggle(
-            "Show sRGB gamut warning",
-            isOn: Binding(
-              get: { editor.showGamutWarning },
-              set: { editor.setGamutWarning($0) }
-            )
-          )
-          .font(.caption)
-          Text(
-            "Red: above sRGB. Blue: below zero. Preview only; Display P3 TIFF may retain some flagged color."
-          )
-          .font(.caption2).foregroundStyle(.secondary)
-          Toggle("Compress sRGB colors", isOn: $editor.compressSRGBGamut)
-            .font(.caption)
-            .help(
-              "Smoothly reduce strong chroma near the sRGB boundary while keeping linear luminance when it lies between black and white. Applies to sRGB canvas, JPEG, and sRGB TIFF; P3 TIFF stays unchanged."
-            )
         }
         switch panel {
         case .film:
+          Text("Choose a stock, set the light reaching it, then refine the print if needed.")
+            .font(.caption).foregroundStyle(.secondary)
           Picker("Stock", selection: $editor.stockIndex) {
             Text("Study stock").tag(0)
             Text("Portra 400 density study").tag(1)
@@ -5118,113 +5135,105 @@ struct ContentView: View {
             Text("T-Max 100 density study").tag(5)
           }
           .pickerStyle(.menu)
-          if (1...5).contains(editor.stockIndex), editor.densityShoulderVersion < 2 {
-            Button("Use bounded negative shoulder") {
-              editor.useBoundedDensityShoulder()
-            }
-            Text("Updates the high-exposure film response. Undo restores the earlier rendering.")
-              .font(.caption).foregroundStyle(.secondary)
-          }
-          if (1...3).contains(editor.stockIndex) {
-            if editor.layerSensitivityVersion == 1 {
-              Button("Use researched film layer sensitivity") {
-                editor.useSpectralLayerSensitivity()
-              }
-              Text(
-                "This changes this saved grade's color response. Undo restores its earlier rendering."
-              )
-              .font(.caption).foregroundStyle(.secondary)
-            }
-            Toggle("Premier optical print study", isOn: $editor.opticalPremierPrint)
-            if editor.opticalPremierPrint {
-              control("Paper exposure (EV)", value: $editor.paperExposure, range: -2...2)
-              control(
-                "Magenta filtration (stops)", value: $editor.printerMagentaStops, range: -2...2)
-              control("Yellow filtration (stops)", value: $editor.printerYellowStops, range: -2...2)
-              Text(
-                "Positive filtration reduces the green or blue paper-layer exposure. These relative controls are not calibrated filter-pack values."
-              )
-              .font(.caption).foregroundStyle(.secondary)
-            } else {
-              if editor.stockIndex == 1 {
-                Toggle("Endura paper response", isOn: $editor.enduraPaperTone)
-              } else {
-                Toggle("Endura Premier paper response", isOn: $editor.premierPaperTone)
-              }
-              if (editor.stockIndex == 1 && editor.enduraPaperTone)
-                || ((editor.stockIndex == 2 || editor.stockIndex == 3) && editor.premierPaperTone)
-              {
+          DisclosureGroup("Paper and print", isExpanded: $showPaperControls) {
+            if (1...3).contains(editor.stockIndex) {
+              Toggle("Premier optical print study", isOn: $editor.opticalPremierPrint)
+              if editor.opticalPremierPrint {
                 control("Paper exposure (EV)", value: $editor.paperExposure, range: -2...2)
-                control("Paper strength", value: $editor.paperStrength, range: 0...1)
-                Text("More paper exposure makes the print darker.")
-                  .font(.caption).foregroundStyle(.secondary)
-              }
-            }
-          }
-          if editor.stockIndex == 4 || editor.stockIndex == 5 {
-            Toggle("Multigrade FB Classic paper study", isOn: $editor.multigradePaper)
-            if editor.multigradePaper {
-              Picker("Paper contrast grade", selection: $editor.multigradeGradeIndex) {
-                Text("00 · softest").tag(0)
-                Text("0").tag(1)
-                Text("1").tag(2)
-                Text("2 · normal").tag(3)
-                Text("3").tag(4)
-                Text("4").tag(5)
-                Text("5 · hardest").tag(6)
-              }
-              .pickerStyle(.menu)
-              control("Paper exposure (EV)", value: $editor.paperExposure, range: -2...2)
-              Text(
-                "Contrast ranges follow Ilford's published ISO R values; curve shape and display balance are approximate."
-              )
-              .font(.caption).foregroundStyle(.secondary)
-            }
-          }
-          control("Shot exposure (EV)", value: $editor.shotExposure, range: -3...3)
-          HStack {
-            Text("EXPOSURE STUDY")
-              .font(.caption2.weight(.medium))
-              .tracking(1)
-              .foregroundStyle(.secondary)
-            Spacer()
-            if editor.isBuildingExposureStudy {
-              Button("Cancel") { editor.clearExposureStudy() }
-                .font(.caption)
-            } else {
-              Button("Compare -2 to +2 EV") { editor.buildExposureStudy() }
-                .font(.caption)
-                .disabled(editor.sourceURL == nil || editor.isOpening)
-            }
-          }
-          if editor.isBuildingExposureStudy {
-            ProgressView("Rendering exposure study…")
-              .font(.caption)
-          }
-          ForEach(editor.exposureStudyFrames) { frame in
-            Button {
-              editor.chooseExposureStudy(frame.ev)
-            } label: {
-              HStack(spacing: 10) {
-                Image(nsImage: frame.image)
-                  .resizable()
-                  .aspectRatio(contentMode: .fit)
-                  .frame(width: 100, height: 68)
-                  .background(Color.white.opacity(0.04))
+                control(
+                  "Magenta filtration (stops)", value: $editor.printerMagentaStops, range: -2...2)
+                control(
+                  "Yellow filtration (stops)", value: $editor.printerYellowStops, range: -2...2)
                 Text(
-                  "\(frame.ev.formatted(.number.sign(strategy: .always()).precision(.fractionLength(0)))) EV"
+                  "Positive filtration reduces the green or blue paper-layer exposure. These relative controls are not calibrated filter-pack values."
                 )
-                .font(.caption.monospacedDigit())
-                Spacer()
+                .font(.caption).foregroundStyle(.secondary)
+              } else {
+                if editor.stockIndex == 1 {
+                  Toggle("Endura paper response", isOn: $editor.enduraPaperTone)
+                } else {
+                  Toggle("Endura Premier paper response", isOn: $editor.premierPaperTone)
+                }
+                if (editor.stockIndex == 1 && editor.enduraPaperTone)
+                  || ((editor.stockIndex == 2 || editor.stockIndex == 3) && editor.premierPaperTone)
+                {
+                  control("Paper exposure (EV)", value: $editor.paperExposure, range: -2...2)
+                  control("Paper strength", value: $editor.paperStrength, range: 0...1)
+                  Text("More paper exposure makes the print darker.")
+                    .font(.caption).foregroundStyle(.secondary)
+                }
               }
             }
-            .buttonStyle(.plain)
-            .disabled(editor.isBuildingExposureStudy)
+            if editor.stockIndex == 4 || editor.stockIndex == 5 {
+              Toggle("Multigrade FB Classic paper study", isOn: $editor.multigradePaper)
+              if editor.multigradePaper {
+                Picker("Paper contrast grade", selection: $editor.multigradeGradeIndex) {
+                  Text("00 · softest").tag(0)
+                  Text("0").tag(1)
+                  Text("1").tag(2)
+                  Text("2 · normal").tag(3)
+                  Text("3").tag(4)
+                  Text("4").tag(5)
+                  Text("5 · hardest").tag(6)
+                }
+                .pickerStyle(.menu)
+                control("Paper exposure (EV)", value: $editor.paperExposure, range: -2...2)
+                Text(
+                  "Contrast ranges follow Ilford's published ISO R values; curve shape and display balance are approximate."
+                )
+                .font(.caption).foregroundStyle(.secondary)
+              }
+            }
           }
-          Text(
-            "Each frame runs through the current stock and grade at the labeled Shot Exposure. Click a frame to use it. Other edits clear this comparison."
-          )
-          .font(.caption2).foregroundStyle(.secondary)
+          control("Light reaching film (EV)", value: $editor.shotExposure, range: -3...3)
+            .help(
+              "Changes scene exposure before the stock and paper responses. +1 EV doubles the modeled light."
+            )
+          DisclosureGroup("Compare exposures", isExpanded: $showExposureStudy) {
+            HStack {
+              Text("EXPOSURE STUDY")
+                .font(.caption2.weight(.medium))
+                .tracking(1)
+                .foregroundStyle(.secondary)
+              Spacer()
+              if editor.isBuildingExposureStudy {
+                Button("Cancel") { editor.clearExposureStudy() }
+                  .font(.caption)
+              } else {
+                Button("Compare -2 to +2 EV") { editor.buildExposureStudy() }
+                  .font(.caption)
+                  .disabled(editor.sourceURL == nil || editor.isOpening)
+              }
+            }
+            if editor.isBuildingExposureStudy {
+              ProgressView("Rendering exposure study…")
+                .font(.caption)
+            }
+            ForEach(editor.exposureStudyFrames) { frame in
+              Button {
+                editor.chooseExposureStudy(frame.ev)
+              } label: {
+                HStack(spacing: 10) {
+                  Image(nsImage: frame.image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 100, height: 68)
+                    .background(Color.white.opacity(0.04))
+                  Text(
+                    "\(frame.ev.formatted(.number.sign(strategy: .always()).precision(.fractionLength(0)))) EV"
+                  )
+                  .font(.caption.monospacedDigit())
+                  Spacer()
+                }
+              }
+              .buttonStyle(.plain)
+              .disabled(editor.isBuildingExposureStudy)
+            }
+            Text(
+              "Each frame runs through the current stock and grade at the labeled Shot Exposure. Click a frame to use it. Other edits clear this comparison."
+            )
+            .font(.caption2).foregroundStyle(.secondary)
+          }
           if editor.stockIndex == 4 || editor.stockIndex == 5 {
             Text(
               editor.stockIndex == 4
@@ -5235,74 +5244,97 @@ struct ContentView: View {
           } else {
             control("Development", value: $editor.development, range: -2...2)
           }
-          control("Stock amount", value: $editor.filmAmount, range: 0...1)
-          Text(
-            editor.opticalPremierPrint && (1...3).contains(editor.stockIndex)
-              ? "Kodak paper curves and approximate spectral dyes; negative-to-paper light and display balance remain inferred."
-              : editor.multigradePaper && (editor.stockIndex == 4 || editor.stockIndex == 5)
-                ? "Kodak negative-density curve and Ilford paper contrast ranges; the paper curve and display balance remain inferred. Set stock amount to 1 for full monochrome."
-                : editor.stockIndex == 1
-                  ? (editor.enduraPaperTone
-                    ? "Kodak negative and paper curves; color response is still approximate."
-                    : "Kodak negative-density curves with provisional positive rendering.")
-                  : (editor.stockIndex == 2
-                    ? (editor.premierPaperTone
-                      ? "Kodak negative and Endura Premier paper curves; color balance is approximate."
-                      : "Kodak Ektar negative-density curves with provisional positive rendering.")
-                    : (editor.stockIndex == 3
-                      ? (editor.premierPaperTone
-                        ? "Kodak Gold negative and Endura Premier paper curves; color balance is approximate."
-                        : "Kodak Gold negative-density curves with provisional positive rendering.")
-                      : (editor.stockIndex == 4
-                        ? "Kodak Tri-X negative-density curve with a virtual monochrome print or scan. Set stock amount to 1 for full monochrome."
-                        : (editor.stockIndex == 5
-                          ? "Kodak T-Max negative-density curve with a virtual monochrome print or scan. Set stock amount to 1 for full monochrome."
-                          : "Exposure-dependent study stock. Film measurements will replace this model."))))
-          )
-          .font(.caption).foregroundStyle(.secondary)
-        case .develop:
-          if let info = editor.sourceFileInfo {
-            DisclosureGroup("Source file") {
-              VStack(alignment: .leading, spacing: 6) {
-                Text(
-                  "File-reported channel depth: \(info.reportedBitDepth.map { "\($0) bits" } ?? "not reported")"
-                )
-                .font(.caption.monospacedDigit())
-                if editor.isRAWSource {
-                  Text(
-                    "RAW container metadata can describe an embedded preview rather than sensor precision. FilmLab uses the RAW decoder's output for editing."
-                  )
-                  .font(.caption).foregroundStyle(.secondary)
-                } else {
-                  Text("Embedded color profile: \(info.embeddedProfileName ?? "not reported")")
-                    .font(.caption)
-                  Text(
-                    "FilmLab converts the decoded image into its extended-linear working space; that does not add detail absent from the file."
-                  )
-                  .font(.caption).foregroundStyle(.secondary)
-                }
+          control("Film effect strength", value: $editor.filmAmount, range: 0...1)
+            .help(
+              "Blends between the neutral rendering and the selected stock response. 1 uses the full stock effect."
+            )
+          DisclosureGroup("About this stock study", isExpanded: $showStockNotes) {
+            if (1...5).contains(editor.stockIndex), editor.densityShoulderVersion < 2 {
+              Button("Use bounded negative shoulder") {
+                editor.useBoundedDensityShoulder()
               }
-              .padding(.top, 6)
+              Text("Updates the high-exposure film response. Undo restores the earlier rendering.")
+                .font(.caption).foregroundStyle(.secondary)
             }
-            Divider()
-          }
-          if let range = editor.inputExposureRange {
-            Text("Decoded input light").font(.headline)
+            if (1...3).contains(editor.stockIndex), editor.layerSensitivityVersion == 1 {
+              Button("Use researched film layer sensitivity") {
+                editor.useSpectralLayerSensitivity()
+              }
+              Text("This changes this saved grade's color response. Undo restores it.")
+                .font(.caption).foregroundStyle(.secondary)
+            }
             Text(
-              "1%: \(range.lowEV.formatted(.number.precision(.fractionLength(1)))) EV   Median: \(range.medianEV.formatted(.number.precision(.fractionLength(1)))) EV   99%: \(range.highEV.formatted(.number.precision(.fractionLength(1)))) EV"
-            )
-            .font(.caption.monospacedDigit())
-            Text(
-              "Deep shadow (<1/256): \(range.deepShadowFraction.formatted(.percent.precision(.fractionLength(1))))   Above display white (>1): \(range.aboveWhiteFraction.formatted(.percent.precision(.fractionLength(1))))"
-            )
-            .font(.caption.monospacedDigit())
-            Text(
-              "Sampled luminance before FilmLab's input controls. EV is relative to 18% linear gray. The fractions measure decoded light, not clipped pixels or sensor dynamic range."
+              editor.opticalPremierPrint && (1...3).contains(editor.stockIndex)
+                ? "Kodak paper curves and approximate spectral dyes; negative-to-paper light and display balance remain inferred."
+                : editor.multigradePaper && (editor.stockIndex == 4 || editor.stockIndex == 5)
+                  ? "Kodak negative-density curve and Ilford paper contrast ranges; the paper curve and display balance remain inferred. Set stock amount to 1 for full monochrome."
+                  : editor.stockIndex == 1
+                    ? (editor.enduraPaperTone
+                      ? "Kodak negative and paper curves; color response is still approximate."
+                      : "Kodak negative-density curves with provisional positive rendering.")
+                    : (editor.stockIndex == 2
+                      ? (editor.premierPaperTone
+                        ? "Kodak negative and Endura Premier paper curves; color balance is approximate."
+                        : "Kodak Ektar negative-density curves with provisional positive rendering.")
+                      : (editor.stockIndex == 3
+                        ? (editor.premierPaperTone
+                          ? "Kodak Gold negative and Endura Premier paper curves; color balance is approximate."
+                          : "Kodak Gold negative-density curves with provisional positive rendering.")
+                        : (editor.stockIndex == 4
+                          ? "Kodak Tri-X negative-density curve with a virtual monochrome print or scan. Set stock amount to 1 for full monochrome."
+                          : (editor.stockIndex == 5
+                            ? "Kodak T-Max negative-density curve with a virtual monochrome print or scan. Set stock amount to 1 for full monochrome."
+                            : "Exposure-dependent study stock. Film measurements will replace this model."))))
             )
             .font(.caption).foregroundStyle(.secondary)
-            Divider()
           }
-          Text("Input neutral correction").font(.headline)
+        case .develop:
+          Text("Prepare the source and scene light, then finish the rendered image.")
+            .font(.caption).foregroundStyle(.secondary)
+          DisclosureGroup("Input diagnostics", isExpanded: $showInputDiagnostics) {
+            if let info = editor.sourceFileInfo {
+              DisclosureGroup("Source file") {
+                VStack(alignment: .leading, spacing: 6) {
+                  Text(
+                    "File-reported channel depth: \(info.reportedBitDepth.map { "\($0) bits" } ?? "not reported")"
+                  )
+                  .font(.caption.monospacedDigit())
+                  if editor.isRAWSource {
+                    Text(
+                      "RAW container metadata can describe an embedded preview rather than sensor precision. FilmLab uses the RAW decoder's output for editing."
+                    )
+                    .font(.caption).foregroundStyle(.secondary)
+                  } else {
+                    Text("Embedded color profile: \(info.embeddedProfileName ?? "not reported")")
+                      .font(.caption)
+                    Text(
+                      "FilmLab converts the decoded image into its extended-linear working space; that does not add detail absent from the file."
+                    )
+                    .font(.caption).foregroundStyle(.secondary)
+                  }
+                }
+                .padding(.top, 6)
+              }
+              Divider()
+            }
+            if let range = editor.inputExposureRange {
+              Text("Decoded input light").font(.headline)
+              Text(
+                "1%: \(range.lowEV.formatted(.number.precision(.fractionLength(1)))) EV   Median: \(range.medianEV.formatted(.number.precision(.fractionLength(1)))) EV   99%: \(range.highEV.formatted(.number.precision(.fractionLength(1)))) EV"
+              )
+              .font(.caption.monospacedDigit())
+              Text(
+                "Deep shadow (<1/256): \(range.deepShadowFraction.formatted(.percent.precision(.fractionLength(1))))   Above display white (>1): \(range.aboveWhiteFraction.formatted(.percent.precision(.fractionLength(1))))"
+              )
+              .font(.caption.monospacedDigit())
+              Text(
+                "Sampled luminance before FilmLab's input controls. EV is relative to 18% linear gray. The fractions measure decoded light, not clipped pixels or sensor dynamic range."
+              )
+              .font(.caption).foregroundStyle(.secondary)
+              Divider()
+            }
+          }
+          Text("Neutral balance before film").font(.headline)
           HStack {
             Button(editor.pickingNeutralArea ? "Cancel pick" : "Pick neutral area") {
               editor.setPickingNeutralArea(!editor.pickingNeutralArea)
@@ -5396,7 +5428,11 @@ struct ContentView: View {
           )
           .font(.caption).foregroundStyle(.secondary)
           Divider()
-          control("Output exposure (EV)", value: $editor.exposure, range: -3...3)
+          Text("Finish the image").font(.headline)
+          control("Print brightness (EV)", value: $editor.exposure, range: -3...3)
+            .help(
+              "Brightens or darkens the rendered image after the film response. Use Light reaching film to change how the stock itself reacts."
+            )
           control("Contrast", value: $editor.contrast, range: 0.5...1.5)
           control("Saturation", value: $editor.saturation, range: 0...1.5)
           if editor.outputSaturationVersion == 1 && abs(editor.saturation - 1) > 0.001 {
@@ -5409,21 +5445,25 @@ struct ContentView: View {
           control("Warmth", value: $editor.warmth, range: -1...1)
           control("Output tint (magenta +)", value: $editor.tint, range: -1...1)
           Divider()
-          Text("Output tone curve").font(.headline)
-          control("Shadow point", value: $editor.curveShadow, range: -0.14...0.14)
-          control("Midtone point", value: $editor.curveMidtone, range: -0.14...0.14)
-          control("Highlight point", value: $editor.curveHighlight, range: -0.14...0.14)
-          Text(
-            "These points reshape output brightness after film processing while scaling RGB together."
-          )
-          .font(.caption).foregroundStyle(.secondary)
-          Divider()
-          control("Output shoulder", value: $editor.outputShoulder, range: 0...1)
-          Text(
-            "Rolls bright output toward white while preserving linear RGB ratios. The film and paper models still respond before this finishing control."
-          )
-          .font(.caption).foregroundStyle(.secondary)
+          DisclosureGroup("Fine tone shaping", isExpanded: $showOutputCurve) {
+            Text("Output tone curve").font(.headline)
+            control("Shadow point", value: $editor.curveShadow, range: -0.14...0.14)
+            control("Midtone point", value: $editor.curveMidtone, range: -0.14...0.14)
+            control("Highlight point", value: $editor.curveHighlight, range: -0.14...0.14)
+            Text(
+              "These points reshape output brightness after film processing while scaling RGB together."
+            )
+            .font(.caption).foregroundStyle(.secondary)
+            Divider()
+            control("Output shoulder", value: $editor.outputShoulder, range: 0...1)
+            Text(
+              "Rolls bright output toward white while preserving linear RGB ratios. The film and paper models still respond before this finishing control."
+            )
+            .font(.caption).foregroundStyle(.secondary)
+          }
         case .color:
+          Text("Start with vibrance, then open a specific color tool when needed.")
+            .font(.caption).foregroundStyle(.secondary)
           Text("Master color").font(.headline)
           if editor.colorTimingVersion < 2 {
             Button("Use consistent color timing") { editor.useConsistentColorTiming() }
@@ -5436,76 +5476,79 @@ struct ContentView: View {
           control("Vibrance", value: $editor.vibrance, range: -1...1)
           Text("Changes muted colors more than already saturated colors while retaining luminance.")
             .font(.caption).foregroundStyle(.secondary)
-          Divider()
-          Text("Color mixer").font(.headline)
-          if editor.mixerVersion < 2 {
-            Button("Use luminance-preserving mixer") {
-              editor.useLuminancePreservingMixer()
+          DisclosureGroup("Color mixer", isExpanded: $showColorMixer) {
+            if editor.mixerVersion < 2 {
+              Button("Use luminance-preserving mixer") {
+                editor.useLuminancePreservingMixer()
+              }
+              Text(
+                "Updates this older grade's Color Mixer. Active hue or saturation adjustments may shift; Undo restores the previous rendering."
+              )
+              .font(.caption).foregroundStyle(.secondary)
             }
+            Picker("Color family", selection: $selectedColorBand) {
+              ForEach(0..<ColorMixer.names.count, id: \.self) { index in
+                Text(ColorMixer.names[index]).tag(index)
+              }
+            }
+            .pickerStyle(.menu)
+            control("Hue shift", value: mixerBinding(\.hue), range: -30...30)
+            control("Saturation", value: mixerBinding(\.saturation), range: -1...1)
+            control("Luminance (EV)", value: mixerBinding(\.luminance), range: -1...1)
+            Text("The eight soft color ranges use the source pixel's hue.")
+              .font(.caption).foregroundStyle(.secondary)
+          }
+          DisclosureGroup("RGB channel curves", isExpanded: $showChannelCurves) {
+            Picker("Channel", selection: $selectedCurveChannel) {
+              ForEach(0..<ChannelCurves.names.count, id: \.self) { index in
+                Text(ChannelCurves.names[index]).tag(index)
+              }
+            }
+            .pickerStyle(.segmented)
+            Button("Reset Channel") {
+              editor.channelCurves[selectedCurveChannel] = ChannelCurve()
+              editor.editsChanged()
+            }
+            .disabled(editor.channelCurves[selectedCurveChannel].isNeutral)
+            control("Shadow point", value: channelCurveBinding(\.shadow), range: -0.14...0.14)
+            control("Midtone point", value: channelCurveBinding(\.midtone), range: -0.14...0.14)
+            control("Highlight point", value: channelCurveBinding(\.highlight), range: -0.14...0.14)
             Text(
-              "Updates this older grade's Color Mixer. Active hue or saturation adjustments may shift; Undo restores the previous rendering."
+              "Shapes each output RGB channel after the stock and color adjustments. Zero leaves it unchanged."
             )
             .font(.caption).foregroundStyle(.secondary)
           }
-          Picker("Color family", selection: $selectedColorBand) {
-            ForEach(0..<ColorMixer.names.count, id: \.self) { index in
-              Text(ColorMixer.names[index]).tag(index)
+          DisclosureGroup("Shadow, midtone and highlight color", isExpanded: $showColorTiming) {
+            Text("Shadows").font(.headline)
+            control("Hue", value: $editor.shadowHue, range: 0...360)
+            control("Strength", value: $editor.shadowStrength, range: 0...1)
+            Divider()
+            Text("Midtones").font(.headline)
+            control("Hue", value: $editor.midHue, range: 0...360)
+            control("Strength", value: $editor.midStrength, range: 0...1)
+            Divider()
+            Text("Highlights").font(.headline)
+            control("Hue", value: $editor.highlightHue, range: 0...360)
+            control("Strength", value: $editor.highlightStrength, range: 0...1)
+          }
+          DisclosureGroup("Selective color", isExpanded: $showSelectiveColor) {
+            if editor.selectiveColorVersion < 2 {
+              Button("Use luminance-preserving selective color") {
+                editor.useLuminancePreservingSelectiveColor()
+              }
+              Text(
+                "Updates this older grade's selective color rendering. Active hue or saturation adjustments may shift; Undo restores the previous rendering."
+              )
+              .font(.caption).foregroundStyle(.secondary)
             }
+            control("Target hue", value: $editor.selectiveHue, range: 0...360)
+            control("Color range", value: $editor.selectiveRange, range: 10...90)
+            control("Hue shift", value: $editor.selectiveShift, range: -45...45)
+            control("Saturation", value: $editor.selectiveSaturation, range: -1...1)
           }
-          .pickerStyle(.menu)
-          control("Hue shift", value: mixerBinding(\.hue), range: -30...30)
-          control("Saturation", value: mixerBinding(\.saturation), range: -1...1)
-          control("Luminance (EV)", value: mixerBinding(\.luminance), range: -1...1)
-          Text("The eight soft color ranges use the source pixel's hue.")
-            .font(.caption).foregroundStyle(.secondary)
-          Divider()
-          Text("Channel curves").font(.headline)
-          Picker("Channel", selection: $selectedCurveChannel) {
-            ForEach(0..<ChannelCurves.names.count, id: \.self) { index in
-              Text(ChannelCurves.names[index]).tag(index)
-            }
-          }
-          .pickerStyle(.segmented)
-          Button("Reset Channel") {
-            editor.channelCurves[selectedCurveChannel] = ChannelCurve()
-            editor.editsChanged()
-          }
-          .disabled(editor.channelCurves[selectedCurveChannel].isNeutral)
-          control("Shadow point", value: channelCurveBinding(\.shadow), range: -0.14...0.14)
-          control("Midtone point", value: channelCurveBinding(\.midtone), range: -0.14...0.14)
-          control("Highlight point", value: channelCurveBinding(\.highlight), range: -0.14...0.14)
-          Text(
-            "Shapes each output RGB channel after the stock and color adjustments. Zero leaves it unchanged."
-          )
-          .font(.caption).foregroundStyle(.secondary)
-          Divider()
-          Text("Shadows").font(.headline)
-          control("Hue", value: $editor.shadowHue, range: 0...360)
-          control("Strength", value: $editor.shadowStrength, range: 0...1)
-          Divider()
-          Text("Midtones").font(.headline)
-          control("Hue", value: $editor.midHue, range: 0...360)
-          control("Strength", value: $editor.midStrength, range: 0...1)
-          Divider()
-          Text("Highlights").font(.headline)
-          control("Hue", value: $editor.highlightHue, range: 0...360)
-          control("Strength", value: $editor.highlightStrength, range: 0...1)
-          Divider()
-          Text("Selective color").font(.headline)
-          if editor.selectiveColorVersion < 2 {
-            Button("Use luminance-preserving selective color") {
-              editor.useLuminancePreservingSelectiveColor()
-            }
-            Text(
-              "Updates this older grade's selective color rendering. Active hue or saturation adjustments may shift; Undo restores the previous rendering."
-            )
-            .font(.caption).foregroundStyle(.secondary)
-          }
-          control("Target hue", value: $editor.selectiveHue, range: 0...360)
-          control("Color range", value: $editor.selectiveRange, range: 10...90)
-          control("Hue shift", value: $editor.selectiveShift, range: -45...45)
-          control("Saturation", value: $editor.selectiveSaturation, range: -1...1)
         case .local:
+          Text("Place an area on the photo, then adjust only the light or color inside its mask.")
+            .font(.caption).foregroundStyle(.secondary)
           Text("Scene light areas").font(.headline)
           Picker(
             "Area",
@@ -5628,6 +5671,8 @@ struct ContentView: View {
           )
           .font(.caption).foregroundStyle(.secondary)
         case .framing:
+          Text("Choose a crop, then straighten or reposition the image.")
+            .font(.caption).foregroundStyle(.secondary)
           HStack {
             Button("Rotate left", systemImage: "rotate.left") { editor.rotateFrame(-1) }
             Button("Rotate right", systemImage: "rotate.right") { editor.rotateFrame(1) }
@@ -5670,8 +5715,12 @@ struct ContentView: View {
           Text("Framing is saved with this photo and applied at full resolution on export.")
             .font(.caption).foregroundStyle(.secondary)
         case .texture:
+          Text("Texture is easiest to judge at 100% zoom.")
+            .font(.caption).foregroundStyle(.secondary)
           control("Grain", value: $editor.grain, range: 0...1)
+            .help("Controls the visibility of the simulated film grain.")
           control("Grain size", value: $editor.grainSize, range: 0...2)
+            .help("Changes grain scale in the simulated frame. Inspect at 100% zoom.")
           if editor.stockIndex > 0 && editor.grainVersion >= 2 {
             if editor.grainSpatialVersion >= 2 {
               Picker("Simulated frame", selection: $editor.grainFrameIndex) {
@@ -5715,6 +5764,7 @@ struct ContentView: View {
             .font(.caption).foregroundStyle(.secondary)
           }
           control("Halation", value: $editor.halation, range: 0...1)
+            .help("Adds a soft warm glow around bright scene light before the film response.")
           if editor.halationVersion == 1 {
             Button("Use scene-light halation") { editor.useSceneLightHalation() }
             Text(
@@ -5726,6 +5776,7 @@ struct ContentView: View {
               .font(.caption).foregroundStyle(.secondary)
           }
           control("Edge detail", value: $editor.acutance, range: 0...1)
+            .help("Adds local edge contrast, similar to development acutance.")
           Text(
             editor.grainSpatialVersion >= 2
               ? "At 35 mm and a 7008-pixel source, Grain size 1 adds roughly 2–3 source-pixel structure. Other frames and resolutions scale with the simulated film. Inspect at 100% zoom."
