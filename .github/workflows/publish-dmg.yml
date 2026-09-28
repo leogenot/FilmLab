@@ -29,6 +29,9 @@ jobs:
           xcodebuild -version
           swift --version
 
+      - name: Install Metal Toolchain
+        run: xcodebuild -downloadComponent MetalToolchain
+
       - name: Verify rendering and tests
         run: |
           bash Scripts/verify-rendering.sh
