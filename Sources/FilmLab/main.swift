@@ -2716,8 +2716,22 @@ struct ContentView: View {
   private var editsDirectory: URL {
     libraryURL.deletingLastPathComponent().appendingPathComponent("Edits", isDirectory: true)
   }
-  private var visibleLibraryPaths: [String] {
+  private var orderedCatalogPaths: [String] {
     let paths = library.selectedCatalog?.photoPaths ?? []
+    switch librarySort {
+    case .importOrder: return paths
+    case .newestFirst: return paths.reversed()
+    case .captureDate: return CaptureDateSort.newestFirst(paths, dates: captureDates)
+    case .name:
+      return paths.sorted {
+        let comparison = URL(fileURLWithPath: $0).lastPathComponent.localizedStandardCompare(
+          URL(fileURLWithPath: $1).lastPathComponent)
+        return comparison == .orderedSame ? $0 < $1 : comparison == .orderedAscending
+      }
+    }
+  }
+  private var visibleLibraryPaths: [String] {
+    let paths = orderedCatalogPaths
     let query = librarySearch.trimmingCharacters(in: .whitespacesAndNewlines)
     let matching =
       query.isEmpty
@@ -2725,20 +2739,8 @@ struct ContentView: View {
       : paths.filter {
         URL(fileURLWithPath: $0).lastPathComponent.localizedStandardContains(query)
       }
-    let filtered =
-      showFavoritesOnly
+    return showFavoritesOnly
       ? matching.filter { library.favoritePaths.contains($0) } : matching
-    switch librarySort {
-    case .importOrder: return filtered
-    case .newestFirst: return filtered.reversed()
-    case .captureDate: return CaptureDateSort.newestFirst(filtered, dates: captureDates)
-    case .name:
-      return filtered.sorted {
-        let comparison = URL(fileURLWithPath: $0).lastPathComponent.localizedStandardCompare(
-          URL(fileURLWithPath: $1).lastPathComponent)
-        return comparison == .orderedSame ? $0 < $1 : comparison == .orderedAscending
-      }
-    }
   }
   private var missingCatalogPaths: [String] {
     (library.selectedCatalog?.photoPaths ?? []).filter {
@@ -3595,7 +3597,7 @@ struct ContentView: View {
   }
 
   private func adjacentPhoto(step: Int) -> String? {
-    let paths = library.selectedCatalog?.photoPaths ?? []
+    let paths = orderedCatalogPaths
     guard !paths.isEmpty else { return nil }
     let current = editor.sourceURL?.standardizedFileURL.path
     var index = paths.firstIndex(of: current ?? "") ?? (step > 0 ? -1 : paths.count)
@@ -4367,7 +4369,7 @@ struct ContentView: View {
       ScrollViewReader { proxy in
         ScrollView(.horizontal) {
           HStack(spacing: 8) {
-            ForEach(library.selectedCatalog?.photoPaths ?? [], id: \.self) { path in
+            ForEach(orderedCatalogPaths, id: \.self) { path in
               Button {
                 selectPhoto(path)
               } label: {
