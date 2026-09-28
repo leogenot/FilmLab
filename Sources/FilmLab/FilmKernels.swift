@@ -10,7 +10,8 @@ enum FilmKernels {
         let names = CIKernel.kernelNames(fromMetalLibraryData: data)
         let required = Set([
           "filmResponse", "shapeSceneLight", "positiveFilmLight",
-          "measuredNegative", "measuredNegativeSpectral", "portraPositive",
+          "measuredNegative", "measuredNegativeSpectral",
+          "measuredNegativeShoulder", "measuredNegativeSpectralShoulder", "portraPositive",
           "opticalPremierPositive", "multigradePositive",
           "grade", "selectiveColor", "colorMixerBand", "colorMixerBandV2", "applyGrain",
           "applyNegativeGrain",
@@ -506,8 +507,26 @@ enum FilmKernels {
         }
     }
     // END GENERATED STOCK LAYER SENSITIVITY
-    [[stitchable]] float4 measuredNegative(coreimage::sample_t pixel, float ev,
-                                            float dev, float stock) {
+    // A bounded, slope-matched continuation beyond the final published chart
+    // point. The 0.75-log-exposure shoulder length is a declared assumption.
+    inline float shoulderDensity(float logH, float endH, float endDensity,
+                                 float endSlope) {
+        float excess = max(logH - endH, 0.0);
+        return endDensity + endSlope * 0.75 * (1.0 - exp(-excess / 0.75));
+    }
+    inline float3 shoulderNegative(float3 logH, float3 density, float stock) {
+        float endH = stock > 2.5 ? 0.85 : (stock > 1.5 ? 1.0 : 0.5);
+        float3 endDensity = stock > 2.5 ? goldD[8]
+            : (stock > 1.5 ? ektarD[8] : portraD[8]);
+        float3 endSlope = stock > 2.5 ? goldTangent[8]
+            : (stock > 1.5 ? ektarTangent[8] : portraTangent[8]);
+        return float3(
+            logH.r > endH ? shoulderDensity(logH.r, endH, endDensity.r, endSlope.r) : density.r,
+            logH.g > endH ? shoulderDensity(logH.g, endH, endDensity.g, endSlope.g) : density.g,
+            logH.b > endH ? shoulderDensity(logH.b, endH, endDensity.b, endSlope.b) : density.b);
+    }
+    inline float4 measuredNegativeCore(coreimage::sample_t pixel, float ev,
+                                       float dev, float stock, bool shoulder) {
         float3 light = max(pixel.rgb, float3(0.0));
         if (stock > 3.5) {
             // Camera RGB is not scene spectral radiance. This panchromatic
@@ -516,6 +535,14 @@ enum FilmKernels {
             float logH = log10(max(exposure, 0.000001) / 0.18)
                        - 1.5 + ev * 0.30103;
             float density = stock > 4.5 ? tmaxDensityAt(logH) : trixDensityAt(logH);
+            if (shoulder) {
+                float endH = stock > 4.5 ? 0.65 : 0.3;
+                if (logH > endH) {
+                    density = stock > 4.5
+                        ? shoulderDensity(logH, endH, tmaxD[9], tmaxTangent[9])
+                        : shoulderDensity(logH, endH, trixD[8], trixTangent[8]);
+                }
+            }
             return float4(float3(density), pixel.a);
         }
         // Approximate spectral-layer overlap from E-4050's broad sensitivity bands.
@@ -543,12 +570,21 @@ enum FilmKernels {
                          portraDensityAt(logH.b).b));
         float3 reference = gold ? goldDensityAt(-1.14)
             : (ektar ? ektarDensityAt(-0.84) : portraDensityAt(-1.44));
+        if (shoulder) density = shoulderNegative(logH, density, stock);
         // Development behavior is provisional; the published chart gives one process condition.
         density = reference + (density - reference) * (1.0 + dev * 0.10);
         return float4(density, pixel.a);
     }
-    [[stitchable]] float4 measuredNegativeSpectral(coreimage::sample_t pixel, float ev,
+    [[stitchable]] float4 measuredNegative(coreimage::sample_t pixel, float ev,
+                                           float dev, float stock) {
+        return measuredNegativeCore(pixel, ev, dev, stock, false);
+    }
+    [[stitchable]] float4 measuredNegativeShoulder(coreimage::sample_t pixel, float ev,
                                                    float dev, float stock) {
+        return measuredNegativeCore(pixel, ev, dev, stock, true);
+    }
+    inline float4 measuredNegativeSpectralCore(coreimage::sample_t pixel, float ev,
+                                               float dev, float stock, bool shoulder) {
         float3 layerLight = stockLayerLight(max(pixel.rgb, float3(0.0)), stock);
         bool ektar = stock > 1.5 && stock < 2.5;
         bool gold = stock > 2.5;
@@ -568,8 +604,17 @@ enum FilmKernels {
                          portraDensityAt(logH.b).b));
         float3 reference = gold ? goldDensityAt(-1.14)
             : (ektar ? ektarDensityAt(-0.84) : portraDensityAt(-1.44));
+        if (shoulder) density = shoulderNegative(logH, density, stock);
         density = reference + (density - reference) * (1.0 + dev * 0.10);
         return float4(density, pixel.a);
+    }
+    [[stitchable]] float4 measuredNegativeSpectral(coreimage::sample_t pixel, float ev,
+                                                   float dev, float stock) {
+        return measuredNegativeSpectralCore(pixel, ev, dev, stock, false);
+    }
+    [[stitchable]] float4 measuredNegativeSpectralShoulder(coreimage::sample_t pixel, float ev,
+                                                           float dev, float stock) {
+        return measuredNegativeSpectralCore(pixel, ev, dev, stock, true);
     }
     inline float3 enduraPaperReflectance(float3 negativeDensity, float3 reference,
                                         float paperExposure);

@@ -10,11 +10,13 @@ struct PreviewRequest: @unchecked Sendable {
   let displayP3: Bool
   let compressSRGBGamut: Bool
   let includeHistogram: Bool
+  let cropRect: CGRect?
 
   init(
     image: CIImage, scale: CGFloat, sourceURL: URL?, originalImage: CIImage?,
     showGamutWarning: Bool, highPrecision: Bool = false, displayP3: Bool = false,
-    compressSRGBGamut: Bool = false, includeHistogram: Bool = true
+    compressSRGBGamut: Bool = false, includeHistogram: Bool = true,
+    cropRect: CGRect? = nil
   ) {
     self.image = image
     self.scale = scale
@@ -25,6 +27,7 @@ struct PreviewRequest: @unchecked Sendable {
     self.displayP3 = displayP3
     self.compressSRGBGamut = compressSRGBGamut
     self.includeHistogram = includeHistogram
+    self.cropRect = cropRect
   }
 }
 
@@ -129,14 +132,14 @@ actor PreviewRenderer {
     guard
       let image = renderImage(
         displayImage, scale: request.scale, context: context, colorSpace: canvasSpace,
-        highPrecision: request.highPrecision)
+        highPrecision: request.highPrecision, cropRect: request.cropRect)
     else {
       return nil
     }
     let original = request.originalImage.flatMap {
       renderImage(
         $0, scale: request.scale, context: context, colorSpace: canvasSpace,
-        highPrecision: request.highPrecision)
+        highPrecision: request.highPrecision, cropRect: request.cropRect)
     }
     guard !Task.isCancelled, request.originalImage == nil || original != nil else { return nil }
     return PreviewResult(
@@ -246,12 +249,14 @@ actor PreviewRenderer {
 
   private func renderImage(
     _ source: CIImage, scale: CGFloat, context: CIContext, colorSpace: CGColorSpace,
-    highPrecision: Bool
+    highPrecision: Bool, cropRect: CGRect?
   ) -> CGImage? {
     let reduced = downsampled(source, scale: scale)
     guard !Task.isCancelled else { return nil }
+    let bounds = cropRect.map { reduced.extent.intersection($0).integral } ?? reduced.extent
+    guard !bounds.isEmpty else { return nil }
     return context.createCGImage(
-      reduced, from: reduced.extent, format: highPrecision ? .RGBA16 : .RGBA8,
+      reduced, from: bounds, format: highPrecision ? .RGBA16 : .RGBA8,
       colorSpace: colorSpace)
   }
 

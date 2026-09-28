@@ -20,6 +20,8 @@ struct RenderingProbe {
     ])
     let negative = FilmKernels.kernel("measuredNegative")!
     let spectralNegative = FilmKernels.kernel("measuredNegativeSpectral")!
+    let shoulderedNegative = FilmKernels.kernel("measuredNegativeShoulder")!
+    let shoulderedSpectralNegative = FilmKernels.kernel("measuredNegativeSpectralShoulder")!
     let positive = FilmKernels.kernel("portraPositive")!
     let opticalPrint = FilmKernels.kernel("opticalPremierPositive")!
     let multigradePrint = FilmKernels.kernel("multigradePositive")!
@@ -501,11 +503,11 @@ struct RenderingProbe {
     precondition(
       brightCurve[0] > 1.0 && abs(brightCurve[1] - 0.5) < 0.001,
       "Channel curve lost extended highlight headroom")
-    func negativeDensity(_ stock: Double, _ logH: Double) -> [Float] {
+    func negativeDensity(_ stock: Double, _ logH: Double, shoulder: Bool = false) -> [Float] {
       let anchor = stock == 1 ? -1.44 : (stock == 2 ? -0.84 : (stock == 3 ? -1.14 : -1.5))
       let source = patch(0.18)
       let exposure = (logH - anchor) / log10(2)
-      let density = negative.apply(
+      let density = (shoulder ? shoulderedNegative : negative).apply(
         extent: source.extent, arguments: [source, exposure, 0.0, stock])!
       var rgba = [Float](repeating: 0, count: 4)
       rgba.withUnsafeMutableBytes { bytes in
@@ -618,6 +620,34 @@ struct RenderingProbe {
           "Stock \(stock) channel \(channel) has a density slope jump: \(before), \(atEnd), \(after); \(slopeBefore), \(slopeAfter)"
         )
       }
+      let newBefore = negativeDensity(stock, upperEnd - distance, shoulder: true)
+      let newAtEnd = negativeDensity(stock, upperEnd, shoulder: true)
+      let newAfter = negativeDensity(stock, upperEnd + distance, shoulder: true)
+      let far = negativeDensity(stock, upperEnd + 2, shoulder: true)
+      let oldFar = negativeDensity(stock, upperEnd + 2)
+      for channel in 0..<3 {
+        precondition(abs(newAtEnd[channel] - atEnd[channel]) < 0.0002)
+        let leftSlope = (newAtEnd[channel] - newBefore[channel]) / Float(distance)
+        let rightSlope = (newAfter[channel] - newAtEnd[channel]) / Float(distance)
+        precondition(
+          abs(rightSlope / leftSlope - 1) < 0.04,
+          "Stock \(stock) has a new negative shoulder kink")
+        precondition(
+          far[channel] > newAtEnd[channel] && far[channel] < oldFar[channel],
+          "Stock \(stock) negative shoulder is not monotone and bounded")
+      }
+    }
+    let neutral = patch(0.18)
+    for stock in [1.0, 2.0, 3.0] {
+      let legacy = densityChannels(
+        shoulderedNegative.apply(
+          extent: neutral.extent, arguments: [neutral, 0.0, 0.0, stock])!)
+      let spectral = densityChannels(
+        shoulderedSpectralNegative.apply(
+          extent: neutral.extent, arguments: [neutral, 0.0, 0.0, stock])!)
+      precondition(
+        zip(legacy, spectral).allSatisfy { abs($0 - $1) < 0.0002 },
+        "Stock \(stock) shouldered neutral layer response changed")
     }
     func paperOutput(_ stock: Double, _ paperLogH: Double) -> [Float] {
       let reference = negativeDensity(stock, stock == 1 ? -1.44 : (stock == 2 ? -0.84 : -1.14))

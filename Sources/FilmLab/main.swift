@@ -46,6 +46,7 @@ struct PhotoEdits: Codable, Equatable {
   var filmLightTint = 0.0
   var filmInputVersion = 2
   var layerSensitivityVersion = 2
+  var densityShoulderVersion = 2
   var filmAmount = 1.0
   var stockIndex = 0
   var enduraPaperTone = false
@@ -158,6 +159,7 @@ struct PhotoEdits: Codable, Equatable {
     case .film:
       result.stockIndex = source.stockIndex
       result.layerSensitivityVersion = source.layerSensitivityVersion
+      result.densityShoulderVersion = source.densityShoulderVersion
       result.enduraPaperTone = source.enduraPaperTone
       result.premierPaperTone = source.premierPaperTone
       result.opticalPremierPrint = source.opticalPremierPrint
@@ -264,6 +266,8 @@ struct PhotoEdits: Codable, Equatable {
     filmInputVersion = try values.decodeIfPresent(Int.self, forKey: .filmInputVersion) ?? 1
     layerSensitivityVersion =
       try values.decodeIfPresent(Int.self, forKey: .layerSensitivityVersion) ?? 1
+    densityShoulderVersion =
+      try values.decodeIfPresent(Int.self, forKey: .densityShoulderVersion) ?? 1
     filmAmount = try values.decodeIfPresent(Double.self, forKey: .filmAmount) ?? 1.0
     stockIndex = try values.decodeIfPresent(Int.self, forKey: .stockIndex) ?? 0
     enduraPaperTone = try values.decodeIfPresent(Bool.self, forKey: .enduraPaperTone) ?? false
@@ -459,6 +463,7 @@ final class PhotoEditor {
   var filmLightTint = 0.0
   var filmInputVersion = 2
   var layerSensitivityVersion = 2
+  var densityShoulderVersion = 2
   var filmAmount = 1.0
   var stockIndex = 0
   var enduraPaperTone = false
@@ -542,6 +547,9 @@ final class PhotoEditor {
   var selectedPixel: CGPoint?
   var showLocalMask = false
   var zoom100 = false
+  var zoomCanvasSize = CGSize.zero
+  var zoomTileRect = CGRect.zero
+  private var zoomViewport = CGRect(x: 0, y: 0, width: 1800, height: 1200)
   var isRendering = false
   var isOpening = false
   var isExporting = false
@@ -589,7 +597,7 @@ final class PhotoEditor {
   var canUndo: Bool { !undoStack.isEmpty }
   var canRedo: Bool { !redoStack.isEmpty }
   private var previewTask: Task<Void, Never>?
-  private var pendingPreview: (request: PreviewRequest, fast: Bool)?
+  private var pendingPreview: (request: PreviewRequest, fast: Bool, tile: CGRect?)?
   private var isAdjustingSlider = false
   private var rawDecodeTask: Task<Void, Never>?
   private var openTask: Task<Void, Never>?
@@ -650,6 +658,9 @@ final class PhotoEditor {
   private let negativeGrainKernel = FilmKernels.kernel("applyNegativeGrain")
   private let measuredNegativeKernel = FilmKernels.kernel("measuredNegative")
   private let measuredNegativeSpectralKernel = FilmKernels.kernel("measuredNegativeSpectral")
+  private let measuredNegativeShoulderKernel = FilmKernels.kernel("measuredNegativeShoulder")
+  private let measuredNegativeSpectralShoulderKernel = FilmKernels.kernel(
+    "measuredNegativeSpectralShoulder")
   private let portraPositiveKernel = FilmKernels.kernel("portraPositive")
   private let opticalPremierPositiveKernel = FilmKernels.kernel("opticalPremierPositive")
   private let multigradePositiveKernel = FilmKernels.kernel("multigradePositive")
@@ -913,6 +924,7 @@ final class PhotoEditor {
     filmLightTint = saved.filmLightTint
     filmInputVersion = saved.filmInputVersion
     layerSensitivityVersion = saved.layerSensitivityVersion
+    densityShoulderVersion = saved.densityShoulderVersion
     filmAmount = saved.filmAmount
     stockIndex = saved.stockIndex
     enduraPaperTone = saved.enduraPaperTone
@@ -1105,6 +1117,7 @@ final class PhotoEditor {
     edits.filmLightTint = filmLightTint
     edits.filmInputVersion = filmInputVersion
     edits.layerSensitivityVersion = layerSensitivityVersion
+    edits.densityShoulderVersion = densityShoulderVersion
     edits.filmAmount = filmAmount
     edits.stockIndex = stockIndex
     edits.enduraPaperTone = enduraPaperTone
@@ -1544,6 +1557,7 @@ final class PhotoEditor {
     filmLightTint = defaults.filmLightTint
     filmInputVersion = defaults.filmInputVersion
     layerSensitivityVersion = defaults.layerSensitivityVersion
+    densityShoulderVersion = defaults.densityShoulderVersion
     filmAmount = defaults.filmAmount
     stockIndex = defaults.stockIndex
     enduraPaperTone = defaults.enduraPaperTone
@@ -1656,7 +1670,22 @@ final class PhotoEditor {
     showCropBounds = false
     compareEnabled = false
     zoom100.toggle()
+    if zoom100 { zoomViewport = CGRect(x: 0, y: 0, width: 1800, height: 1200) }
+    preview = nil
     renderPreview()
+  }
+
+  func updateZoomViewport(offset: CGPoint, size: CGSize, displayScale: CGFloat) {
+    guard zoom100, size.width > 0, size.height > 0 else { return }
+    let viewport = CGRect(
+      x: max(0, offset.x * displayScale), y: max(0, offset.y * displayScale),
+      width: size.width * displayScale, height: size.height * displayScale)
+    guard viewport != zoomViewport else { return }
+    zoomViewport = viewport
+    let covered = zoomTileRect.insetBy(dx: 64, dy: 64).contains(viewport)
+    if !covered, ZoomTile.rect(for: viewport, canvas: zoomCanvasSize) != zoomTileRect {
+      renderPreview(includeHistogram: false)
+    }
   }
 
   func toggleCompare() {
@@ -1978,8 +2007,11 @@ final class PhotoEditor {
     let imageBeforeFilm = image
     if (1...5).contains(stockIndex) {
       guard
-        let negativeKernel = stockIndex <= 3 && layerSensitivityVersion >= 2
-          ? measuredNegativeSpectralKernel : measuredNegativeKernel,
+        let negativeKernel = densityShoulderVersion >= 2
+          ? (stockIndex <= 3 && layerSensitivityVersion >= 2
+            ? measuredNegativeSpectralShoulderKernel : measuredNegativeShoulderKernel)
+          : (stockIndex <= 3 && layerSensitivityVersion >= 2
+            ? measuredNegativeSpectralKernel : measuredNegativeKernel),
         let portraPositiveKernel,
         let opticalPremierPositiveKernel,
         let multigradePositiveKernel,
@@ -2215,7 +2247,7 @@ final class PhotoEditor {
     editsChanged()
   }
 
-  func renderPreview() {
+  func renderPreview(includeHistogram: Bool = true) {
     pixelTask?.cancel()
     pixelVersion += 1
     pixelReadout = nil
@@ -2232,18 +2264,23 @@ final class PhotoEditor {
       return
     }
     isRendering = true
+    zoomCanvasSize = image.extent.size
     let fast = isAdjustingSlider && !zoom100
     let scale =
       zoom100 ? 1 : min(1, (fast ? 1000 : 1800) / max(image.extent.width, image.extent.height))
+    let tile = zoom100 ? ZoomTile.rect(for: zoomViewport, canvas: image.extent.size) : nil
+    let cropRect = tile.map {
+      CGRect(x: $0.minX, y: image.extent.height - $0.maxY, width: $0.width, height: $0.height)
+    }
     let request = PreviewRequest(
       image: image, scale: scale, sourceURL: scopedURL,
       originalImage: compareEnabled ? source.map { framedImage($0) } : nil,
       showGamutWarning: showGamutWarning && !showOriginal && !showLocalMask && !showCropBounds,
       highPrecision: highPrecisionPreview && !fast, displayP3: displayP3Preview,
       compressSRGBGamut: compressSRGBGamut && !showOriginal && !showLocalMask && !showCropBounds,
-      includeHistogram: !fast
+      includeHistogram: !fast && includeHistogram, cropRect: cropRect
     )
-    pendingPreview = (request, fast)
+    pendingPreview = (request, fast, tile)
     guard previewTask == nil else { return }
     previewTask = Task { await renderPendingPreviews() }
   }
@@ -2261,11 +2298,12 @@ final class PhotoEditor {
       guard !Task.isCancelled else { return }
       if let result {
         let image = result.image
+        if let tile = pending.tile { zoomTileRect = tile }
         preview = NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
         comparisonPreview = result.original.map {
           NSImage(cgImage: $0, size: NSSize(width: $0.width, height: $0.height))
         }
-        if !pending.fast {
+        if !pending.fast, pending.request.includeHistogram {
           histogram = showLocalMask || showCropBounds ? nil : result.histogram
         }
         error = nil
@@ -2515,6 +2553,12 @@ final class PhotoEditor {
   func useSpectralLayerSensitivity() {
     guard layerSensitivityVersion < 2 else { return }
     layerSensitivityVersion = 2
+    editsChanged()
+  }
+
+  func useBoundedDensityShoulder() {
+    guard densityShoulderVersion < 2 else { return }
+    densityShoulderVersion = 2
     editsChanged()
   }
 
@@ -4728,13 +4772,30 @@ struct ContentView: View {
           .padding(24)
         } else if editor.zoom100 {
           ScrollView([.horizontal, .vertical]) {
-            Image(nsImage: preview)
-              .resizable()
-              .interpolation(.none)
+            Color.clear
               .frame(
-                width: preview.size.width / displayScale,
-                height: preview.size.height / displayScale
+                width: editor.zoomCanvasSize.width / displayScale,
+                height: editor.zoomCanvasSize.height / displayScale
               )
+              .overlay(alignment: .topLeading) {
+                Image(nsImage: preview)
+                  .resizable()
+                  .interpolation(.none)
+                  .frame(
+                    width: editor.zoomTileRect.width / displayScale,
+                    height: editor.zoomTileRect.height / displayScale
+                  )
+                  .offset(
+                    x: editor.zoomTileRect.minX / displayScale,
+                    y: editor.zoomTileRect.minY / displayScale
+                  )
+              }
+          }
+          .onScrollGeometryChange(for: CGRect.self) { geometry in
+            CGRect(origin: geometry.contentOffset, size: geometry.containerSize)
+          } action: { _, viewport in
+            editor.updateZoomViewport(
+              offset: viewport.origin, size: viewport.size, displayScale: displayScale)
           }
         } else {
           GeometryReader { geometry in
@@ -5057,6 +5118,13 @@ struct ContentView: View {
             Text("T-Max 100 density study").tag(5)
           }
           .pickerStyle(.menu)
+          if (1...5).contains(editor.stockIndex), editor.densityShoulderVersion < 2 {
+            Button("Use bounded negative shoulder") {
+              editor.useBoundedDensityShoulder()
+            }
+            Text("Updates the high-exposure film response. Undo restores the earlier rendering.")
+              .font(.caption).foregroundStyle(.secondary)
+          }
           if (1...3).contains(editor.stockIndex) {
             if editor.layerSensitivityVersion == 1 {
               Button("Use researched film layer sensitivity") {

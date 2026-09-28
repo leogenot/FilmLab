@@ -68,4 +68,17 @@ final class FilmInputVersionTests: XCTestCase {
       PhotoEdits.self, from: JSONEncoder().encode(PhotoEdits()))
     XCTAssertEqual(saved.layerSensitivityVersion, 2)
   }
+
+  func testDensityShoulderVersionFollowsFilmSettingsAndPreservesOldGrades() throws {
+    let legacy = try JSONDecoder().decode(PhotoEdits.self, from: Data("{}".utf8))
+    XCTAssertEqual(legacy.densityShoulderVersion, 1)
+    XCTAssertEqual(PhotoEdits().densityShoulderVersion, 2)
+    XCTAssertEqual(legacy.resetting(.film, isRAW: false).densityShoulderVersion, 2)
+    let destination = PhotoEdits.defaults(forRAW: false)
+    let transferred = PhotoEdits.transferring(legacy, panel: .film, onto: destination)
+    XCTAssertEqual(transferred.densityShoulderVersion, 1)
+    let saved = try JSONDecoder().decode(
+      PhotoEdits.self, from: JSONEncoder().encode(PhotoEdits()))
+    XCTAssertEqual(saved.densityShoulderVersion, 2)
+  }
 }
