@@ -2684,6 +2684,7 @@ struct ContentView: View {
   @State private var applyingBatch = false
   @State private var batchPasteProgress = ""
   @State private var batchPasteTask: Task<Void, Never>?
+  @State private var stripPasteNotice: String?
   @State private var exportingBatch = false
   @State private var batchExportProgress = ""
   @State private var batchExportTask: Task<Void, Never>?
@@ -3667,9 +3668,17 @@ struct ContentView: View {
     workspaceOnly: Bool = false, look: PhotoEdits? = nil
   ) {
     let paths = library.selectedCatalog?.photoPaths.filter { selectedPhotoPaths.contains($0) } ?? []
+    applySettings(to: paths, workspaceOnly: workspaceOnly, look: look, clearSelection: true)
+  }
+
+  private func applySettings(
+    to paths: [String], workspaceOnly: Bool = false, look: PhotoEdits? = nil,
+    clearSelection: Bool = false
+  ) {
     guard !paths.isEmpty, !applyingBatch else { return }
     applyingBatch = true
     batchPasteProgress = "Preparing settings…"
+    stripPasteNotice = nil
     batchPasteTask = Task {
       let outcome = await editor.pasteSettings(
         to: paths, look: look, workspaceOnly: workspaceOnly
@@ -3678,11 +3687,12 @@ struct ContentView: View {
         batchPasteProgress = "Applying to \(current) of \(total)…"
       }
       libraryNotice = outcome.summary
+      stripPasteNotice = outcome.summary
       for path in outcome.changedPaths { thumbnailRefresh[path, default: 0] += 1 }
       applyingBatch = false
       batchPasteProgress = ""
       batchPasteTask = nil
-      if !outcome.cancelled {
+      if clearSelection && !outcome.cancelled {
         selectedPhotoPaths.removeAll()
         selectionAnchor = nil
         selectingPhotos = false
@@ -4326,6 +4336,34 @@ struct ContentView: View {
           .labelStyle(.iconOnly)
           .help("Import photos into this catalog")
       }
+      if applyingBatch {
+        HStack {
+          ProgressView(batchPasteProgress)
+            .font(.caption2)
+          Spacer()
+          Button("Cancel Paste") { batchPasteTask?.cancel() }
+            .font(.caption2)
+        }
+      } else if let stripPasteNotice {
+        HStack {
+          Text(stripPasteNotice)
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .help(stripPasteNotice)
+          Spacer()
+          if editor.canUndoBatch {
+            Button("Undo Last Batch") {
+              let paths = editor.batchChangedPaths
+              let summary = editor.undoLastBatch()
+              libraryNotice = summary
+              self.stripPasteNotice = summary
+              for path in paths { thumbnailRefresh[path, default: 0] += 1 }
+            }
+            .font(.caption2)
+          }
+        }
+      }
       ScrollViewReader { proxy in
         ScrollView(.horizontal) {
           HStack(spacing: 8) {
@@ -4356,6 +4394,15 @@ struct ContentView: View {
               .buttonStyle(.plain)
               .help(path)
               .contextMenu {
+                if editor.sourceURL?.standardizedFileURL.path == path {
+                  Button("Copy Settings") { editor.copySettings() }
+                    .disabled(editor.preview == nil)
+                } else {
+                  Button("Paste Copied Settings") { applySettings(to: [path]) }
+                    .disabled(
+                      editor.preview == nil || applyingBatch || exportingBatch
+                        || !FileManager.default.fileExists(atPath: path))
+                }
                 Button("Pin as Reference") { setReference(path) }
               }
               .id(path)
@@ -4374,7 +4421,7 @@ struct ContentView: View {
     }
     .padding(.horizontal, 14)
     .padding(.vertical, 9)
-    .frame(height: 118)
+    .frame(height: applyingBatch || stripPasteNotice != nil ? 142 : 118)
     .background(Color(white: 0.095))
   }
 
