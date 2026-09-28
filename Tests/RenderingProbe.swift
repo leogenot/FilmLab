@@ -20,6 +20,7 @@ struct RenderingProbe {
     ])
     let negative = FilmKernels.kernel("measuredNegative")!
     let positive = FilmKernels.kernel("portraPositive")!
+    let opticalPrint = FilmKernels.kernel("opticalPremierPositive")!
     let sceneLight = FilmKernels.kernel("shapeSceneLight")!
     let renderedInputTone = FilmKernels.kernel("renderedInputTone")!
     let outputShoulder = FilmKernels.kernel("outputShoulder")!
@@ -65,6 +66,35 @@ struct RenderingProbe {
         extent: source.extent,
         arguments: [density, source, exposure, 1.0, 0.0, 0.0, stock])!
       return channels(output)
+    }
+
+    func optical(
+      _ stock: Double, _ shotEV: Double, _ paperEV: Double,
+      _ light: Double = 0.18
+    ) -> [Float] {
+      let source = patch(light)
+      let density = negative.apply(
+        extent: source.extent, arguments: [source, shotEV, 0.0, stock])!
+      let printImage = opticalPrint.apply(
+        extent: source.extent,
+        arguments: [density, source, shotEV, 1.0, paperEV, stock])!
+      return channels(printImage)
+    }
+    for stock in [1.0, 2.0, 3.0] {
+      let neutral = optical(stock, 0, 0)
+      precondition(
+        neutral.allSatisfy { $0.isFinite && abs($0 - 0.18) < 0.002 },
+        "Optical print reference was not neutral for stock \(stock)")
+      let lighter = optical(stock, 0, -1)
+      let darker = optical(stock, 0, 1)
+      precondition(
+        zip(lighter, darker).allSatisfy { $0 > $1 },
+        "Paper exposure did not darken print for stock \(stock)")
+      let shadow = optical(stock, -2, 0)
+      let highlight = optical(stock, 2, 0)
+      precondition(
+        zip(shadow, highlight).allSatisfy { $0 < $1 },
+        "Shot exposure did not lighten print for stock \(stock)")
     }
 
     let coloredLight = CIImage(

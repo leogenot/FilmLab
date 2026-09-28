@@ -10,7 +10,7 @@ enum FilmKernels {
         let names = CIKernel.kernelNames(fromMetalLibraryData: data)
         let required = Set([
           "filmResponse", "shapeSceneLight", "positiveFilmLight",
-          "measuredNegative", "portraPositive",
+          "measuredNegative", "portraPositive", "opticalPremierPositive",
           "grade", "selectiveColor", "colorMixerBand", "colorMixerBandV2", "applyGrain",
           "applyNegativeGrain",
           "preservingSelectiveColor",
@@ -654,6 +654,66 @@ enum FilmKernels {
         paperDensity = clamp(paperDensity - premierDensityAt(-1.4) + 0.75,
                              float3(0.0), float3(3.0));
         return pow(float3(10.0), -paperDensity);
+    }
+
+    // E-4070 page 5, visually sampled at 25 nm from 400 to 700 nm. These
+    // broad dye curves are approximate; Status A density is not a full spectrum.
+    constant float premierCyan[13] = {
+        0.00, 0.00, 0.00, 0.00, 0.01, 0.02, 0.04, 0.09, 0.20, 0.48, 0.82, 1.00, 0.92
+    };
+    constant float premierMagenta[13] = {
+        0.01, 0.02, 0.04, 0.12, 0.35, 0.73, 1.00, 0.84, 0.44, 0.14, 0.03, 0.00, 0.00
+    };
+    constant float premierYellow[13] = {
+        0.72, 1.00, 0.87, 0.50, 0.16, 0.04, 0.01, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00
+    };
+    // Provisional D50-weighted display channel sensitivities. The paper curves
+    // and Status A densities do not supply a full colorimetric calibration.
+    constant float3 displayWeight[13] = {
+        float3(0.00,0.00,0.14), float3(0.00,0.00,0.23),
+        float3(0.00,0.01,0.24), float3(0.00,0.03,0.18),
+        float3(0.01,0.08,0.11), float3(0.03,0.17,0.06),
+        float3(0.08,0.23,0.025), float3(0.17,0.22,0.01),
+        float3(0.24,0.15,0.00), float3(0.22,0.07,0.00),
+        float3(0.15,0.03,0.00), float3(0.08,0.01,0.00),
+        float3(0.02,0.00,0.00)
+    };
+    inline float3 premierSpectralReflectance(float3 dyeDensity) {
+        float3 response = float3(0.0);
+        float3 white = float3(0.0);
+        for (int i = 0; i < 13; i++) {
+            float density = dyeDensity.r * premierCyan[i]
+                          + dyeDensity.g * premierMagenta[i]
+                          + dyeDensity.b * premierYellow[i];
+            response += displayWeight[i] * pow(10.0, -clamp(density, 0.0, 6.0));
+            white += displayWeight[i];
+        }
+        return response / white;
+    }
+    [[stitchable]] float4 opticalPremierPositive(coreimage::sample_t negative,
+                                                   coreimage::sample_t original,
+                                                   float ev, float amount,
+                                                   float paperExposure, float stock) {
+        float3 reference = stock > 2.5 ? goldDensityAt(-1.14)
+            : (stock > 1.5 ? ektarDensityAt(-0.84) : portraDensityAt(-1.44));
+        float3 delta = negative.rgb - reference;
+        // The E-4070 sensitivity curves overlap. This modest layer coupling is
+        // an inferred enlarger exposure matrix, not a measured negative spectrum.
+        float3 layerDelta = float3(
+            dot(delta, float3(0.90, 0.08, 0.02)),
+            dot(delta, float3(0.07, 0.88, 0.05)),
+            dot(delta, float3(0.02, 0.10, 0.88)));
+        float3 logH = float3(-1.4 + paperExposure * 0.30103) - layerDelta;
+        float3 density = float3(premierDensityAt(logH.r).r,
+                                premierDensityAt(logH.g).g,
+                                premierDensityAt(logH.b).b);
+        // At zero paper exposure the reference negative is a neutral 0.18 print.
+        density = clamp(density - premierDensityAt(-1.4) + 0.75,
+                        float3(0.0), float3(3.0));
+        float3 referencePrint = premierSpectralReflectance(float3(0.75));
+        float3 positive = 0.18 * premierSpectralReflectance(density) / referencePrint;
+        return float4(mix(max(original.rgb, float3(0.0)) * exp2(ev),
+                          positive, amount), original.a);
     }
 
     [[stitchable]] float4 grade(coreimage::sample_t pixel,
