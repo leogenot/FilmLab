@@ -667,28 +667,41 @@ enum FilmKernels {
     constant float premierYellow[13] = {
         0.72, 1.00, 0.87, 0.50, 0.16, 0.04, 0.01, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00
     };
-    // Provisional D50-weighted display channel sensitivities. The paper curves
-    // and Status A densities do not supply a full colorimetric calibration.
-    constant float3 displayWeight[13] = {
-        float3(0.00,0.00,0.14), float3(0.00,0.00,0.23),
-        float3(0.00,0.01,0.24), float3(0.00,0.03,0.18),
-        float3(0.01,0.08,0.11), float3(0.03,0.17,0.06),
-        float3(0.08,0.23,0.025), float3(0.17,0.22,0.01),
-        float3(0.24,0.15,0.00), float3(0.22,0.07,0.00),
-        float3(0.15,0.03,0.00), float3(0.08,0.01,0.00),
-        float3(0.02,0.00,0.00)
+    // CIE 1931 2-degree observer and CIE D50, 400–700 nm / 25 nm.
+    // Trapezoidal integration, normalized so a perfect reflector has Y = 1.
+    // Source samples and derivation: Research/cie-d50-print-integration.csv.
+    constant float3 cieD50XYZ[13] = {
+        float3(0.000836683, 0.000023153, 0.003967082),
+        float3(0.030013085, 0.001020140, 0.145202304),
+        float3(0.069563626, 0.007862635, 0.366669833),
+        float3(0.031421103, 0.024898073, 0.230384571),
+        float3(0.001112368, 0.073325495, 0.061747786),
+        float3(0.025891901, 0.187385547, 0.013524741),
+        float3(0.105176741, 0.241424925, 0.002123190),
+        float3(0.196459709, 0.213459012, 0.000419736),
+        float3(0.246081878, 0.146184961, 0.000185338),
+        float3(0.173532612, 0.074133575, 0.000023095),
+        float3(0.064320459, 0.024276152, 0.000000000),
+        float3(0.015244170, 0.005560767, 0.000000000),
+        float3(0.001233847, 0.000445565, 0.000000000),
     };
     inline float3 premierSpectralReflectance(float3 dyeDensity) {
-        float3 response = float3(0.0);
-        float3 white = float3(0.0);
+        float3 xyz = float3(0.0);
         for (int i = 0; i < 13; i++) {
             float density = dyeDensity.r * premierCyan[i]
                           + dyeDensity.g * premierMagenta[i]
                           + dyeDensity.b * premierYellow[i];
-            response += displayWeight[i] * pow(10.0, -clamp(density, 0.0, 6.0));
-            white += displayWeight[i];
+            xyz += cieD50XYZ[i] * pow(10.0, -clamp(density, 0.0, 6.0));
         }
-        return response / white;
+        // Bradford D50 -> D65 adaptation, then IEC 61966-2-1 XYZ -> linear sRGB.
+        float3 d65 = float3(
+            dot(xyz, float3(0.9555766, -0.0230393, 0.0631636)),
+            dot(xyz, float3(-0.0282895, 1.0099416, 0.0210077)),
+            dot(xyz, float3(0.0122982, -0.0204830, 1.3299098)));
+        return max(float3(
+            dot(d65, float3(3.2404542, -1.5371385, -0.4985314)),
+            dot(d65, float3(-0.9692660, 1.8760108, 0.0415560)),
+            dot(d65, float3(0.0556434, -0.2040259, 1.0572252))), float3(0.0));
     }
     [[stitchable]] float4 opticalPremierPositive(coreimage::sample_t negative,
                                                    coreimage::sample_t original,
