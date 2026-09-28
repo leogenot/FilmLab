@@ -55,6 +55,15 @@ final class ZoomTileTests: XCTestCase {
     XCTAssertTrue(
       editor.zoomTileRect.contains(
         CGRect(x: 3000, y: 3800, width: 1200, height: 800)))
+
+    let scrolledTile = editor.zoomTileRect
+    editor.updateZoomViewport(
+      offset: CGPoint(x: 3000, y: 2500), size: CGSize(width: 400, height: 300),
+      displayScale: 2, zoomScale: 2)
+    try await waitUntil { !editor.isRendering && editor.zoomTileRect != scrolledTile }
+    XCTAssertTrue(
+      editor.zoomTileRect.contains(
+        CGRect(x: 3000, y: 2500, width: 400, height: 300)))
     XCTAssertTrue(editor.closePhoto())
   }
 

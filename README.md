@@ -6,6 +6,8 @@ The sidebar's Appearance menu offers Dark, Light, and System themes. The choice 
 
 Sliders show intermediate image previews while dragging. Fit view uses a 1000-pixel fast preview during a drag, then restores the selected precision, full preview size, and output scopes on release. At 100% zoom it renders a padded tile around the visible source pixels; scrolling requests another tile only when the visible region leaves the current one.
 
+The canvas supports double-click to switch between Fit and 100%, pinch or the on-canvas controls to zoom from 50% to 200%, and mouse drag or trackpad scroll to pan the tiled image. In Framing, choosing Freeform opens crop bounds with draggable corners and a movable crop; dragging a fixed-ratio image repositions its crop. In Local, the selected filter has a draggable handle; a painted area's handle moves all of its strokes together while keeping their spacing and eraser behavior.
+
 ## Current prototype
 
 - Opens JPEG, 16-bit TIFF, and RAW formats supported by the Mac's Core Image decoder, identifying RAW through the file's ImageIO type. Non-RAW files use a file-backed Core Image decode. Develop shows a sampled display-space near-white channel readout for JPEG input, so bright input limits remain visible after the film curve rolls off output highlights. Verified with a Sony ILCE-7M4 ARW at 4672 × 7008 pixels and a 3737 × 5606, 16-bit TIFF.

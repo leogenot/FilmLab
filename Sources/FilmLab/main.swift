@@ -1691,11 +1691,14 @@ final class PhotoEditor {
     renderPreview()
   }
 
-  func updateZoomViewport(offset: CGPoint, size: CGSize, displayScale: CGFloat) {
+  func updateZoomViewport(
+    offset: CGPoint, size: CGSize, displayScale: CGFloat, zoomScale: CGFloat = 1
+  ) {
     guard zoom100, size.width > 0, size.height > 0 else { return }
+    let pixelsPerPoint = displayScale / max(zoomScale, 0.1)
     let viewport = CGRect(
-      x: max(0, offset.x * displayScale), y: max(0, offset.y * displayScale),
-      width: size.width * displayScale, height: size.height * displayScale)
+      x: max(0, offset.x * pixelsPerPoint), y: max(0, offset.y * pixelsPerPoint),
+      width: size.width * pixelsPerPoint, height: size.height * pixelsPerPoint)
     guard viewport != zoomViewport else { return }
     zoomViewport = viewport
     let covered = zoomTileRect.insetBy(dx: 64, dy: 64).contains(viewport)
@@ -1745,6 +1748,37 @@ final class PhotoEditor {
     localToneNotice = nil
     if radialLights[index].shape != 2 { paintingLocalArea = false }
     if showLocalMask { renderPreview() }
+  }
+
+  func selectedLocalAreaDisplayLocation() -> CGPoint? {
+    guard let source, radialLights.indices.contains(selectedLocalIndex) else { return nil }
+    let anchor = radialLights[selectedLocalIndex].anchor
+    return Framing.displayLocation(
+      sourceX: Double(anchor.x), sourceY: Double(anchor.y), sourceExtent: source.extent,
+      quarterTurns: frameRotation, straightenDegrees: frameStraighten,
+      aspect: frameAspect, offsetX: frameOffsetX, offsetY: frameOffsetY,
+      freeCrop: frameFreeCrop, flipHorizontal: frameFlipHorizontal,
+      flipVertical: frameFlipVertical)
+  }
+
+  func moveSelectedLocalArea(
+    from original: RadialAdjustment, start: CGPoint, current: CGPoint
+  ) {
+    guard let source, radialLights.indices.contains(selectedLocalIndex) else { return }
+    func sourcePoint(_ display: CGPoint) -> CGPoint? {
+      Framing.sourceLocation(
+        displayX: Double(display.x), displayY: Double(display.y), sourceExtent: source.extent,
+        quarterTurns: frameRotation, straightenDegrees: frameStraighten,
+        aspect: frameAspect, offsetX: frameOffsetX, offsetY: frameOffsetY,
+        freeCrop: frameFreeCrop, flipHorizontal: frameFlipHorizontal,
+        flipVertical: frameFlipVertical)
+    }
+    guard let first = sourcePoint(start), let last = sourcePoint(current) else { return }
+    let moved = original.translated(
+      dx: Double(last.x - first.x), dy: Double(last.y - first.y))
+    guard moved != radialLights[selectedLocalIndex] else { return }
+    radialLights[selectedLocalIndex] = moved
+    editsChanged()
   }
 
   func setLocalShape(_ shape: Int) {
@@ -1811,6 +1845,17 @@ final class PhotoEditor {
   func resizeFreeCrop(corner: FreeCropCorner, dx: Double, dy: Double, from original: FreeCrop) {
     guard showCropBounds else { return }
     frameFreeCrop = original.resized(corner: corner, dx: dx, dy: dy)
+    editsChanged()
+  }
+
+  func moveFixedCrop(dx: Double, dy: Double, from original: CGPoint) {
+    guard let source, frameAspect != 0, frameAspect != 5 else { return }
+    let offsets = Framing.fixedCropOffsets(
+      aspect: frameAspect, sourceExtent: source.extent, quarterTurns: frameRotation,
+      dragX: dx, dragY: dy, originalX: Double(original.x), originalY: Double(original.y))
+    guard frameOffsetX != Double(offsets.x) || frameOffsetY != Double(offsets.y) else { return }
+    frameOffsetX = Double(offsets.x)
+    frameOffsetY = Double(offsets.y)
     editsChanged()
   }
 
@@ -2904,7 +2949,16 @@ struct ContentView: View {
   @State private var selectedCurveChannel = 0
   @State private var cropDragOrigin: FreeCrop?
   @State private var cropResizeOrigin: FreeCrop?
+  @State private var fixedCropDragOrigin: CGPoint?
   @State private var paintDragPoints: [CGPoint] = []
+  @State private var localDragOrigin: RadialAdjustment?
+  @State private var localDragStart: CGPoint?
+  @State private var zoomScale: CGFloat = 1
+  @State private var zoomScrollPosition = ScrollPosition(edge: .top)
+  @State private var zoomOffset = CGPoint.zero
+  @State private var zoomViewportSize = CGSize.zero
+  @State private var zoomPanStart: CGPoint?
+  @State private var zoomMagnifyStart: CGFloat?
   @Environment(\.displayScale) private var displayScale
   @Environment(\.colorScheme) private var colorScheme
   @Environment(\.scenePhase) private var scenePhase
@@ -3256,6 +3310,9 @@ struct ContentView: View {
         editor.setPaintingLocalArea(false)
       }
       if panel != .framing && editor.showCropBounds { editor.setCropBoundsPreview(false) }
+      if panel == .framing && editor.frameAspect == 5 && !editor.showCropBounds {
+        editor.setCropBoundsPreview(true)
+      }
     }
     .onChange(of: library.selectedCatalogID) { oldCatalogID, _ in
       selectedPhotoPaths.removeAll()
@@ -3346,6 +3403,9 @@ struct ContentView: View {
     .onChange(of: editor.frameFlipVertical) { editor.editsChanged() }
     .onChange(of: editor.frameAspect) {
       if editor.frameAspect != 5 && editor.showCropBounds { editor.setCropBoundsPreview(false) }
+      if editor.frameAspect == 5 && panel == .framing && !editor.showCropBounds {
+        editor.setCropBoundsPreview(true)
+      }
       editor.editsChanged()
     }
     .onChange(of: editor.frameOffsetX) { editor.editsChanged() }
@@ -4834,31 +4894,69 @@ struct ContentView: View {
           }
           .padding(24)
         } else if editor.zoom100 {
-          ScrollView([.horizontal, .vertical]) {
-            Color.clear
-              .frame(
-                width: editor.zoomCanvasSize.width / displayScale,
-                height: editor.zoomCanvasSize.height / displayScale
-              )
-              .overlay(alignment: .topLeading) {
-                Image(nsImage: preview)
-                  .resizable()
-                  .interpolation(.none)
-                  .frame(
-                    width: editor.zoomTileRect.width / displayScale,
-                    height: editor.zoomTileRect.height / displayScale
-                  )
-                  .offset(
-                    x: editor.zoomTileRect.minX / displayScale,
-                    y: editor.zoomTileRect.minY / displayScale
-                  )
-              }
-          }
-          .onScrollGeometryChange(for: CGRect.self) { geometry in
-            CGRect(origin: geometry.contentOffset, size: geometry.containerSize)
-          } action: { _, viewport in
-            editor.updateZoomViewport(
-              offset: viewport.origin, size: viewport.size, displayScale: displayScale)
+          GeometryReader { zoomGeometry in
+            ScrollView([.horizontal, .vertical]) {
+              Color.clear
+                .frame(
+                  width: editor.zoomCanvasSize.width / displayScale * zoomScale,
+                  height: editor.zoomCanvasSize.height / displayScale * zoomScale
+                )
+                .overlay(alignment: .topLeading) {
+                  Image(nsImage: preview)
+                    .resizable()
+                    .interpolation(.none)
+                    .frame(
+                      width: editor.zoomTileRect.width / displayScale * zoomScale,
+                      height: editor.zoomTileRect.height / displayScale * zoomScale
+                    )
+                    .offset(
+                      x: editor.zoomTileRect.minX / displayScale * zoomScale,
+                      y: editor.zoomTileRect.minY / displayScale * zoomScale
+                    )
+                }
+                .contentShape(Rectangle())
+            }
+            .scrollPosition($zoomScrollPosition)
+            .simultaneousGesture(
+              DragGesture(minimumDistance: 4)
+                .onChanged { value in
+                  if zoomPanStart == nil { zoomPanStart = zoomOffset }
+                  guard let zoomPanStart else { return }
+                  zoomScrollPosition.scrollTo(
+                    x: max(0, zoomPanStart.x - value.translation.width),
+                    y: max(0, zoomPanStart.y - value.translation.height))
+                }
+                .onEnded { _ in zoomPanStart = nil }
+            )
+            .simultaneousGesture(
+              MagnifyGesture()
+                .onChanged { value in
+                  if zoomMagnifyStart == nil { zoomMagnifyStart = zoomScale }
+                  setZoomScale((zoomMagnifyStart ?? zoomScale) * value.magnification)
+                }
+                .onEnded { _ in zoomMagnifyStart = nil }
+            )
+            .simultaneousGesture(
+              TapGesture(count: 2).onEnded { editor.toggleZoom() }
+            )
+            .onScrollGeometryChange(for: CGRect.self) { geometry in
+              CGRect(origin: geometry.contentOffset, size: geometry.containerSize)
+            } action: { _, viewport in
+              zoomOffset = viewport.origin
+              zoomViewportSize = viewport.size
+              editor.updateZoomViewport(
+                offset: viewport.origin, size: viewport.size,
+                displayScale: displayScale, zoomScale: zoomScale)
+            }
+            .onAppear {
+              zoomViewportSize = zoomGeometry.size
+              zoomScale = 1
+              zoomScrollPosition.scrollTo(
+                x: max(
+                  0, (editor.zoomCanvasSize.width / displayScale - zoomGeometry.size.width) / 2),
+                y: max(
+                  0, (editor.zoomCanvasSize.height / displayScale - zoomGeometry.size.height) / 2))
+            }
           }
         } else {
           GeometryReader { geometry in
@@ -4898,6 +4996,17 @@ struct ContentView: View {
                   let top = (geometry.size.height - imageHeight) / 2
                   let bounds = editor.frameFreeCrop.normalizedBounds
                   ZStack {
+                    Path { path in
+                      path.addRect(CGRect(x: left, y: top, width: imageWidth, height: imageHeight))
+                      path.addRect(
+                        CGRect(
+                          x: left + imageWidth * bounds.minX,
+                          y: top + imageHeight * bounds.minY,
+                          width: imageWidth * bounds.width,
+                          height: imageHeight * bounds.height))
+                    }
+                    .fill(Color.black.opacity(0.45), style: FillStyle(eoFill: true))
+                    .allowsHitTesting(false)
                     Rectangle()
                       .fill(.clear)
                       .strokeBorder(.white, lineWidth: 2)
@@ -4917,6 +5026,19 @@ struct ContentView: View {
                             dy: value.translation.height / imageHeight,
                             from: cropDragOrigin)
                         }.onEnded { _ in cropDragOrigin = nil })
+                    Path { path in
+                      for third in 1..<3 {
+                        let fraction = CGFloat(third) / 3
+                        let x = left + imageWidth * (bounds.minX + bounds.width * fraction)
+                        let y = top + imageHeight * (bounds.minY + bounds.height * fraction)
+                        path.move(to: CGPoint(x: x, y: top + imageHeight * bounds.minY))
+                        path.addLine(to: CGPoint(x: x, y: top + imageHeight * bounds.maxY))
+                        path.move(to: CGPoint(x: left + imageWidth * bounds.minX, y: y))
+                        path.addLine(to: CGPoint(x: left + imageWidth * bounds.maxX, y: y))
+                      }
+                    }
+                    .stroke(.white.opacity(0.55), lineWidth: 1)
+                    .allowsHitTesting(false)
                     ForEach(FreeCropCorner.allCases, id: \.self) { corner in
                       let point = corner.point(in: bounds)
                       Circle()
@@ -4940,6 +5062,63 @@ struct ContentView: View {
                     }
                   }
                   .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+              }
+              .overlay {
+                if panel == .local, !editor.paintingLocalArea, !editor.placingLocalArea,
+                  !editor.pickingLocalHue, !editor.pickingLocalTone,
+                  let anchor = editor.selectedLocalAreaDisplayLocation(),
+                  (0...1).contains(anchor.x), (0...1).contains(anchor.y)
+                {
+                  let scale = min(
+                    geometry.size.width / preview.size.width,
+                    geometry.size.height / preview.size.height)
+                  let imageWidth = preview.size.width * scale
+                  let imageHeight = preview.size.height * scale
+                  let left = (geometry.size.width - imageWidth) / 2
+                  let top = (geometry.size.height - imageHeight) / 2
+                  Image(systemName: "arrow.up.left.and.arrow.down.right")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(.white)
+                    .accessibilityLabel(
+                      editor.radialLights[editor.selectedLocalIndex].shape == 2
+                        ? "Move painted area" : "Move local filter"
+                    )
+                    .frame(width: 30, height: 30)
+                    .background(Circle().fill(Color.accentColor))
+                    .overlay(Circle().strokeBorder(.white, lineWidth: 2))
+                    .shadow(color: .black.opacity(0.5), radius: 3)
+                    .position(
+                      x: left + imageWidth * anchor.x,
+                      y: top + imageHeight * anchor.y
+                    )
+                    .help(
+                      editor.radialLights[editor.selectedLocalIndex].shape == 2
+                        ? "Drag to move this painted area" : "Drag to move this local filter"
+                    )
+                    .gesture(
+                      DragGesture(minimumDistance: 1)
+                        .onChanged { value in
+                          if localDragOrigin == nil {
+                            localDragOrigin = editor.radialLights[editor.selectedLocalIndex]
+                            localDragStart = anchor
+                            editor.sliderEditingChanged(true)
+                          }
+                          guard let localDragOrigin, let localDragStart else { return }
+                          editor.moveSelectedLocalArea(
+                            from: localDragOrigin, start: localDragStart,
+                            current: CGPoint(
+                              x: min(
+                                max(localDragStart.x + value.translation.width / imageWidth, 0), 1),
+                              y: min(
+                                max(localDragStart.y + value.translation.height / imageHeight, 0), 1
+                              )))
+                        }
+                        .onEnded { _ in
+                          localDragOrigin = nil
+                          localDragStart = nil
+                          editor.sliderEditingChanged(false)
+                        })
                 }
               }
               .overlay {
@@ -5020,8 +5199,79 @@ struct ContentView: View {
                   paintDragPoints.removeAll()
                 }
               )
+              .simultaneousGesture(
+                DragGesture(minimumDistance: 4)
+                  .onChanged { value in
+                    guard panel == .framing, editor.frameAspect != 0,
+                      editor.frameAspect != 5
+                    else { return }
+                    if fixedCropDragOrigin == nil {
+                      fixedCropDragOrigin = CGPoint(
+                        x: editor.frameOffsetX, y: editor.frameOffsetY)
+                      editor.sliderEditingChanged(true)
+                    }
+                    guard let fixedCropDragOrigin else { return }
+                    let scale = min(
+                      geometry.size.width / preview.size.width,
+                      geometry.size.height / preview.size.height)
+                    editor.moveFixedCrop(
+                      dx: Double(value.translation.width / (preview.size.width * scale)),
+                      dy: Double(value.translation.height / (preview.size.height * scale)),
+                      from: fixedCropDragOrigin)
+                  }
+                  .onEnded { _ in
+                    guard fixedCropDragOrigin != nil else { return }
+                    fixedCropDragOrigin = nil
+                    editor.sliderEditingChanged(false)
+                  }
+              )
+              .simultaneousGesture(
+                TapGesture(count: 2).onEnded {
+                  guard !editor.showCropBounds, !editor.paintingLocalArea,
+                    !editor.placingLocalArea, !editor.inspectPixel,
+                    !editor.pickingNeutralArea, !editor.pickingLocalHue,
+                    !editor.pickingLocalTone
+                  else { return }
+                  editor.toggleZoom()
+                }
+              )
           }
           .padding(24)
+        }
+        if !editor.compareEnabled {
+          HStack(spacing: 8) {
+            Button("Zoom out", systemImage: "minus") {
+              if zoomScale <= 0.51 {
+                editor.toggleZoom()
+              } else {
+                setZoomScale(zoomScale <= 1.01 ? 0.5 : 1)
+              }
+            }
+            .labelStyle(.iconOnly)
+            .help("Zoom out; from 50% return to Fit")
+            .disabled(!editor.zoom100)
+            Button(editor.zoom100 ? "\(Int((zoomScale * 100).rounded()))%" : "Fit") {
+              editor.toggleZoom()
+            }
+            .help(editor.zoom100 ? "Return to Fit view" : "Zoom to 100%")
+            Button("Zoom in", systemImage: "plus") {
+              if editor.zoom100 {
+                setZoomScale(zoomScale < 0.99 ? 1 : 2)
+              } else {
+                editor.toggleZoom()
+              }
+            }
+            .labelStyle(.iconOnly)
+            .help("Zoom in, up to 200%")
+            .disabled(editor.zoom100 && zoomScale >= 1.99)
+          }
+          .buttonStyle(.borderless)
+          .padding(8)
+          .background(.regularMaterial)
+          .clipShape(RoundedRectangle(cornerRadius: 8))
+          .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+          .padding(16)
+          .zIndex(2)
         }
       } else {
         ContentUnavailableView(
@@ -5031,6 +5281,18 @@ struct ContentView: View {
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
+  }
+
+  private func setZoomScale(_ proposed: CGFloat) {
+    guard editor.zoom100 else { return }
+    let next = min(max(proposed, 0.5), 2)
+    guard abs(next - zoomScale) > 0.001 else { return }
+    let centerX = (zoomOffset.x + zoomViewportSize.width / 2) / zoomScale
+    let centerY = (zoomOffset.y + zoomViewportSize.height / 2) / zoomScale
+    zoomScale = next
+    zoomScrollPosition.scrollTo(
+      x: max(0, centerX * next - zoomViewportSize.width / 2),
+      y: max(0, centerY * next - zoomViewportSize.height / 2))
   }
 
   private var inspector: some View {
@@ -5599,8 +5861,10 @@ struct ContentView: View {
             control("Saturation", value: $editor.selectiveSaturation, range: -1...1)
           }
         case .local:
-          Text("Place an area on the photo, then adjust only the light or color inside its mask.")
-            .font(.caption).foregroundStyle(.secondary)
+          Text(
+            "Place an area, then drag its handle on the photo to move the filter or painted strokes."
+          )
+          .font(.caption).foregroundStyle(.secondary)
           Text("Scene light areas").font(.headline)
           Picker(
             "Area",
@@ -5723,7 +5987,7 @@ struct ContentView: View {
           )
           .font(.caption).foregroundStyle(.secondary)
         case .framing:
-          Text("Choose a crop, then straighten or reposition the image.")
+          Text("Choose a crop, then drag its bounds or corner handles on the photo.")
             .font(.caption).foregroundStyle(.secondary)
           HStack {
             Button("Rotate left", systemImage: "rotate.left") { editor.rotateFrame(-1) }
@@ -5757,12 +6021,14 @@ struct ContentView: View {
             control("Horizontal center", value: freeCropBinding(\.centerX), range: 0...1)
             control("Vertical center", value: freeCropBinding(\.centerY), range: 0...1)
             Text(
-              "Show bounds to move or resize the crop on the photo. Export uses the selected crop."
+              "Freeform opens crop bounds automatically. Drag inside to move; drag a corner to resize."
             )
             .font(.caption).foregroundStyle(.secondary)
           } else if editor.frameAspect != 0 {
             control("Horizontal position", value: $editor.frameOffsetX, range: -1...1)
             control("Vertical position", value: $editor.frameOffsetY, range: -1...1)
+            Text("Drag the photo to reposition the fixed-ratio crop.")
+              .font(.caption).foregroundStyle(.secondary)
           }
           Text("Framing is saved with this photo and applied at full resolution on export.")
             .font(.caption).foregroundStyle(.secondary)

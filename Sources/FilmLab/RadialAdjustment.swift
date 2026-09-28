@@ -1,3 +1,5 @@
+import CoreGraphics
+
 struct BrushPoint: Codable, Equatable {
   var x: Double
   var y: Double
@@ -47,6 +49,41 @@ struct RadialAdjustment: Codable, Equatable {
   var hueCenter: Double
   var hueWidth: Double
   var hueFeather: Double
+
+  var anchor: CGPoint {
+    let points = strokes.flatMap(\.points)
+    guard shape == 2, !points.isEmpty else { return CGPoint(x: centerX, y: centerY) }
+    let x = points.reduce(0) { $0 + $1.x } / Double(points.count)
+    let y = points.reduce(0) { $0 + $1.y } / Double(points.count)
+    return CGPoint(x: x, y: y)
+  }
+
+  func translated(dx: Double, dy: Double) -> RadialAdjustment {
+    guard dx.isFinite, dy.isFinite else { return self }
+    var moved = self
+    let points = strokes.flatMap(\.points)
+    if shape == 2, !points.isEmpty {
+      let minimumX = points.map(\.x).min() ?? 0
+      let maximumX = points.map(\.x).max() ?? 1
+      let minimumY = points.map(\.y).min() ?? 0
+      let maximumY = points.map(\.y).max() ?? 1
+      let boundedX = min(max(dx, -minimumX), 1 - maximumX)
+      let boundedY = min(max(dy, -minimumY), 1 - maximumY)
+      moved.strokes = strokes.map { stroke in
+        var shifted = stroke
+        shifted.points = stroke.points.map { point in
+          BrushPoint(x: point.x + boundedX, y: point.y + boundedY)
+        }
+        return shifted
+      }
+      moved.centerX = min(max(centerX + boundedX, 0), 1)
+      moved.centerY = min(max(centerY + boundedY, 0), 1)
+    } else {
+      moved.centerX = min(max(centerX + dx, 0), 1)
+      moved.centerY = min(max(centerY + dy, 0), 1)
+    }
+    return moved
+  }
 
   init(
     exposure: Double = 0, shadowLight: Double = 0, highlightLight: Double = 0,
