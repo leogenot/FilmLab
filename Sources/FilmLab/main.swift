@@ -52,6 +52,8 @@ struct PhotoEdits: Codable, Equatable {
   var opticalPremierPrint = false
   var paperStrength = 0.5
   var paperExposure = 0.0
+  var printerMagentaStops = 0.0
+  var printerYellowStops = 0.0
   var shotExposure = 0.0
   var shadowLight = 0.0
   var highlightLight = 0.0
@@ -157,6 +159,8 @@ struct PhotoEdits: Codable, Equatable {
       result.opticalPremierPrint = source.opticalPremierPrint
       result.paperStrength = source.paperStrength
       result.paperExposure = source.paperExposure
+      result.printerMagentaStops = source.printerMagentaStops
+      result.printerYellowStops = source.printerYellowStops
       result.shotExposure = source.shotExposure
       result.development = source.development
       result.filmAmount = source.filmAmount
@@ -260,6 +264,8 @@ struct PhotoEdits: Codable, Equatable {
       try values.decodeIfPresent(Bool.self, forKey: .opticalPremierPrint) ?? false
     paperStrength = try values.decodeIfPresent(Double.self, forKey: .paperStrength) ?? 0.5
     paperExposure = try values.decodeIfPresent(Double.self, forKey: .paperExposure) ?? 0
+    printerMagentaStops = try values.decodeIfPresent(Double.self, forKey: .printerMagentaStops) ?? 0
+    printerYellowStops = try values.decodeIfPresent(Double.self, forKey: .printerYellowStops) ?? 0
     shotExposure = try values.decodeIfPresent(Double.self, forKey: .shotExposure) ?? 0
     shadowLight = try values.decodeIfPresent(Double.self, forKey: .shadowLight) ?? 0
     highlightLight = try values.decodeIfPresent(Double.self, forKey: .highlightLight) ?? 0
@@ -448,6 +454,8 @@ final class PhotoEditor {
   var opticalPremierPrint = false
   var paperStrength = 0.5
   var paperExposure = 0.0
+  var printerMagentaStops = 0.0
+  var printerYellowStops = 0.0
   var shotExposure = 0.0
   var shadowLight = 0.0
   var highlightLight = 0.0
@@ -891,6 +899,8 @@ final class PhotoEditor {
     opticalPremierPrint = saved.opticalPremierPrint
     paperStrength = saved.paperStrength
     paperExposure = saved.paperExposure
+    printerMagentaStops = saved.printerMagentaStops
+    printerYellowStops = saved.printerYellowStops
     shotExposure = saved.shotExposure
     shadowLight = saved.shadowLight
     highlightLight = saved.highlightLight
@@ -1074,6 +1084,8 @@ final class PhotoEditor {
     edits.opticalPremierPrint = opticalPremierPrint
     edits.paperStrength = paperStrength
     edits.paperExposure = paperExposure
+    edits.printerMagentaStops = printerMagentaStops
+    edits.printerYellowStops = printerYellowStops
     edits.shotExposure = shotExposure
     edits.shadowLight = shadowLight
     edits.highlightLight = highlightLight
@@ -1508,6 +1520,8 @@ final class PhotoEditor {
     opticalPremierPrint = defaults.opticalPremierPrint
     paperStrength = defaults.paperStrength
     paperExposure = defaults.paperExposure
+    printerMagentaStops = defaults.printerMagentaStops
+    printerYellowStops = defaults.printerYellowStops
     shotExposure = defaults.shotExposure
     shadowLight = defaults.shadowLight
     highlightLight = defaults.highlightLight
@@ -1968,7 +1982,7 @@ final class PhotoEditor {
           extent: image.extent,
           arguments: [
             texturedNegative, image, shotExposureEV, filmAmount,
-            paperExposure, Double(stockIndex),
+            paperExposure, printerMagentaStops, printerYellowStops, Double(stockIndex),
           ]
         )
       } else {
@@ -3136,6 +3150,8 @@ struct ContentView: View {
     .onChange(of: editor.opticalPremierPrint) { editor.editsChanged() }
     .onChange(of: editor.paperStrength) { editor.editsChanged() }
     .onChange(of: editor.paperExposure) { editor.editsChanged() }
+    .onChange(of: editor.printerMagentaStops) { editor.editsChanged() }
+    .onChange(of: editor.printerYellowStops) { editor.editsChanged() }
     .onChange(of: editor.shotExposure) { editor.editsChanged() }
     .onChange(of: editor.shadowLight) { editor.editsChanged() }
     .onChange(of: editor.highlightLight) { editor.editsChanged() }
@@ -4969,8 +4985,11 @@ struct ContentView: View {
             Toggle("Premier optical print study", isOn: $editor.opticalPremierPrint)
             if editor.opticalPremierPrint {
               control("Paper exposure (EV)", value: $editor.paperExposure, range: -2...2)
+              control(
+                "Magenta filtration (stops)", value: $editor.printerMagentaStops, range: -2...2)
+              control("Yellow filtration (stops)", value: $editor.printerYellowStops, range: -2...2)
               Text(
-                "Coupled paper layers and dye spectra from Kodak E-4070. Enlarger balance and display calibration are approximate."
+                "Positive filtration reduces the green or blue paper-layer exposure. These relative controls are not calibrated filter-pack values."
               )
               .font(.caption).foregroundStyle(.secondary)
             } else {

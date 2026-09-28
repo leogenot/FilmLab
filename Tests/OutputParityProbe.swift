@@ -177,7 +177,7 @@ struct OutputParityProbe {
           arguments: [source, 0.0, 0.0, stockIndex]),
         let optical = opticalPrint.apply(
           extent: source.extent,
-          arguments: [density, source, 0.0, 1.0, 0.0, stockIndex])
+          arguments: [density, source, 0.0, 1.0, 0.0, 0.5, -0.4, stockIndex])
       else { throw ProbeError.unreadable }
       let opticalPreview = await previewRenderer.render(
         PreviewRequest(

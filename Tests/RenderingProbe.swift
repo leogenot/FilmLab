@@ -70,14 +70,14 @@ struct RenderingProbe {
 
     func optical(
       _ stock: Double, _ shotEV: Double, _ paperEV: Double,
-      _ light: Double = 0.18
+      _ light: Double = 0.18, magenta: Double = 0, yellow: Double = 0
     ) -> [Float] {
       let source = patch(light)
       let density = negative.apply(
         extent: source.extent, arguments: [source, shotEV, 0.0, stock])!
       let printImage = opticalPrint.apply(
         extent: source.extent,
-        arguments: [density, source, shotEV, 1.0, paperEV, stock])!
+        arguments: [density, source, shotEV, 1.0, paperEV, magenta, yellow, stock])!
       return channels(printImage)
     }
     for stock in [1.0, 2.0, 3.0] {
@@ -95,6 +95,11 @@ struct RenderingProbe {
       precondition(
         zip(shadow, highlight).allSatisfy { $0 < $1 },
         "Shot exposure did not lighten print for stock \(stock)")
+      let moreMagenta = optical(stock, 0, 0, magenta: 1)
+      let moreYellow = optical(stock, 0, 0, yellow: 1)
+      precondition(moreMagenta.allSatisfy(\.isFinite) && moreYellow.allSatisfy(\.isFinite))
+      precondition(moreMagenta[1] > neutral[1], "Magenta filtration did not reduce green exposure")
+      precondition(moreYellow[2] > neutral[2], "Yellow filtration did not reduce blue exposure")
     }
 
     func opticalColor(_ stock: Double, red: Double, green: Double, blue: Double) -> [Float] {
@@ -105,7 +110,7 @@ struct RenderingProbe {
         extent: source.extent, arguments: [source, 0.0, 0.0, stock])!
       let printImage = opticalPrint.apply(
         extent: source.extent,
-        arguments: [density, source, 0.0, 1.0, 0.0, stock])!
+        arguments: [density, source, 0.0, 1.0, 0.0, 0.0, 0.0, stock])!
       return channels(printImage)
     }
     let samplePrints = [1.0, 2.0, 3.0].map {

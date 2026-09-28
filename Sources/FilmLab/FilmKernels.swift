@@ -798,7 +798,10 @@ enum FilmKernels {
     [[stitchable]] float4 opticalPremierPositive(coreimage::sample_t negative,
                                                    coreimage::sample_t original,
                                                    float ev, float amount,
-                                                   float paperExposure, float stock) {
+                                                   float paperExposure,
+                                                   float magentaFilterStops,
+                                                   float yellowFilterStops,
+                                                   float stock) {
         float3 reference = stock > 2.5 ? goldDensityAt(-1.14)
             : (stock > 1.5 ? ektarDensityAt(-0.84) : portraDensityAt(-1.44));
         float3 delta = negative.rgb - reference;
@@ -815,8 +818,12 @@ enum FilmKernels {
             float relativeTransmission = pow(10.0, -clamp(dot(delta, gain), -6.0, 6.0));
             transmitted += weight * relativeTransmission;
         }
+        // Virtual dichroic filtration: positive M/Y attenuates green/blue
+        // paper-layer light. These stop offsets are not measured filter spectra.
+        float3 filtration = float3(0.0, -magentaFilterStops, -yellowFilterStops);
         float3 logH = float3(-1.4 + paperExposure * 0.30103)
-                    + log10(max(transmitted, float3(0.000001)));
+                    + log10(max(transmitted, float3(0.000001)))
+                    + filtration * 0.30103;
         float3 density = float3(premierDensityAt(logH.r).r,
                                 premierDensityAt(logH.g).g,
                                 premierDensityAt(logH.b).b);
