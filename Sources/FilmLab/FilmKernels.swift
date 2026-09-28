@@ -10,7 +10,7 @@ enum FilmKernels {
         let names = CIKernel.kernelNames(fromMetalLibraryData: data)
         let required = Set([
           "filmResponse", "shapeSceneLight", "positiveFilmLight",
-          "measuredNegative", "portraPositive", "opticalPremierPositive",
+          "measuredNegative", "portraPositive", "opticalPremierPositive", "multigradePositive",
           "grade", "selectiveColor", "colorMixerBand", "colorMixerBandV2", "applyGrain",
           "applyNegativeGrain",
           "preservingSelectiveColor",
@@ -834,6 +834,27 @@ enum FilmKernels {
         float3 positive = 0.18 * premierSpectralReflectance(density) / referencePrint;
         return float4(mix(max(original.rgb, float3(0.0)) * exp2(ev),
                           positive, amount), original.a);
+    }
+
+    // Ilford MG FB Classic publishes ISO R for grades 00, 0, 1, 2, 3, 4,
+    // and 5 (170, 140, 110, 95, 80, 60, 50). The measured range informs
+    // contrast; the smooth curve shape and 0.75-density gray aim are inferred.
+    constant float multigradeRange[7] = {1.70, 1.40, 1.10, 0.95, 0.80, 0.60, 0.50};
+    [[stitchable]] float4 multigradePositive(coreimage::sample_t negative,
+                                              coreimage::sample_t original,
+                                              float ev, float amount,
+                                              float paperExposure,
+                                              float gradeIndex, float stock) {
+        int grade = clamp(int(round(gradeIndex)), 0, 6);
+        float reference = stock > 4.5 ? tmaxDensityAt(-1.5) : trixDensityAt(-1.5);
+        float negativeDensity = dot(negative.rgb, float3(0.333333));
+        float relativeLogH = paperExposure * 0.30103 - (negativeDensity - reference);
+        // Smoothstep reaches 0.75 paper density near 0.396 of its width.
+        float u = clamp(0.396 + relativeLogH / multigradeRange[grade], 0.0, 1.0);
+        float paperDensity = 0.04 + 2.06 * (u * u * (3.0 - 2.0 * u));
+        float positive = 0.18 * pow(10.0, 0.75 - paperDensity);
+        return float4(mix(max(original.rgb, float3(0.0)) * exp2(ev),
+                          float3(positive), amount), original.a);
     }
 
     [[stitchable]] float4 grade(coreimage::sample_t pixel,

@@ -50,6 +50,8 @@ struct PhotoEdits: Codable, Equatable {
   var enduraPaperTone = false
   var premierPaperTone = false
   var opticalPremierPrint = false
+  var multigradePaper = false
+  var multigradeGradeIndex = 3
   var paperStrength = 0.5
   var paperExposure = 0.0
   var printerMagentaStops = 0.0
@@ -157,6 +159,8 @@ struct PhotoEdits: Codable, Equatable {
       result.enduraPaperTone = source.enduraPaperTone
       result.premierPaperTone = source.premierPaperTone
       result.opticalPremierPrint = source.opticalPremierPrint
+      result.multigradePaper = source.multigradePaper
+      result.multigradeGradeIndex = source.multigradeGradeIndex
       result.paperStrength = source.paperStrength
       result.paperExposure = source.paperExposure
       result.printerMagentaStops = source.printerMagentaStops
@@ -262,6 +266,9 @@ struct PhotoEdits: Codable, Equatable {
     premierPaperTone = try values.decodeIfPresent(Bool.self, forKey: .premierPaperTone) ?? false
     opticalPremierPrint =
       try values.decodeIfPresent(Bool.self, forKey: .opticalPremierPrint) ?? false
+    multigradePaper = try values.decodeIfPresent(Bool.self, forKey: .multigradePaper) ?? false
+    multigradeGradeIndex = min(
+      6, max(0, try values.decodeIfPresent(Int.self, forKey: .multigradeGradeIndex) ?? 3))
     paperStrength = try values.decodeIfPresent(Double.self, forKey: .paperStrength) ?? 0.5
     paperExposure = try values.decodeIfPresent(Double.self, forKey: .paperExposure) ?? 0
     printerMagentaStops = try values.decodeIfPresent(Double.self, forKey: .printerMagentaStops) ?? 0
@@ -452,6 +459,8 @@ final class PhotoEditor {
   var enduraPaperTone = false
   var premierPaperTone = false
   var opticalPremierPrint = false
+  var multigradePaper = false
+  var multigradeGradeIndex = 3
   var paperStrength = 0.5
   var paperExposure = 0.0
   var printerMagentaStops = 0.0
@@ -636,6 +645,7 @@ final class PhotoEditor {
   private let measuredNegativeKernel = FilmKernels.kernel("measuredNegative")
   private let portraPositiveKernel = FilmKernels.kernel("portraPositive")
   private let opticalPremierPositiveKernel = FilmKernels.kernel("opticalPremierPositive")
+  private let multigradePositiveKernel = FilmKernels.kernel("multigradePositive")
   private let renderedInputToneKernel = FilmKernels.kernel("renderedInputTone")
   private let outputShoulderKernel = FilmKernels.kernel("outputShoulder")
   private let outputToneCurveKernel = FilmKernels.kernel("outputToneCurve")
@@ -897,6 +907,8 @@ final class PhotoEditor {
     enduraPaperTone = saved.enduraPaperTone
     premierPaperTone = saved.premierPaperTone
     opticalPremierPrint = saved.opticalPremierPrint
+    multigradePaper = saved.multigradePaper
+    multigradeGradeIndex = saved.multigradeGradeIndex
     paperStrength = saved.paperStrength
     paperExposure = saved.paperExposure
     printerMagentaStops = saved.printerMagentaStops
@@ -1082,6 +1094,8 @@ final class PhotoEditor {
     edits.enduraPaperTone = enduraPaperTone
     edits.premierPaperTone = premierPaperTone
     edits.opticalPremierPrint = opticalPremierPrint
+    edits.multigradePaper = multigradePaper
+    edits.multigradeGradeIndex = multigradeGradeIndex
     edits.paperStrength = paperStrength
     edits.paperExposure = paperExposure
     edits.printerMagentaStops = printerMagentaStops
@@ -1518,6 +1532,8 @@ final class PhotoEditor {
     enduraPaperTone = defaults.enduraPaperTone
     premierPaperTone = defaults.premierPaperTone
     opticalPremierPrint = defaults.opticalPremierPrint
+    multigradePaper = defaults.multigradePaper
+    multigradeGradeIndex = defaults.multigradeGradeIndex
     paperStrength = defaults.paperStrength
     paperExposure = defaults.paperExposure
     printerMagentaStops = defaults.printerMagentaStops
@@ -1947,6 +1963,7 @@ final class PhotoEditor {
       guard let measuredNegativeKernel,
         let portraPositiveKernel,
         let opticalPremierPositiveKernel,
+        let multigradePositiveKernel,
         let negative = measuredNegativeKernel.apply(
           extent: image.extent, arguments: [image, shotExposureEV, development, Double(stockIndex)]
         )
@@ -1983,6 +2000,14 @@ final class PhotoEditor {
           arguments: [
             texturedNegative, image, shotExposureEV, filmAmount,
             paperExposure, printerMagentaStops, printerYellowStops, Double(stockIndex),
+          ]
+        )
+      } else if multigradePaper && stockIndex >= 4 {
+        positive = multigradePositiveKernel.apply(
+          extent: image.extent,
+          arguments: [
+            texturedNegative, image, shotExposureEV, filmAmount,
+            paperExposure, Double(multigradeGradeIndex), Double(stockIndex),
           ]
         )
       } else {
@@ -3148,6 +3173,8 @@ struct ContentView: View {
     .onChange(of: editor.enduraPaperTone) { editor.editsChanged() }
     .onChange(of: editor.premierPaperTone) { editor.editsChanged() }
     .onChange(of: editor.opticalPremierPrint) { editor.editsChanged() }
+    .onChange(of: editor.multigradePaper) { editor.editsChanged() }
+    .onChange(of: editor.multigradeGradeIndex) { editor.editsChanged() }
     .onChange(of: editor.paperStrength) { editor.editsChanged() }
     .onChange(of: editor.paperExposure) { editor.editsChanged() }
     .onChange(of: editor.printerMagentaStops) { editor.editsChanged() }
@@ -5008,6 +5035,26 @@ struct ContentView: View {
               }
             }
           }
+          if editor.stockIndex == 4 || editor.stockIndex == 5 {
+            Toggle("Multigrade FB Classic paper study", isOn: $editor.multigradePaper)
+            if editor.multigradePaper {
+              Picker("Paper contrast grade", selection: $editor.multigradeGradeIndex) {
+                Text("00 · softest").tag(0)
+                Text("0").tag(1)
+                Text("1").tag(2)
+                Text("2 · normal").tag(3)
+                Text("3").tag(4)
+                Text("4").tag(5)
+                Text("5 · hardest").tag(6)
+              }
+              .pickerStyle(.menu)
+              control("Paper exposure (EV)", value: $editor.paperExposure, range: -2...2)
+              Text(
+                "Contrast ranges follow Ilford's published ISO R values; curve shape and display balance are approximate."
+              )
+              .font(.caption).foregroundStyle(.secondary)
+            }
+          }
           control("Shot exposure (EV)", value: $editor.shotExposure, range: -3...3)
           HStack {
             Text("EXPOSURE STUDY")
@@ -5066,23 +5113,25 @@ struct ContentView: View {
           Text(
             editor.opticalPremierPrint && (1...3).contains(editor.stockIndex)
               ? "Kodak paper curves and approximate spectral dyes; negative-to-paper light and display balance remain inferred."
-              : editor.stockIndex == 1
-                ? (editor.enduraPaperTone
-                  ? "Kodak negative and paper curves; color response is still approximate."
-                  : "Kodak negative-density curves with provisional positive rendering.")
-                : (editor.stockIndex == 2
-                  ? (editor.premierPaperTone
-                    ? "Kodak negative and Endura Premier paper curves; color balance is approximate."
-                    : "Kodak Ektar negative-density curves with provisional positive rendering.")
-                  : (editor.stockIndex == 3
+              : editor.multigradePaper && (editor.stockIndex == 4 || editor.stockIndex == 5)
+                ? "Kodak negative-density curve and Ilford paper contrast ranges; the paper curve and display balance remain inferred. Set stock amount to 1 for full monochrome."
+                : editor.stockIndex == 1
+                  ? (editor.enduraPaperTone
+                    ? "Kodak negative and paper curves; color response is still approximate."
+                    : "Kodak negative-density curves with provisional positive rendering.")
+                  : (editor.stockIndex == 2
                     ? (editor.premierPaperTone
-                      ? "Kodak Gold negative and Endura Premier paper curves; color balance is approximate."
-                      : "Kodak Gold negative-density curves with provisional positive rendering.")
-                    : (editor.stockIndex == 4
-                      ? "Kodak Tri-X negative-density curve with a virtual monochrome print or scan. Set stock amount to 1 for full monochrome."
-                      : (editor.stockIndex == 5
-                        ? "Kodak T-Max negative-density curve with a virtual monochrome print or scan. Set stock amount to 1 for full monochrome."
-                        : "Exposure-dependent study stock. Film measurements will replace this model."))))
+                      ? "Kodak negative and Endura Premier paper curves; color balance is approximate."
+                      : "Kodak Ektar negative-density curves with provisional positive rendering.")
+                    : (editor.stockIndex == 3
+                      ? (editor.premierPaperTone
+                        ? "Kodak Gold negative and Endura Premier paper curves; color balance is approximate."
+                        : "Kodak Gold negative-density curves with provisional positive rendering.")
+                      : (editor.stockIndex == 4
+                        ? "Kodak Tri-X negative-density curve with a virtual monochrome print or scan. Set stock amount to 1 for full monochrome."
+                        : (editor.stockIndex == 5
+                          ? "Kodak T-Max negative-density curve with a virtual monochrome print or scan. Set stock amount to 1 for full monochrome."
+                          : "Exposure-dependent study stock. Film measurements will replace this model."))))
           )
           .font(.caption).foregroundStyle(.secondary)
         case .develop:

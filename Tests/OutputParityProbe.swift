@@ -29,7 +29,8 @@ struct OutputParityProbe {
     let outputSpace = CGColorSpace(name: CGColorSpace.sRGB)!
     guard let stock = FilmKernels.kernel("filmResponse"),
       let negative = FilmKernels.kernel("measuredNegative"),
-      let opticalPrint = FilmKernels.kernel("opticalPremierPositive")
+      let opticalPrint = FilmKernels.kernel("opticalPremierPositive"),
+      let multigradePrint = FilmKernels.kernel("multigradePositive")
     else { throw ProbeError.unreadable }
 
     for (kind, path) in zip(["RAW", "JPEG"], CommandLine.arguments.dropFirst()) {
@@ -202,6 +203,36 @@ struct OutputParityProbe {
           }.reduce(0, +)) / Double(previewRGB.count)
       print("\(kind) optical print preview/export: mean \(mean) / 255")
       precondition(mean < 1, "Optical print preview/export drift")
+
+      let monoStock = kind == "RAW" ? 4.0 : 5.0
+      guard
+        let monoNegative = negative.apply(
+          extent: source.extent, arguments: [source, 0.0, 0.0, monoStock]),
+        let monoPrint = multigradePrint.apply(
+          extent: source.extent,
+          arguments: [monoNegative, source, 0.0, 1.0, 0.25, 5.0, monoStock])
+      else { throw ProbeError.unreadable }
+      let monoPreview = await previewRenderer.render(
+        PreviewRequest(
+          image: monoPrint, scale: 0.5, sourceURL: url,
+          originalImage: nil, showGamutWarning: false))
+      guard let monoImage = monoPreview?.image else { throw ProbeError.unreadable }
+      let monoURL = directory.appendingPathComponent("\(kind)-multigrade-print.tiff")
+      try await exporter.export(
+        ExportRequest(image: monoPrint, url: monoURL, format: .tiff16SRGB, sourceURL: url))
+      guard let monoExport = CIImage(contentsOf: monoURL) else { throw ProbeError.unreadable }
+      let monoReduced = monoExport.applyingFilter(
+        "CILanczosScaleTransform",
+        parameters: [kCIInputScaleKey: 0.5, kCIInputAspectRatioKey: 1])
+      let monoPreviewRGB = pixels(CIImage(cgImage: monoImage))
+      let monoExportRGB = pixels(monoReduced)
+      let monoMean =
+        Double(
+          zip(monoPreviewRGB, monoExportRGB).map {
+            abs(Int($0) - Int($1))
+          }.reduce(0, +)) / Double(monoPreviewRGB.count)
+      print("\(kind) multigrade print preview/export: mean \(monoMean) / 255")
+      precondition(monoMean < 1, "Multigrade print preview/export drift")
     }
   }
 }

@@ -1,0 +1,9 @@
+# Multigrade FB Classic optical-paper study
+
+Source: [Ilford Multigrade FB Classic technical information](https://www.ilfordphoto.com/amfile/file/download/file/1748/product/735/), October 2013, pages 1–2.
+
+The optional monochrome print path sends FilmLab's existing Tri-X 400 or T-Max 100 negative density through an idealized enlarger exposure and a variable-contrast paper response. Increasing negative density reduces paper light, so a brighter scene records a lighter positive print. Paper Exposure shifts log exposure by log10(2) per stop before the nonlinear paper response. Grades 00, 0, 1, 2, 3, 4, and 5 use Ilford's published ISO R values 170, 140, 110, 95, 80, 60, and 50 as response widths of 1.70, 1.40, 1.10, 0.95, 0.80, 0.60, and 0.50 log-exposure units. Higher grade therefore expands the same negative-density difference into a stronger print-density difference.
+
+Ilford publishes plotted characteristic curves for glossy paper with Multigrade developer 1+9, two minutes at 20°C. FilmLab does **not** claim to reproduce those curves point for point. Its smooth toe and shoulder, 0.04 minimum and 2.10 maximum paper density, 0.75 middle-gray aim, and mapping from FilmLab's reference negative to that aim are inferred. The actual paper base white, enlarger spectrum and filtration, exposure reciprocity, process variation, and viewing illuminant are not measured here. The result is a research-backed variable-contrast response, not a calibrated Ilford print profile. It stays off for existing and new grades until selected in the Film panel.
+
+Verification: the rendering probe checks both black-and-white stocks at neutral reference, ordered shadow/highlight output, stronger contrast at grade 5 than 00, and darker prints with more paper exposure. The settings test checks legacy decoding, saving, Film-panel copy, and reset. The real RAW/JPEG output probe exercises grade 4 with nonzero paper exposure and compares preview against 16-bit TIFF export.

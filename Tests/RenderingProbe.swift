@@ -21,6 +21,7 @@ struct RenderingProbe {
     let negative = FilmKernels.kernel("measuredNegative")!
     let positive = FilmKernels.kernel("portraPositive")!
     let opticalPrint = FilmKernels.kernel("opticalPremierPositive")!
+    let multigradePrint = FilmKernels.kernel("multigradePositive")!
     let sceneLight = FilmKernels.kernel("shapeSceneLight")!
     let renderedInputTone = FilmKernels.kernel("renderedInputTone")!
     let outputShoulder = FilmKernels.kernel("outputShoulder")!
@@ -100,6 +101,29 @@ struct RenderingProbe {
       precondition(moreMagenta.allSatisfy(\.isFinite) && moreYellow.allSatisfy(\.isFinite))
       precondition(moreMagenta[1] > neutral[1], "Magenta filtration did not reduce green exposure")
       precondition(moreYellow[2] > neutral[2], "Yellow filtration did not reduce blue exposure")
+    }
+
+    func monochrome(_ stock: Double, _ light: Double, _ grade: Double, _ paperEV: Double = 0)
+      -> [Float]
+    {
+      let source = patch(light)
+      let density = negative.apply(
+        extent: source.extent, arguments: [source, 0.0, 0.0, stock])!
+      let printImage = multigradePrint.apply(
+        extent: source.extent,
+        arguments: [density, source, 0.0, 1.0, paperEV, grade, stock])!
+      return channels(printImage)
+    }
+    for stock in [4.0, 5.0] {
+      let neutral = monochrome(stock, 0.18, 3)
+      precondition(neutral.allSatisfy { $0.isFinite && abs($0 - 0.18) < 0.002 })
+      let softShadow = monochrome(stock, 0.08, 0)[0]
+      let softHighlight = monochrome(stock, 0.35, 0)[0]
+      let hardShadow = monochrome(stock, 0.08, 6)[0]
+      let hardHighlight = monochrome(stock, 0.35, 6)[0]
+      precondition(softShadow < softHighlight && hardShadow < hardHighlight)
+      precondition(hardHighlight - hardShadow > softHighlight - softShadow)
+      precondition(monochrome(stock, 0.18, 3, 1)[0] < neutral[0])
     }
 
     func opticalColor(_ stock: Double, red: Double, green: Double, blue: Double) -> [Float] {
