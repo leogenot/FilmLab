@@ -16,6 +16,8 @@ A [published paired digital/film dataset](https://arxiv.org/abs/2411.15967) exis
 
 Until that set exists, FilmLab should improve its editing workflow and rendering reliability while clearly marking unmeasured color choices as provisional.
 
+Public CC0 [uniform-negative scans](Research/public-flatfield-grain.md) now give reproducible spatial texture measurements for Ektar 100, Tri-X 400, and T-Max 100 at 4000 dpi. They qualitatively support the finer T-Max procedural texture already in FilmLab. They include scanner and processing effects, and the monochrome scans were normalized, so they do not calibrate grain strength or the final positive color rendering. The linked research note records source hashes, derived measurements, and the capture data still needed.
+
 A September 2026 check also found [PoLUT's manufacturer-curve digitizations](https://github.com/TomPoczos/PoLUT) for Portra and Ektar. They offer another reading of published film and paper plots and describe a spectral reconstruction assumption, but do not supply paired digital RAW and controlled positive scans across exposure stops. FilmLab has not imported that project's code, LUTs, or data. The [CineStill 800T paired-image study](https://arxiv.org/abs/2411.15967) remains a useful validation-method example for a different stock; it does not establish Portra or Ektar color accuracy.
 
 The negative-density curves now leave each published upper endpoint along the fitted endpoint tangent. This avoids a change in response slope at the edge of the plotted data, but the extrapolated values remain an engineering assumption. The published charts alone cannot establish highlight behavior beyond their final sampled exposure or the appearance of a finished scan or print.
