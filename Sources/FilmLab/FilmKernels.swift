@@ -10,7 +10,8 @@ enum FilmKernels {
         let names = CIKernel.kernelNames(fromMetalLibraryData: data)
         let required = Set([
           "filmResponse", "shapeSceneLight", "positiveFilmLight",
-          "measuredNegative", "portraPositive", "opticalPremierPositive", "multigradePositive",
+          "measuredNegative", "measuredNegativeSpectral", "portraPositive",
+          "opticalPremierPositive", "multigradePositive",
           "grade", "selectiveColor", "colorMixerBand", "colorMixerBandV2", "applyGrain",
           "applyNegativeGrain",
           "preservingSelectiveColor",
@@ -481,6 +482,30 @@ enum FilmKernels {
         // Provisional continuation beyond the published graph.
         return tmaxD[9] + tmaxTangent[9] * (logH - 0.65);
     }
+    // BEGIN GENERATED STOCK LAYER SENSITIVITY
+    inline float3 stockLayerLight(float3 light, float stock) {
+        // Rows: cyan/red, magenta/green, yellow/blue layer light.
+        if (stock < 1.5) {
+            return float3(
+                dot(light, float3(0.919517352, 0.075410661, 0.005071986)),
+                dot(light, float3(0.027232368, 0.843760653, 0.129006980)),
+                dot(light, float3(0.016804068, 0.074529504, 0.908666428))
+            );
+        } else if (stock < 2.5) {
+            return float3(
+                dot(light, float3(0.933257956, 0.062481212, 0.004260831)),
+                dot(light, float3(0.032743275, 0.840952749, 0.126303977)),
+                dot(light, float3(0.016792423, 0.070198490, 0.913009087))
+            );
+        } else {
+            return float3(
+                dot(light, float3(0.897729510, 0.089055251, 0.013215240)),
+                dot(light, float3(0.015097722, 0.858965137, 0.125937142)),
+                dot(light, float3(0.015504927, 0.077762838, 0.906732235))
+            );
+        }
+    }
+    // END GENERATED STOCK LAYER SENSITIVITY
     [[stitchable]] float4 measuredNegative(coreimage::sample_t pixel, float ev,
                                             float dev, float stock) {
         float3 light = max(pixel.rgb, float3(0.0));
@@ -519,6 +544,30 @@ enum FilmKernels {
         float3 reference = gold ? goldDensityAt(-1.14)
             : (ektar ? ektarDensityAt(-0.84) : portraDensityAt(-1.44));
         // Development behavior is provisional; the published chart gives one process condition.
+        density = reference + (density - reference) * (1.0 + dev * 0.10);
+        return float4(density, pixel.a);
+    }
+    [[stitchable]] float4 measuredNegativeSpectral(coreimage::sample_t pixel, float ev,
+                                                   float dev, float stock) {
+        float3 layerLight = stockLayerLight(max(pixel.rgb, float3(0.0)), stock);
+        bool ektar = stock > 1.5 && stock < 2.5;
+        bool gold = stock > 2.5;
+        float anchor = gold ? -1.14 : (ektar ? -0.84 : -1.44);
+        float3 logH = log10(max(layerLight, float3(0.000001)) / 0.18)
+                    + float3(anchor + ev * 0.30103);
+        float3 density = gold
+            ? float3(goldDensityAt(logH.r).r,
+                     goldDensityAt(logH.g).g,
+                     goldDensityAt(logH.b).b)
+            : (ektar
+                ? float3(ektarDensityAt(logH.r).r,
+                         ektarDensityAt(logH.g).g,
+                         ektarDensityAt(logH.b).b)
+                : float3(portraDensityAt(logH.r).r,
+                         portraDensityAt(logH.g).g,
+                         portraDensityAt(logH.b).b));
+        float3 reference = gold ? goldDensityAt(-1.14)
+            : (ektar ? ektarDensityAt(-0.84) : portraDensityAt(-1.44));
         density = reference + (density - reference) * (1.0 + dev * 0.10);
         return float4(density, pixel.a);
     }

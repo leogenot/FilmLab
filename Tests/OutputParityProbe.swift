@@ -29,6 +29,7 @@ struct OutputParityProbe {
     let outputSpace = CGColorSpace(name: CGColorSpace.sRGB)!
     guard let stock = FilmKernels.kernel("filmResponse"),
       let negative = FilmKernels.kernel("measuredNegative"),
+      let spectralNegative = FilmKernels.kernel("measuredNegativeSpectral"),
       let opticalPrint = FilmKernels.kernel("opticalPremierPositive"),
       let multigradePrint = FilmKernels.kernel("multigradePositive")
     else { throw ProbeError.unreadable }
@@ -173,7 +174,7 @@ struct OutputParityProbe {
       // Exercise the actual stock-negative / optical-paper path on both file types.
       let stockIndex = kind == "RAW" ? 2.0 : 1.0
       guard
-        let density = negative.apply(
+        let density = spectralNegative.apply(
           extent: source.extent,
           arguments: [source, 0.0, 0.0, stockIndex]),
         let optical = opticalPrint.apply(

@@ -4,6 +4,7 @@ set -euo pipefail
 project_dir="$(cd "$(dirname "$0")/.." && pwd)"
 developer_dir="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
 python3 "$project_dir/Research/generate-optical-printer.py" --check
+python3 "$project_dir/Research/generate-stock-layer-sensitivity.py" --check
 mkdir -p "$project_dir/.build"
 bash "$project_dir/Scripts/build-kernels.sh" "$project_dir/.build"
 DEVELOPER_DIR="$developer_dir" swiftc \

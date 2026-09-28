@@ -19,6 +19,7 @@ struct RenderingProbe {
       .workingFormat: CIFormat.RGBAf,
     ])
     let negative = FilmKernels.kernel("measuredNegative")!
+    let spectralNegative = FilmKernels.kernel("measuredNegativeSpectral")!
     let positive = FilmKernels.kernel("portraPositive")!
     let opticalPrint = FilmKernels.kernel("opticalPremierPositive")!
     let multigradePrint = FilmKernels.kernel("multigradePositive")!
@@ -44,6 +45,56 @@ struct RenderingProbe {
       }
       return Array(rgba.prefix(3))
     }
+
+    func densityChannels(_ image: CIImage) -> [Float] {
+      var rgba = [Float](repeating: 0, count: 4)
+      rgba.withUnsafeMutableBytes { bytes in
+        densityContext.render(
+          image, toBitmap: bytes.baseAddress!, rowBytes: 16,
+          bounds: CGRect(x: 0, y: 0, width: 1, height: 1),
+          format: .RGBAf, colorSpace: nil)
+      }
+      return Array(rgba.prefix(3))
+    }
+
+    func spectralDensity(_ rgb: (Double, Double, Double), _ stock: Double, _ ev: Double = 0)
+      -> [Float]
+    {
+      let source = CIImage(
+        color: CIColor(red: rgb.0, green: rgb.1, blue: rgb.2, colorSpace: space)!
+      ).cropped(to: CGRect(x: 0, y: 0, width: 1, height: 1))
+      return densityChannels(
+        spectralNegative.apply(
+          extent: source.extent, arguments: [source, ev, 0.0, stock])!)
+    }
+    for stock in [1.0, 2.0, 3.0] {
+      for level in [0.018, 0.18, 1.8] {
+        let source = patch(level)
+        let legacy = densityChannels(
+          negative.apply(
+            extent: source.extent, arguments: [source, 0.0, 0.0, stock])!)
+        let spectral = spectralDensity((level, level, level), stock)
+        precondition(
+          zip(legacy, spectral).allSatisfy { abs($0 - $1) < 0.0002 },
+          "Neutral layer response changed for stock \(stock)")
+      }
+      let base = spectralDensity((0.4, 0.2, 0.1), stock)
+      let brighter = spectralDensity((0.4, 0.2, 0.1), stock, 1)
+      let doubled = spectralDensity((0.8, 0.4, 0.2), stock)
+      precondition(
+        zip(brighter, doubled).allSatisfy { abs($0 - $1) < 0.0002 },
+        "One EV did not double layer exposure for stock \(stock)")
+      precondition(
+        zip(base, brighter).allSatisfy { $0 < $1 },
+        "Film density did not increase with light for stock \(stock)")
+    }
+    let sample = (0.15, 0.7, 0.09)
+    let portra = spectralDensity(sample, 1)
+    let ektar = spectralDensity(sample, 2)
+    let gold = spectralDensity(sample, 3)
+    precondition(
+      portra != ektar && portra != gold && ektar != gold,
+      "Stock-specific layer sensitivity was not applied")
 
     func warned(_ red: Double, _ green: Double, _ blue: Double) -> [Float] {
       let input = CIImage(

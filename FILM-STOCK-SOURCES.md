@@ -19,9 +19,9 @@ The current study stock has a strong display-facing shoulder beginning around +2
 
 A faithful workflow needs three distinct models: (1) scene-linear light to film-layer exposures using spectral sensitivities, (2) film-layer exposure to processed-negative density using the characteristic curves, and (3) negative density to a positive print or scan. The manufacturer's sheet constrains the first two but does not fully specify the third. A digital RAW's three RGB values also cannot uniquely recover the original scene spectrum. FilmLab must document its spectral reconstruction and positive rendering assumptions.
 
-### Next implementation step
+### Implemented density and positive stages
 
-Use the initial chart samples in `Research/portra400-density.csv` to implement a standalone density-evaluation stage and a **separate, clearly provisional positive-rendering stage**. Keep the existing study stock available while comparing both across the -2/0/+2 EV RAW grid. Do not call the resulting positive image an exact Portra 400 match without matched scans or a measured print/scanner transform.
+FilmLab evaluates the digitized density curves separately from its positive print studies. The camera-to-layer mapping below is also versioned so saved grades retain their previous appearance. These public graphs cannot establish an exact stock color match without controlled paired scans.
 
 ## Source licensing boundary
 
@@ -33,9 +33,9 @@ The manufacturer document is a reference for measurements and descriptive facts.
 
 FilmLab now joins adjacent graph readings with shape-preserving cubic Hermite interpolation (PCHIP). Its tangents are calculated from the neighboring sampled slopes and stored in the Metal kernel. This is a numerical smoothing choice: it preserves the sampled values and monotonic density response, but does not add measurements between samples. The response outside each plotted range remains a separate model assumption.
 
-### RGB-to-layer approximation, 24 September 2026
+### RGB-to-layer model, 28 September 2026
 
-Kodak's spectral-sensitivity plot shows broad blue-, green-, and red-sensitive bands with overlap. A three-channel camera file cannot uniquely determine the original scene spectrum, so FilmLab currently approximates layer exposure with a neutral-preserving RGB matrix before looking up negative density:
+Saved grades created before this update keep the original neutral-preserving RGB matrix:
 
 | Film-sensitive layer | Input R | Input G | Input B |
 | --- | ---: | ---: | ---: |
@@ -43,7 +43,7 @@ Kodak's spectral-sensitivity plot shows broad blue-, green-, and red-sensitive b
 | Green / magenta-forming | 0.10 | 0.82 | 0.08 |
 | Blue / yellow-forming | 0.00 | 0.12 | 0.88 |
 
-Each row sums to one, so a neutral scene patch stays neutral before the different density curves act. The coefficients are conservative modeling assumptions suggested by the plotted overlap, **not** values published or measured by Kodak. A future spectral reconstruction and film-layer integration should replace them. The print/scan stage is still provisional.
+New grades use stock-specific layer mappings derived from the [public-data study](Research/stock-layer-sensitivity.md). The auditable [source table](Research/stock-layer-sensitivity-source.csv) records 25 nm visual readings of Kodak's log sensitivity plots, CIE D65, CIE 1931 observer values, and a nonnegative RGB spectral surrogate. `generate-stock-layer-sensitivity.py` converts log sensitivity to linear sensitivity, integrates each layer under D65, and divides by that layer's unit-neutral response. Its generated 3×3 coefficients are a compact result of this **declared linear surrogate**, not a measured camera or Kodak RGB matrix. The fitted surrogate preserves a unit D65 neutral and approximates the linear-sRGB color matching functions to within 0.002 normalized XYZ at the table resolution. It cannot resolve metamer differences, the original scene illuminant, or camera spectral sensitivities. The Kodak readings are approximate, particularly at curve crossings; small inter-stock differences remain uncertain.
 
 ## Second reference: Kodak Professional Ektar 100
 
@@ -51,7 +51,7 @@ Primary source: Kodak, *KODAK PROFESSIONAL EKTAR 100 Film*, publication E-4046, 
 
 `Research/ektar100-density.csv` records nine approximate readings from that chart. Page 4 was rendered at 180 dpi (1530 × 1980 pixels). The graph axes were read at x = 203 for log H -3, x = 571 for log H +1, y = 731 for density 0, and y = 269 for density 4. The centers of the colored curve strokes were sampled at log H -2.8, -2.5, -2, -1.5, -1, -0.5, 0, 0.5 and 1. Treat values as graph readings with roughly ±0.03 density and ±0.03 log-H uncertainty, not laboratory measurements. Shape-preserving cubic Hermite interpolation joins the samples; the response outside the plotted range holds the low-density end or extends the high-density slope as a modeling assumption.
 
-FilmLab anchors scene-linear 0.18 gray to Kodak's marked -0.84 log H reference. This is a calibration choice, not an absolute lux-second measurement of the digital file. The RGB-to-layer overlap matrix and balanced positive print/scan transform used by the Portra study are reused for Ektar; **neither is a measured Ektar color transform**. Development adjustment is provisional. The Ektar source recommends Endura Premier paper. FilmLab offers a separate Endura Premier paper study for this stock; it does not apply the older Portra Endura curves to Ektar. Matched exposure-series scans and print or scanner characterization are still needed to claim a close color match.
+FilmLab anchors scene-linear 0.18 gray to Kodak's marked -0.84 log H reference. This is a calibration choice, not an absolute lux-second measurement of the digital file. New grades use the Ektar-specific spectral-layer mapping described above; older grades retain the former shared matrix. Neither mapping is a measured Ektar color transform. Development adjustment is provisional. The Ektar source recommends Endura Premier paper. FilmLab offers a separate Endura Premier paper study for this stock; it does not apply the older Portra Endura curves to Ektar. Matched exposure-series scans and print or scanner characterization are still needed to claim a close color match.
 
 ## Optional paper tone reference: Kodak Professional Portra Endura
 

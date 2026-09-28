@@ -45,6 +45,7 @@ struct PhotoEdits: Codable, Equatable {
   var filmLightWarmth = 0.0
   var filmLightTint = 0.0
   var filmInputVersion = 2
+  var layerSensitivityVersion = 2
   var filmAmount = 1.0
   var stockIndex = 0
   var enduraPaperTone = false
@@ -156,6 +157,7 @@ struct PhotoEdits: Codable, Equatable {
     switch panel {
     case .film:
       result.stockIndex = source.stockIndex
+      result.layerSensitivityVersion = source.layerSensitivityVersion
       result.enduraPaperTone = source.enduraPaperTone
       result.premierPaperTone = source.premierPaperTone
       result.opticalPremierPrint = source.opticalPremierPrint
@@ -260,6 +262,8 @@ struct PhotoEdits: Codable, Equatable {
     filmLightWarmth = try values.decodeIfPresent(Double.self, forKey: .filmLightWarmth) ?? 0
     filmLightTint = try values.decodeIfPresent(Double.self, forKey: .filmLightTint) ?? 0
     filmInputVersion = try values.decodeIfPresent(Int.self, forKey: .filmInputVersion) ?? 1
+    layerSensitivityVersion =
+      try values.decodeIfPresent(Int.self, forKey: .layerSensitivityVersion) ?? 1
     filmAmount = try values.decodeIfPresent(Double.self, forKey: .filmAmount) ?? 1.0
     stockIndex = try values.decodeIfPresent(Int.self, forKey: .stockIndex) ?? 0
     enduraPaperTone = try values.decodeIfPresent(Bool.self, forKey: .enduraPaperTone) ?? false
@@ -454,6 +458,7 @@ final class PhotoEditor {
   var filmLightWarmth = 0.0
   var filmLightTint = 0.0
   var filmInputVersion = 2
+  var layerSensitivityVersion = 2
   var filmAmount = 1.0
   var stockIndex = 0
   var enduraPaperTone = false
@@ -643,6 +648,7 @@ final class PhotoEditor {
   private let positiveFilmLightKernel = FilmKernels.kernel("positiveFilmLight")
   private let negativeGrainKernel = FilmKernels.kernel("applyNegativeGrain")
   private let measuredNegativeKernel = FilmKernels.kernel("measuredNegative")
+  private let measuredNegativeSpectralKernel = FilmKernels.kernel("measuredNegativeSpectral")
   private let portraPositiveKernel = FilmKernels.kernel("portraPositive")
   private let opticalPremierPositiveKernel = FilmKernels.kernel("opticalPremierPositive")
   private let multigradePositiveKernel = FilmKernels.kernel("multigradePositive")
@@ -902,6 +908,7 @@ final class PhotoEditor {
     filmLightWarmth = saved.filmLightWarmth
     filmLightTint = saved.filmLightTint
     filmInputVersion = saved.filmInputVersion
+    layerSensitivityVersion = saved.layerSensitivityVersion
     filmAmount = saved.filmAmount
     stockIndex = saved.stockIndex
     enduraPaperTone = saved.enduraPaperTone
@@ -1089,6 +1096,7 @@ final class PhotoEditor {
     edits.filmLightWarmth = filmLightWarmth
     edits.filmLightTint = filmLightTint
     edits.filmInputVersion = filmInputVersion
+    edits.layerSensitivityVersion = layerSensitivityVersion
     edits.filmAmount = filmAmount
     edits.stockIndex = stockIndex
     edits.enduraPaperTone = enduraPaperTone
@@ -1527,6 +1535,7 @@ final class PhotoEditor {
     filmLightWarmth = defaults.filmLightWarmth
     filmLightTint = defaults.filmLightTint
     filmInputVersion = defaults.filmInputVersion
+    layerSensitivityVersion = defaults.layerSensitivityVersion
     filmAmount = defaults.filmAmount
     stockIndex = defaults.stockIndex
     enduraPaperTone = defaults.enduraPaperTone
@@ -1960,11 +1969,13 @@ final class PhotoEditor {
     }
     let imageBeforeFilm = image
     if (1...5).contains(stockIndex) {
-      guard let measuredNegativeKernel,
+      guard
+        let negativeKernel = stockIndex <= 3 && layerSensitivityVersion >= 2
+          ? measuredNegativeSpectralKernel : measuredNegativeKernel,
         let portraPositiveKernel,
         let opticalPremierPositiveKernel,
         let multigradePositiveKernel,
-        let negative = measuredNegativeKernel.apply(
+        let negative = negativeKernel.apply(
           extent: image.extent, arguments: [image, shotExposureEV, development, Double(stockIndex)]
         )
       else {
@@ -2472,6 +2483,12 @@ final class PhotoEditor {
   func useLuminancePreservingFilmInput() {
     guard filmInputVersion < 2 else { return }
     filmInputVersion = 2
+    editsChanged()
+  }
+
+  func useSpectralLayerSensitivity() {
+    guard layerSensitivityVersion < 2 else { return }
+    layerSensitivityVersion = 2
     editsChanged()
   }
 
@@ -5015,6 +5032,15 @@ struct ContentView: View {
           }
           .pickerStyle(.menu)
           if (1...3).contains(editor.stockIndex) {
+            if editor.layerSensitivityVersion == 1 {
+              Button("Use researched film layer sensitivity") {
+                editor.useSpectralLayerSensitivity()
+              }
+              Text(
+                "This changes this saved grade's color response. Undo restores its earlier rendering."
+              )
+              .font(.caption).foregroundStyle(.secondary)
+            }
             Toggle("Premier optical print study", isOn: $editor.opticalPremierPrint)
             if editor.opticalPremierPrint {
               control("Paper exposure (EV)", value: $editor.paperExposure, range: -2...2)
