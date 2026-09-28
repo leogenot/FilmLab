@@ -14,7 +14,8 @@ enum FilmKernels {
           "grade", "selectiveColor", "colorMixerBand", "colorMixerBandV2", "applyGrain",
           "applyNegativeGrain",
           "preservingSelectiveColor",
-          "highlightMask", "sceneHighlightMask", "applyHalation", "applyAcutance",
+          "highlightMask", "sceneHighlightMask", "applyHalation", "applyNeutralHalation",
+          "applyAcutance",
           "renderedInputTone",
           "outputShoulder",
           "outputToneCurve", "channelToneCurves",
@@ -446,9 +447,34 @@ enum FilmKernels {
         // Provisional continuation beyond the published graph.
         return goldD[8] + goldTangent[8] * (logH - 0.85);
     }
+    // Kodak F-4017 page 8: 400TX 35 mm, D-76 large tank, 20 C, 8 minutes.
+    // Approximate diffuse-visual density readings in Research/trix400-density.csv.
+    constant float trixH[9] = {-3.40, -3.00, -2.50, -2.00, -1.50, -1.00, -0.50, 0.00, 0.30};
+    constant float trixD[9] = {0.290000, 0.290000, 0.450000, 0.720000, 1.030000, 1.330000, 1.650000, 1.930000, 2.090000};
+    constant float trixTangent[9] = {0.000000, 0.000000, 0.401860, 0.577241, 0.609836, 0.619355, 0.597333, 0.545233, 0.523333};
+    inline float trixDensityAt(float logH) {
+        if (logH <= trixH[0]) return trixD[0];
+        for (int i = 0; i < 8; i++) {
+            if (logH <= trixH[i + 1]) {
+                return smoothDensity(logH, trixH[i], trixH[i + 1],
+                                     float3(trixD[i]), float3(trixD[i + 1]),
+                                     float3(trixTangent[i]), float3(trixTangent[i + 1])).r;
+            }
+        }
+        // Provisional continuation beyond the published graph.
+        return trixD[8] + trixTangent[8] * (logH - 0.3);
+    }
     [[stitchable]] float4 measuredNegative(coreimage::sample_t pixel, float ev,
                                             float dev, float stock) {
         float3 light = max(pixel.rgb, float3(0.0));
+        if (stock > 3.5) {
+            // Camera RGB is not scene spectral radiance. This panchromatic
+            // weighting and the -1.5 midgray anchor are modeling assumptions.
+            float exposure = dot(light, float3(0.2126, 0.7152, 0.0722));
+            float logH = log10(max(exposure, 0.000001) / 0.18)
+                       - 1.5 + ev * 0.30103;
+            return float4(float3(trixDensityAt(logH)), pixel.a);
+        }
         // Approximate spectral-layer overlap from E-4050's broad sensitivity bands.
         // These RGB weights are a modeling assumption, not digitized Kodak measurements.
         float3 layerLight = float3(
@@ -486,6 +512,16 @@ enum FilmKernels {
                                           coreimage::sample_t original,
                                           float ev, float amount, float paperMix,
                                           float paperExposure, float stock) {
+        if (stock > 3.5) {
+            float density = dot(negative.rgb, float3(0.333333));
+            float reference = trixDensityAt(-1.5);
+            // Virtual monochrome scan/print transform, not a measured paper.
+            float linear = 0.18 * exp2(clamp((density - reference) * (0.8 / 0.17),
+                                              -20.0, 20.0));
+            float positive = 1.08 * linear / (linear + 0.9);
+            return float4(mix(max(original.rgb, float3(0.0)) * exp2(ev),
+                              float3(positive), amount), original.a);
+        }
         float3 reference = stock > 2.5 ? goldDensityAt(-1.14)
             : (stock > 1.5 ? ektarDensityAt(-0.84) : portraDensityAt(-1.44));
         // Provisional balanced print/scan transform; 0.18 remains 0.18 at the reference.
@@ -704,7 +740,7 @@ enum FilmKernels {
     // Density-domain texture is deliberately provisional: the Kodak curves do not
     // specify grain size or variance. The same spatial noise is used by preview/export.
     [[stitchable]] float4 applyNegativeGrain(coreimage::sample_t negative,
-                                            float amount, float size, float seed,
+                                            float amount, float size, float seed, float stock,
                                             coreimage::destination destination) {
         float2 coord = destination.coord();
         uint photoSeed = uint(seed);
@@ -728,6 +764,12 @@ enum FilmKernels {
             float coarse = dot(weights, samples)
                 / sqrt(max(dot(weights, weights), 0.000001));
             noise = (coarse * 0.9 + fine * 0.1) / sqrt(0.82);
+        }
+        // One panchromatic layer gets one density field. Color negatives retain
+        // shared structure plus restrained dye-layer variation.
+        if (stock > 3.5) {
+            float variation = noise * clamp(amount, 0.0, 1.0) * 0.12;
+            return float4(max(negative.rgb + float3(variation), float3(0.0)), negative.a);
         }
         // Shared spatial structure with restrained independent dye variation.
         float3 dyeNoise = float3(
@@ -795,6 +837,14 @@ enum FilmKernels {
                   float spill = max(blurred.r - mask.r, 0.0) * amount * 0.24;
                   return float4(pixel.rgb + float3(spill, spill * 0.30, spill * 0.12), pixel.a);
               }
+
+    [[stitchable]] float4 applyNeutralHalation(coreimage::sample_t pixel,
+                                                coreimage::sample_t mask,
+                                                coreimage::sample_t blurred,
+                                                float amount) {
+        float spill = max(blurred.r - mask.r, 0.0) * amount * 0.24;
+        return float4(pixel.rgb + float3(spill), pixel.a);
+    }
 
     [[stitchable]] float4 applyAcutance(coreimage::sample_t pixel,
                                        coreimage::sample_t blurred, float amount) {

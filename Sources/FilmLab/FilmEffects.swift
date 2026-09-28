@@ -11,13 +11,16 @@ enum FilmEffects {
 
   private static let halationKernel = FilmKernels.kernel("applyHalation")
 
+  private static let neutralHalationKernel = FilmKernels.kernel("applyNeutralHalation")
+
   private static let acutanceKernel = FilmKernels.kernel("applyAcutance")
 
   static func apply(
     to image: CIImage, grain: Double, grainSize: Double = 1,
     grainSeed: Double = 0,
     halation: Double, halationSource: CIImage? = nil, halationExposureEV: Double = 0,
-    halationVersion: Int = 1, acutance: Double = 0, spatialScale: Double = 1
+    halationVersion: Int = 1, acutance: Double = 0, spatialScale: Double = 1,
+    monochrome: Bool = false
   )
     -> CIImage
   {
@@ -31,7 +34,9 @@ enum FilmEffects {
           extent: image.extent, arguments: [result, blurred, acutance]
         ) ?? result
     }
-    if halation > 0, let halationKernel {
+    if halation > 0,
+      let selectedHalationKernel = monochrome ? neutralHalationKernel : halationKernel
+    {
       let mask =
         halationVersion >= 2
         ? sceneHighlightKernel?.apply(
@@ -45,7 +50,7 @@ enum FilmEffects {
           ]
         ).cropped(to: image.extent)
         result =
-          halationKernel.apply(
+          selectedHalationKernel.apply(
             extent: image.extent,
             arguments: [
               result, mask, blurred, halation,

@@ -215,7 +215,7 @@ struct RenderingProbe {
     precondition(abs(extendedColor[0] - 1.4) < 0.001)
     precondition(abs(extendedColor[2] + 0.1) < 0.001)
 
-    for stock in [1.0, 2.0, 3.0] {
+    for stock in [1.0, 2.0, 3.0, 4.0] {
       let under = rendered(stock, -2)
       let normal = rendered(stock, 0)
       let over = rendered(stock, 2)
@@ -337,7 +337,7 @@ struct RenderingProbe {
       brightCurve[0] > 1.0 && abs(brightCurve[1] - 0.5) < 0.001,
       "Channel curve lost extended highlight headroom")
     func negativeDensity(_ stock: Double, _ logH: Double) -> [Float] {
-      let anchor = stock == 1 ? -1.44 : (stock == 2 ? -0.84 : -1.14)
+      let anchor = stock == 1 ? -1.44 : (stock == 2 ? -0.84 : (stock == 3 ? -1.14 : -1.5))
       let source = patch(0.18)
       let exposure = (logH - anchor) / log10(2)
       let density = negative.apply(
@@ -388,7 +388,43 @@ struct RenderingProbe {
         }
       }
     }
-    for (stock, upperEnd) in [(1.0, 0.5), (2.0, 1.0), (3.0, 0.85)] {
+    let trixURL = URL(fileURLWithPath: #filePath)
+      .deletingLastPathComponent().deletingLastPathComponent()
+      .appendingPathComponent("Research/trix400-density.csv")
+    let trixRows = try! String(contentsOf: trixURL, encoding: .utf8)
+      .split(whereSeparator: \.isNewline).dropFirst().map { row -> (Double, Float) in
+        let values = row.split(separator: ",").compactMap { Double($0) }
+        precondition(values.count == 2)
+        return (values[0], Float(values[1]))
+      }
+    precondition(trixRows.count == 9)
+    for (logH, expected) in trixRows {
+      let actual = negativeDensity(4, logH)
+      precondition(
+        actual.allSatisfy { abs($0 - expected) < 0.0003 },
+        "Tri-X negative density differs from the digitized chart at \(logH)")
+    }
+    for index in 0..<(trixRows.count - 1) {
+      let midpoint = (trixRows[index].0 + trixRows[index + 1].0) / 2
+      let actual = negativeDensity(4, midpoint)[0]
+      precondition(
+        actual >= trixRows[index].1 && actual <= trixRows[index + 1].1,
+        "Tri-X density reversed between chart samples")
+    }
+    let trixColor = colorPatch(0.5, 0.2, 0.05)
+    let trixNegative = negative.apply(
+      extent: trixColor.extent, arguments: [trixColor, 0.0, 0.0, 4.0])!
+    let trixPositive = channels(
+      positive.apply(
+        extent: trixColor.extent,
+        arguments: [trixNegative, trixColor, 0.0, 1.0, 0.0, 0.0, 4.0])!)
+    precondition(
+      trixPositive.max()! - trixPositive.min()! < 0.0001,
+      "Tri-X positive is not monochrome")
+    precondition(
+      abs(rendered(4, 2)[0] - rendered(1, 2)[0]) > 0.01,
+      "Tri-X is indistinguishable from Portra overexposure")
+    for (stock, upperEnd) in [(1.0, 0.5), (2.0, 1.0), (3.0, 0.85), (4.0, 0.3)] {
       let distance = 0.005
       let before = negativeDensity(stock, upperEnd - distance)
       let atEnd = negativeDensity(stock, upperEnd)

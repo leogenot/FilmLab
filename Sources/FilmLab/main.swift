@@ -1905,7 +1905,7 @@ final class PhotoEditor {
       image = normalized
     }
     let imageBeforeFilm = image
-    if (1...3).contains(stockIndex) {
+    if (1...4).contains(stockIndex) {
       guard let measuredNegativeKernel,
         let portraPositiveKernel,
         let negative = measuredNegativeKernel.apply(
@@ -1922,7 +1922,7 @@ final class PhotoEditor {
             extent: negative.extent,
             arguments: [
               negative, grain * thumbnailSpatialScale,
-              grainSize * thumbnailSpatialScale, grainSeed,
+              grainSize * thumbnailSpatialScale, grainSeed, Double(stockIndex),
             ]
           )
         else {
@@ -2026,7 +2026,8 @@ final class PhotoEditor {
       halation: halation, halationSource: imageBeforeFilm,
       halationExposureEV: shotExposureEV,
       halationVersion: halationVersion,
-      acutance: acutance, spatialScale: thumbnailSpatialScale)
+      acutance: acutance, spatialScale: thumbnailSpatialScale,
+      monochrome: stockIndex == 4 && filmAmount >= 0.999)
     if outputShoulder > 0.001 {
       guard let outputShoulderKernel,
         let rolled = outputShoulderKernel.apply(
@@ -4911,6 +4912,7 @@ struct ContentView: View {
             Text("Portra 400 density study").tag(1)
             Text("Ektar 100 density study").tag(2)
             Text("Gold 200 density study").tag(3)
+            Text("Tri-X 400 density study").tag(4)
           }
           .pickerStyle(.menu)
           if editor.stockIndex == 1 {
@@ -4970,7 +4972,14 @@ struct ContentView: View {
             "Each frame runs through the current stock and grade at the labeled Shot Exposure. Click a frame to use it. Other edits clear this comparison."
           )
           .font(.caption2).foregroundStyle(.secondary)
-          control("Development", value: $editor.development, range: -2...2)
+          if editor.stockIndex == 4 {
+            Text(
+              "400TX 35 mm · D-76 large tank · 20°C · 8 minutes. Development is fixed to the published curve."
+            )
+            .font(.caption).foregroundStyle(.secondary)
+          } else {
+            control("Development", value: $editor.development, range: -2...2)
+          }
           control("Stock amount", value: $editor.filmAmount, range: 0...1)
           Text(
             editor.stockIndex == 1
@@ -4985,7 +4994,9 @@ struct ContentView: View {
                   ? (editor.premierPaperTone
                     ? "Kodak Gold negative and Endura Premier paper curves; color balance is approximate."
                     : "Kodak Gold negative-density curves with provisional positive rendering.")
-                  : "Exposure-dependent study stock. Film measurements will replace this model."))
+                  : (editor.stockIndex == 4
+                    ? "Kodak Tri-X negative-density curve with a virtual monochrome print or scan. Set stock amount to 1 for full monochrome."
+                    : "Exposure-dependent study stock. Film measurements will replace this model.")))
           )
           .font(.caption).foregroundStyle(.secondary)
         case .develop:
