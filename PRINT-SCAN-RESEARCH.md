@@ -18,7 +18,7 @@ Kodak's [Endura Premier technical data, E-4070](https://business.kodakmoments.co
 - Page 3: print evaluation around 5000 K (±1000 K), color-rendering index 85–100, and at least 538 lux. A spectral simulation still needs a particular viewing illuminant and white point.
 - Page 2: digital output requires printer recalibration and output ICC profiles. Kodak's [CIS-289 calibration routines](https://business.kodakmoments.com/sites/default/files/files/products/paper-endura-calibration-cis289_0.pdf) list *different* procedures and values for different printers, and some profiles are supplied by the printer manufacturer. An Endura ICC profile, even if found, would characterize a specific printer/paper/process path rather than the film stock alone.
 
-**Next usable work:** digitize the E-4070 paper spectral sensitivity and dye-density graphs with uncertainty, then prototype a declared tungsten/RA-4 optical print path. Use the existing paper curve as a hard constraint. Keep balance filtration and viewing illuminant selectable or explicitly fixed. Do not substitute a generic printer ICC profile for an optical-print model.
+**Implemented study:** the [optical Premier route](Research/endura-premier-optical-print.md) uses approximate E-4070 spectral sensitivity and dye-density samples, Kodak paper characteristic curves, a declared tungsten source, RA-4 condition, and D50 viewing reference. Filtration is relative paper-layer attenuation because Kodak does not publish the exact filter spectra in this sheet. The graph readings and inferred negative decomposition remain provisional.
 
 ## Negative color response: still underdetermined
 
@@ -46,10 +46,9 @@ The authors of [*CNNs for Style Transfer of Digital to Film Photography*](https:
 
 A targeted search in September 2026 did **not locate** a downloadable, clearly licensed, same-scene digital-RAW/Kodak-film set with fixed scan settings and several exposure stops for these five stocks. This is a bounded search result, not proof that such data do not exist. Public sample scans are valuable for qualitative review if the stock and lab workflow are known, but automatic scanner color/tone adjustment can hide the original negative's exposure behavior.
 
-## Priority for the next rendering milestone
+## Priority after the optical-print study
 
-1. Define one explicit positive target: Endura Premier optical print, named paper process, lamp, filter balance, and viewing white. Keep the existing virtual scan separate.
-2. Digitize E-4070 spectral graphs and add an inspectable spectral print prototype alongside the current paper model. Validate monotonic exposure response, neutral alignment, and bounded color behavior on RAW/JPEG fixtures.
-3. Add an Ilford paper output for B&W only if the intended print aesthetic is useful; digitize grade curves and label the pairing accurately.
-4. Improve grain scale and sharpness in physical image coordinates, without claiming that Kodak's single grain numbers calibrate texture.
-5. Reserve exact stock-matching claims for independently characterized scans/prints with known processing and permission to use them.
+1. Improve the stock-specific camera-to-negative layer sensitivity approximation using the manufacturer spectral plots. A digital RGB file cannot uniquely reconstruct the original scene spectrum, so keep the chosen reconstruction explicit.
+2. Compare the positive output against legally usable public print or scan examples across lighting and exposure, accounting for unknown scan processing.
+3. Characterize output texture and sharpness in physical image coordinates without converting Kodak's single grain numbers into arbitrary pixel variance.
+4. Keep exact stock-matching claims reserved for independently characterized scans or prints with known processing and permission to use them.

@@ -698,10 +698,13 @@ enum FilmKernels {
             dot(xyz, float3(0.9555766, -0.0230393, 0.0631636)),
             dot(xyz, float3(-0.0282895, 1.0099416, 0.0210077)),
             dot(xyz, float3(0.0122982, -0.0204830, 1.3299098)));
-        return max(float3(
+        // Keep signed wide-gamut values in the working space. Display/JPEG
+        // conversion can map them later; clipping here discards print color
+        // that may still fit in Display P3 or a floating-point TIFF.
+        return float3(
             dot(d65, float3(3.2404542, -1.5371385, -0.4985314)),
             dot(d65, float3(-0.9692660, 1.8760108, 0.0415560)),
-            dot(d65, float3(0.0556434, -0.2040259, 1.0572252))), float3(0.0));
+            dot(d65, float3(0.0556434, -0.2040259, 1.0572252)));
     }
     // BEGIN GENERATED OPTICAL PRINTER (Research/generate-optical-printer.py)
     constant float3 portraDensityGain[13] = {

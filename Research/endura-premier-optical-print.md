@@ -6,6 +6,8 @@ The opt-in Film panel mode uses the existing stock-specific negative density cur
 
 The Film panel also exposes relative **Magenta filtration** and **Yellow filtration** in stops. Positive magenta subtracts log exposure from the green-sensitive paper layer; positive yellow subtracts it from the blue-sensitive layer. Both happen before the nonlinear paper curves. Kodak E-4070 describes dichroic or CP filter control and suggests 40M + 50Y as a starting test pack, but it does not publish those filters' transmission spectra here. These controls therefore represent independent layer exposure changes around FilmLab's neutral reference, not measured CP filter densities or a calibrated enlarger setting. Zero preserves the previous optical print rendering and old saved grades decode to zero.
 
+The spectral print conversion retains signed extended-linear RGB until the selected output transform. A saturated modeled print can lie outside sRGB yet remain meaningful for Display P3 or 32-bit float TIFF; clamping its negative channel inside the paper stage discarded that information. A focused rendering vector now checks this behavior. Existing edits using the optical Premier path may show a different result for these extreme colors, while ordinary in-gamut colors are unaffected.
+
 ## Boundaries
 
 - E-4070 plots describe photographic paper; they do not provide the full spectral transmission of each Portra, Ektar, or Gold negative at every exposure.
@@ -18,6 +20,7 @@ The Film panel also exposes relative **Magenta filtration** and **Yellow filtrat
 
 - Portra 400 E-4050: https://business.kodakmoments.com/sites/default/files/files/resources/portra400-techpub-e4050.pdf; Ektar 100 E-4046: https://www.kodakprofessional.com/sites/default/files/2025-07/e4046.pdf; Gold 200 E-7022: https://kodakprofessional.com/sites/default/files/wysiwyg/pro/resources/E7022_Gold_200.pdf. Each page-4 chart supplies a midscale neutral and D-min spectrum, not separate dye spectra at arbitrary colors and exposures.
 - `optical-printer-source.csv` records approximate 25 nm readings from those graphs and E-4070's page-4 paper sensitivity graph. `generate-optical-printer.py` derives `optical-printer-integration.csv` and the Metal constants. Rows are wavelength samples, not a claim of laboratory-grade spectral resolution.
+- `python3 Research/generate-optical-printer.py --check` verifies both generated outputs against the source table without rewriting them. `Scripts/verify-rendering.sh` runs this check before compiling the shaders.
 - At each wavelength, the model divides a stock's midscale-minus-D-min density among three broad dye lobes. Each lobe's amplitude follows that stock's existing Status M characteristic curve relative to its toe and reference exposure. The paper exposure is proportional to the sum of Illuminant A × negative transmission × paper-layer sensitivity. Each paper layer is normalized to the same midscale reference before Kodak's nonlinear paper curve is applied.
 - CIE Illuminant A: https://cie.co.at/datatable/cie-standard-illuminant-1-nm. The downloaded CSV matches the CIE revision-2 metadata MD5 `ed0e4effb55d82b950c0912b6278a9d1`; the dataset webpage still displays an older MD5. The 25 nm values in `optical-printer-source.csv` are the actual used samples.
 

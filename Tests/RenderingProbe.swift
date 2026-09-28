@@ -150,6 +150,34 @@ struct RenderingProbe {
     precondition(
       zip(samplePrints[1], samplePrints[2]).contains { abs($0 - $1) > 0.001 },
       "Ektar and Gold used an indistinguishable print response")
+    let saturatedEktar = opticalColor(2, red: 0.001, green: 0.02, blue: 8)
+    precondition(
+      saturatedEktar[0] < -0.01 && saturatedEktar[1] > 0 && saturatedEktar[2] > 0,
+      "Optical print clipped signed wide-gamut color before output conversion")
+    let saturatedInput = CIImage(
+      color: CIColor(red: 0.001, green: 0.02, blue: 8, colorSpace: space)!
+    ).cropped(to: CGRect(x: 0, y: 0, width: 1, height: 1))
+    let saturatedNegative = negative.apply(
+      extent: saturatedInput.extent, arguments: [saturatedInput, 0.0, 0.0, 2.0])!
+    let saturatedPositive = opticalPrint.apply(
+      extent: saturatedInput.extent,
+      arguments: [saturatedNegative, saturatedInput, 0.0, 1.0, 0.0, 0.0, 0.0, 2.0])!
+    let neutralControls = saturatedPositive.applyingFilter(
+      "CIColorControls",
+      parameters: [kCIInputContrastKey: 1.0, kCIInputSaturationKey: 1.0])
+    precondition(
+      channels(neutralControls)[0] < -0.01,
+      "Neutral output controls clipped the signed optical-print channel")
+    let displayP3 = CGColorSpace(name: CGColorSpace.displayP3)!
+    var p3Pixels = [Float](repeating: 0, count: 4)
+    p3Pixels.withUnsafeMutableBytes { bytes in
+      context.render(
+        saturatedPositive, toBitmap: bytes.baseAddress!, rowBytes: 16,
+        bounds: saturatedPositive.extent, format: .RGBAf, colorSpace: displayP3)
+    }
+    precondition(
+      p3Pixels[0] > 0 && p3Pixels[1] > 0 && p3Pixels[2] > 0,
+      "The saturated optical-print color was lost during Display P3 conversion")
 
     let coloredLight = CIImage(
       color: CIColor(red: 0.22, green: 0.18, blue: 0.13, colorSpace: space)!

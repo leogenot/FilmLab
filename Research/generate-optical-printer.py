@@ -5,7 +5,9 @@ Inputs are visually read Kodak E-4050, E-4046, E-7022, E-4070 plots at 25 nm,
 plus CIE illuminant A samples. These are approximate graph readings, not a fit
 for individual film batches or enlarger/filter combinations.
 """
+import argparse
 import csv
+import io
 import math
 from pathlib import Path
 
@@ -78,15 +80,15 @@ for stock, density_file, anchor in STOCKS:
     assert all(abs(sum(row[j] for row in weights) - 1) < 1e-10 for j in range(3))
     result[stock] = (spectral, weights)
 
-with OUTPUT.open('w', newline='') as f:
-    writer = csv.writer(f)
-    writer.writerow(['wavelength_nm'] + [f'{stock}_{type}_{channel}'
-                    for stock, _, _ in STOCKS for type in ('density_gain', 'paper_weight')
-                    for channel in ('red', 'green', 'blue')])
-    for i, row in enumerate(rows):
-        writer.writerow([row['wavelength_nm']] + [f'{v:.9f}'
-                        for stock, _, _ in STOCKS for vectors in result[stock]
-                        for v in vectors[i]])
+csv_output = io.StringIO(newline='')
+writer = csv.writer(csv_output)
+writer.writerow(['wavelength_nm'] + [f'{stock}_{kind}_{channel}'
+                for stock, _, _ in STOCKS for kind in ('density_gain', 'paper_weight')
+                for channel in ('red', 'green', 'blue')])
+for i, row in enumerate(rows):
+    writer.writerow([row['wavelength_nm']] + [f'{v:.9f}'
+                    for stock, _, _ in STOCKS for vectors in result[stock]
+                    for v in vectors[i]])
 
 lines = ['    // BEGIN GENERATED OPTICAL PRINTER (Research/generate-optical-printer.py)']
 for stock, _, _ in STOCKS:
@@ -99,4 +101,14 @@ lines.append('    // END GENERATED OPTICAL PRINTER')
 text = KERNEL.read_text()
 start = text.index('    // BEGIN GENERATED OPTICAL PRINTER')
 end = text.index('    // END GENERATED OPTICAL PRINTER', start) + len('    // END GENERATED OPTICAL PRINTER')
-KERNEL.write_text(text[:start] + '\n'.join(lines) + text[end:])
+generated_kernel = '\n'.join(lines)
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--check', action='store_true', help='fail if generated outputs differ')
+args = parser.parse_args()
+if args.check:
+    if OUTPUT.read_bytes() != csv_output.getvalue().encode() or text[start:end] != generated_kernel:
+        raise SystemExit('Optical printer data or Metal constants are out of date')
+    print('Optical printer generated data matches source plots')
+else:
+    OUTPUT.write_text(csv_output.getvalue())
+    KERNEL.write_text(text[:start] + generated_kernel + text[end:])
